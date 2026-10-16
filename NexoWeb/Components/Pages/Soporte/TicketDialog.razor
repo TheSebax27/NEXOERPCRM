@@ -1,0 +1,148 @@
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@(EsModo("editar") ? Icons.Material.Filled.Edit : Icons.Material.Filled.ConfirmationNumber)" Class="mr-2" />
+            @(EsModo("editar") ? "Editar Ticket" : "Nuevo Ticket")
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_valido">
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_titulo" Label="Título *" Variant="Variant.Outlined"
+                                  Required="true" RequiredError="El título es requerido"
+                                  Counter="300" MaxLength="300" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_descripcion" Label="Descripción *" Variant="Variant.Outlined"
+                                  Required="true" RequiredError="La descripción es requerida"
+                                  Lines="4" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <AppSelect TValue="string" @bind-Value="_categoria" Label="Categoría *"
+                               Items="@(_categorias.Select(cat => new AppSelectItem<string>(cat, cat)))" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <AppSelect TValue="string" @bind-Value="_prioridad" Label="Prioridad *"
+                               Items="@(new AppSelectItem<string>[]{ new("Baja","BAJA"), new("Media","MEDIA"), new("Alta","ALTA"), new("Crítica","CRITICA") })" />
+                </MudItem>
+                @if (EsModo("editar"))
+                {
+                    <MudItem xs="12" sm="6">
+                        <AppSelect TValue="string" @bind-Value="_estado" Label="Estado"
+                                   Items="@(new AppSelectItem<string>[]{ new("Abierto","ABIERTO"), new("En Progreso","EN_PROGRESO"), new("Resuelto","RESUELTO"), new("Cerrado","CERRADO") })" />
+                    </MudItem>
+                }
+                <MudItem xs="12" sm="6">
+                    <ClienteAutocomplete Value="_cliente"
+                                         ValueChanged="@(c => _cliente = c)"
+                                         Label="Cliente *" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudAutocomplete T="UsuarioItem?" @bind-Value="_asignado"
+                                     Label="Asignar a (opcional)" Variant="Variant.Outlined"
+                                     SearchFunc="BuscarUsuarios" ToStringFunc="NombreUsuario"
+                                     ResetValueOnEmptyText="true" Clearable="true" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_notas" Label="Notas adicionales" Variant="Variant.Outlined"
+                                  Lines="2" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar" Variant="Variant.Text">Cancelar</MudButton>
+        <MudButton OnClick="Guardar" Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="!_valido || _guardando">
+            @if (_guardando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            @(EsModo("editar") ? "Guardar cambios" : "Crear ticket")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string Modo { get; set; } = "crear";
+    [Parameter] public TicketItem? Ticket { get; set; }
+
+    private MudForm _form = default!;
+    private bool _valido;
+    private bool _guardando;
+
+    private string _titulo = string.Empty;
+    private string _descripcion = string.Empty;
+    private string _categoria = "Bug";
+    private string _prioridad = "MEDIA";
+    private string _estado = "ABIERTO";
+    private string? _notas;
+    private UsuarioItem? _asignado;
+    private ClienteItem? _cliente;
+    private List<UsuarioItem> _usuarios = new();
+
+    private static readonly string[] _categorias = ["Bug", "Consulta", "Mejora", "Acceso", "Otro"];
+
+    private bool EsModo(string modo) => Modo.Equals(modo, StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _usuarios = await Api.GetAsync<List<UsuarioItem>>("api/auth/usuarios") ?? [];
+
+        if (Ticket is not null)
+        {
+            _titulo = Ticket.Titulo;
+            _descripcion = Ticket.Descripcion;
+            _categoria = Ticket.Categoria;
+            _prioridad = Ticket.Prioridad;
+            _estado = Ticket.Estado;
+            _notas = Ticket.Notas;
+            if (Ticket.AsignadoA.HasValue)
+                _asignado = _usuarios.FirstOrDefault(u => u.UsuarioID == Ticket.AsignadoA.Value);
+            if (Ticket.ClienteID.HasValue && Ticket.Cliente is not null)
+                _cliente = new ClienteItem(Ticket.ClienteID.Value, "", Ticket.Cliente, null, null, null, null, null, true, null, null, null, null, null, 0, null, null, null, null, null, null, null, null, null, null, null);
+        }
+    }
+
+    private static string NombreUsuario(UsuarioItem? u) =>
+        u is null ? string.Empty : $"{u.Nombres} {u.Apellidos}";
+
+    private Task<IEnumerable<UsuarioItem?>> BuscarUsuarios(string? texto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+            return Task.FromResult(_usuarios.Take(10).Cast<UsuarioItem?>());
+        var filtrados = _usuarios
+            .Where(u => (u.Nombres + " " + u.Apellidos).Contains(texto, StringComparison.OrdinalIgnoreCase))
+            .Take(10).Cast<UsuarioItem?>();
+        return Task.FromResult(filtrados);
+    }
+
+    private void Cancelar() => Dialog.Cancel();
+
+    private async Task Guardar()
+    {
+        await _form.Validate();
+        if (!_valido) return;
+        _guardando = true;
+
+        if (EsModo("editar") && Ticket is not null)
+        {
+            var req = new ActualizarTicketRequest(
+                _titulo, _descripcion, _categoria, _prioridad, _estado,
+                _asignado?.UsuarioID, _cliente?.ClienteID, _notas);
+            Dialog.Close(DialogResult.Ok(req));
+        }
+        else
+        {
+            var req = new CrearTicketRequest(
+                _titulo, _descripcion, _categoria, _prioridad,
+                _asignado?.UsuarioID, _cliente?.ClienteID, _notas);
+            Dialog.Close(DialogResult.Ok(req));
+        }
+
+        _guardando = false;
+    }
+}

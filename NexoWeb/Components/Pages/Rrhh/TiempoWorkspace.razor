@@ -1,0 +1,37 @@
+@page "/rrhh/tiempo"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>Tiempo — NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Gestión de tiempo</h1>
+        </div>
+    </div>
+</div>
+
+<MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true"
+         Class="nexo-bi-tabs mb-2"
+         ActivePanelIndex="_tabIndex" ActivePanelIndexChanged="OnTabChanged">
+    <MudTabPanel Text="Horarios" Icon="@Icons.Material.Filled.Schedule">
+        <Horarios />
+    </MudTabPanel>
+    <MudTabPanel Text="Asistencia" Icon="@Icons.Material.Filled.FactCheck">
+        <Asistencia />
+    </MudTabPanel>
+    <MudTabPanel Text="Ausencias y Vacaciones" Icon="@Icons.Material.Filled.BeachAccess">
+        <Ausencias />
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")] public int TabQuery { get; set; }
+    private int _tabIndex;
+
+    protected override void OnParametersSet() => _tabIndex = TabQuery;
+
+    private void OnTabChanged(int idx) => _tabIndex = idx;
+}

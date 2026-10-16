@@ -1,0 +1,388 @@
+/* ── Encabezado ─────────────────────────────────────────────────── */
+.art-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.art-header__title {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: var(--n-text-1);
+    margin: 0 0 0.2rem;
+    line-height: 1.2;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.art-header__icon {
+    color: var(--n-purple);
+    font-size: 1.5rem !important;
+}
+
+.art-header__sub {
+    font-size: 0.82rem;
+    color: var(--n-text-3);
+    margin: 0;
+}
+
+.art-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-shrink: 0;
+}
+
+/* ── Filtros ─────────────────────────────────────────────────────── */
+.art-filtros {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+/* ── Resumen ─────────────────────────────────────────────────────── */
+.art-resumen {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.art-resumen__chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.65rem;
+    border-radius: 20px;
+    background: var(--n-purple-bg-subtle);
+    border: 1px solid var(--n-purple-border-faint);
+    font-size: 0.75rem;
+    color: var(--n-purple);
+    font-weight: 600;
+}
+
+.art-resumen__chip--muted {
+    background: var(--n-bg);
+    border-color: var(--n-border);
+    color: var(--n-text-3);
+    font-weight: 400;
+}
+
+/* ── Skeleton ────────────────────────────────────────────────────── */
+.art-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.art-skeleton__row {
+    height: 44px;
+    border-radius: var(--n-radius-sm);
+    background: var(--n-border);
+    opacity: .5;
+    animation: art-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes art-pulse {
+    0%, 100% { opacity: .35; }
+    50%       { opacity: .6; }
+}
+
+/* ── Vacío ───────────────────────────────────────────────────────── */
+.art-vacio {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--n-text-3);
+    font-size: 0.9rem;
+}
+
+/* ── Badges comunes ──────────────────────────────────────────────── */
+.art-sku {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 5px;
+    background: var(--n-purple-bg-faint);
+    font-size: 0.73rem;
+    font-weight: 700;
+    color: var(--n-purple);
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.04em;
+}
+
+.art-tipo {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 5px;
+    background: rgba(16,185,129,0.09);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--n-success);
+}
+
+.art-pres {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--n-text-1);
+}
+
+.art-pres-fra {
+    font-size: 0.72rem;
+    color: var(--n-text-3);
+}
+
+.art-muted {
+    color: var(--n-text-3);
+    font-size: 0.78rem;
+    font-weight: 400;
+}
+
+.art-estado {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.6rem;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.art-estado--activo {
+    background: rgba(16,185,129,0.10);
+    color: var(--n-success);
+}
+
+.art-estado--inactivo {
+    background: var(--n-error-bg);
+    color: var(--n-error);
+}
+
+/* ── Tabla ───────────────────────────────────────────────────────── */
+.art-table-wrap {
+    overflow-x: auto;
+    border-radius: var(--n-radius);
+    border: 1px solid var(--n-border);
+    box-shadow: var(--n-shadow);
+}
+
+.art-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.art-table thead tr {
+    background: var(--n-bg);
+}
+
+.art-table th {
+    padding: 0.65rem 0.9rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--n-text-3);
+    border-bottom: 1px solid var(--n-border);
+    white-space: nowrap;
+}
+
+.art-table__th-img { width: 48px; }
+
+.art-table__row {
+    cursor: pointer;
+    transition: background .12s;
+}
+
+.art-table__row:nth-child(even) {
+    background: var(--n-bg);
+}
+
+.art-table__row:hover {
+    background: var(--n-hover-bg);
+}
+
+.art-table td {
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--n-border);
+    color: var(--n-text-1);
+    vertical-align: middle;
+}
+
+.art-table__num {
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* ── Stock desglosado por CC (vista general multi-sucursal) ──────── */
+.art-stock-cc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    justify-content: flex-end;
+}
+
+.art-stock-cc__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    background: color-mix(in srgb, var(--mud-palette-primary) 12%, transparent);
+    color: var(--mud-palette-primary-darken);
+    white-space: nowrap;
+}
+
+.art-table__td-img { width: 48px; }
+
+.art-table__thumb {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--n-border);
+    display: block;
+}
+
+.art-table__no-thumb {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: var(--n-bg);
+    border: 1px solid var(--n-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.art-table__nombre {
+    max-width: 240px;
+}
+
+.art-table__nombre-text {
+    display: block;
+    font-weight: 600;
+    color: var(--n-text-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.art-table__desc {
+    display: block;
+    font-size: 0.73rem;
+    color: var(--n-text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+
+.art-table__td-acciones {
+    width: 110px;
+    white-space: nowrap;
+}
+
+/* ── Tarjetas ────────────────────────────────────────────────────── */
+.art-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+}
+
+.art-card {
+    background: var(--n-card);
+    border: 1px solid var(--n-border);
+    border-radius: var(--n-radius);
+    box-shadow: var(--n-shadow);
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow .18s, transform .12s;
+}
+
+.art-card:hover {
+    box-shadow: var(--n-shadow-md);
+    transform: translateY(-2px);
+}
+
+.art-card__img {
+    width: 100%;
+    height: 130px;
+    object-fit: contain;
+    background: var(--n-bg);
+    padding: 0.5rem;
+    box-sizing: border-box;
+}
+
+.art-card__no-img {
+    width: 100%;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--n-bg);
+}
+
+.art-card__body {
+    padding: 0.85rem 1rem 1rem;
+}
+
+.art-card__title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--n-text-1);
+    margin-bottom: 0.35rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.art-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.art-card__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.78rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid var(--n-border);
+    color: var(--n-text-2);
+}
+
+.art-card__row:last-of-type { border-bottom: none; }
+
+.art-card__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.6rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--n-border);
+}
+
+.art-editar-link {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--n-purple);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+    .art-header { flex-direction: column; }
+    .art-filtros { flex-direction: column; }
+    .art-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 480px) {
+    .art-grid { grid-template-columns: 1fr; }
+}

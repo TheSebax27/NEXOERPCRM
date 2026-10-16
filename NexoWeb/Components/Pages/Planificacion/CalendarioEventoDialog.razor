@@ -1,0 +1,231 @@
+﻿@using NexoWeb.Common.Dtos
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Event" Class="mr-2" />
+            @(_esEdicion ? "Editar evento" : "Nuevo evento")
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_titulo" Label="Título" Required="true"
+                                  RequiredError="El título es obligatorio" MaxLength="200" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <AppSelect TValue="string" @bind-Value="_tipoEvento" Label="Tipo de evento"
+                               Items="@(new AppSelectItem<string>[]{ new("Reunión","Reunion"), new("Deadline","Deadline"), new("Capacitación","Capacitacion"), new("Entrega","Entrega"), new("Urgente","Urgente") })" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <AppSelect TValue="int?" @bind-Value="_centroCostoId" Label="Centro de Costo"
+                               Items="@(CentrosCosto.Select(cc => new AppSelectItem<int?>(cc.Nombre, (int?)cc.CentroCostoID)))" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_fechaInicioDate" Label="Fecha inicio"
+                                   DateFormat="dd/MM/yyyy" PickerVariant="PickerVariant.Dialog" Required="true"
+                                   MinDate="@(_esEdicion ? (DateTime?)null : NexoWeb.Common.ColombiaClock.Today)" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTimePicker @bind-Time="_horaInicio" Label="Hora inicio" AmPm="false" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_fechaFinDate" Label="Fecha fin"
+                                   DateFormat="dd/MM/yyyy" PickerVariant="PickerVariant.Dialog" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTimePicker @bind-Time="_horaFin" Label="Hora fin" AmPm="false" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_lugar" Label="Lugar (opcional)" MaxLength="200"
+                                  Placeholder="Sala de reuniones, dirección..." />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_linkVirtual" Label="Link virtual (opcional)" MaxLength="500"
+                                  Placeholder="https://meet.google.com/..." />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_descripcion" Label="Descripción / agenda (opcional)"
+                                  Lines="3" MaxLength="2000" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <div class="d-flex align-center justify-space-between mb-1">
+                        <MudText Typo="Typo.subtitle2">Asistentes</MudText>
+                        <div style="display:flex; gap:4px;">
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                       OnClick="SeleccionarTodos">Todos</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="DeseleccionarTodos">Ninguno</MudButton>
+                        </div>
+                    </div>
+                    <div style="border:1px solid var(--mud-palette-divider); border-radius:8px; overflow:hidden;">
+                        <div class="pa-2" style="border-bottom:1px solid var(--mud-palette-divider);">
+                            <MudTextField @bind-Value="_busquedaAsistente" Placeholder="Buscar por nombre..."
+                                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                          Clearable="true" FullWidth="true" Immediate="true" />
+                        </div>
+                        <div style="max-height:200px; overflow-y:auto;">
+                            @foreach (var u in UsuariosFiltrados)
+                            {
+                                var sel = _asistentesSet.Contains(u.UsuarioID);
+                                <div class="d-flex align-center px-3 py-1"
+                                     style="cursor:pointer; gap:8px; @(sel ? "background:color-mix(in srgb,var(--mud-palette-primary) 8%,transparent)" : "")"
+                                     @onclick="@(() => ToggleAsistente(u.UsuarioID))">
+                                    <MudIcon Icon="@(sel ? Icons.Material.Filled.CheckBox : Icons.Material.Outlined.CheckBoxOutlineBlank)"
+                                             Color="@(sel ? Color.Primary : Color.Default)" Size="Size.Small" />
+                                    <span style="font-size:0.875rem;">@u.Nombre</span>
+                                    @if (u.Email is not null)
+                                    {
+                                        <span style="font-size:0.75rem; color:var(--n-text-3); margin-left:auto;">@u.Email</span>
+                                    }
+                                </div>
+                            }
+                            @if (!UsuariosFiltrados.Any())
+                            {
+                                <div class="pa-3 text-center" style="color:var(--n-text-3); font-size:0.85rem;">
+                                    Sin resultados para "@_busquedaAsistente"
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    @if (_asistentesSet.Count > 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="mt-1" Style="color:var(--n-text-3)">
+                            @_asistentesSet.Count persona(s) seleccionada(s)
+                        </MudText>
+                    }
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="GuardarAsync">
+            @(_esEdicion ? "Guardar cambios" : "Crear evento")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public EventoCalendarioItem? Evento { get; set; }
+    [Parameter] public DateTime? FechaSugerida { get; set; }
+    [Parameter] public List<UsuarioDisponibleItem> Usuarios { get; set; } = new();
+    [Parameter] public List<CentroCostoItem> CentrosCosto { get; set; } = new();
+
+    private MudForm _form = default!;
+
+    private string _titulo = "";
+    private string _tipoEvento = "Reunion";
+    private int? _centroCostoId;
+    private DateTime? _fechaInicioDate;
+    private TimeSpan? _horaInicio = new(9, 0, 0);
+    private DateTime? _fechaFinDate;
+    private TimeSpan? _horaFin = new(10, 0, 0);
+    private string? _lugar;
+    private string? _linkVirtual;
+    private string? _descripcion;
+    private HashSet<int> _asistentesSet = new();
+    private string _busquedaAsistente = "";
+
+    private IEnumerable<UsuarioDisponibleItem> UsuariosFiltrados =>
+        string.IsNullOrWhiteSpace(_busquedaAsistente)
+            ? Usuarios
+            : Usuarios.Where(u => u.Nombre.Contains(_busquedaAsistente, StringComparison.OrdinalIgnoreCase)
+                                  || (u.Email?.Contains(_busquedaAsistente, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private bool _esEdicion => Evento is not null;
+
+    private void ToggleAsistente(int usuarioId)
+    {
+        if (!_asistentesSet.Remove(usuarioId))
+            _asistentesSet.Add(usuarioId);
+    }
+
+    private void SeleccionarTodos() => _asistentesSet = Usuarios.Select(u => u.UsuarioID).ToHashSet();
+    private void DeseleccionarTodos() => _asistentesSet = new HashSet<int>();
+
+    protected override void OnParametersSet()
+    {
+        if (Evento is not null)
+        {
+            _titulo         = Evento.Titulo;
+            _tipoEvento     = Evento.TipoEvento;
+            _centroCostoId  = Evento.CentroCostoID;
+            var inicioLocal = Evento.FechaInicio.ToLocalTime();
+            var finLocal    = Evento.FechaFin.ToLocalTime();
+            _fechaInicioDate = inicioLocal.Date;
+            _horaInicio      = inicioLocal.TimeOfDay;
+            _fechaFinDate    = finLocal.Date;
+            _horaFin         = finLocal.TimeOfDay;
+            _lugar           = Evento.Lugar;
+            _linkVirtual     = Evento.LinkVirtual;
+            _descripcion     = Evento.Descripcion;
+            _asistentesSet = Evento.Asistentes.Select(a => a.UsuarioID).ToHashSet();
+        }
+        else if (FechaSugerida is not null)
+        {
+            _fechaInicioDate = FechaSugerida.Value.Date;
+            _fechaFinDate    = FechaSugerida.Value.Date;
+        }
+        else
+        {
+            _fechaInicioDate = NexoWeb.Common.ColombiaClock.Today;
+            _fechaFinDate    = NexoWeb.Common.ColombiaClock.Today;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid) return;
+
+        if (_fechaInicioDate is null || _fechaFinDate is null) return;
+
+        var inicio = _fechaInicioDate.Value.Add(_horaInicio ?? TimeSpan.Zero).ToUniversalTime();
+        var fin    = _fechaFinDate.Value.Add(_horaFin ?? TimeSpan.Zero).ToUniversalTime();
+
+        if (!_esEdicion && inicio < DateTime.UtcNow)
+        {
+            Snackbar.Add("No se pueden crear eventos en fechas pasadas.", Severity.Warning);
+            return;
+        }
+
+        if (fin <= inicio)
+        {
+            fin = inicio.AddHours(1);
+        }
+
+        if (_esEdicion)
+        {
+            MudDialog.Close(DialogResult.Ok(new ActualizarEventoRequest(
+                _titulo.Trim(), _tipoEvento, inicio, fin,
+                string.IsNullOrWhiteSpace(_lugar) ? null : _lugar.Trim(),
+                string.IsNullOrWhiteSpace(_linkVirtual) ? null : _linkVirtual.Trim(),
+                string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim(),
+                _centroCostoId, _asistentesSet.ToList())));
+        }
+        else
+        {
+            MudDialog.Close(DialogResult.Ok(new CrearEventoRequest(
+                _titulo.Trim(), _tipoEvento, inicio, fin,
+                string.IsNullOrWhiteSpace(_lugar) ? null : _lugar.Trim(),
+                string.IsNullOrWhiteSpace(_linkVirtual) ? null : _linkVirtual.Trim(),
+                string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim(),
+                _centroCostoId, _asistentesSet.ToList())));
+        }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

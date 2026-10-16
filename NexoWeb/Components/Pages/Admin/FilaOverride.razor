@@ -1,0 +1,50 @@
+@using NexoWeb.Common.Dtos
+@inject IDialogService DialogService
+
+<div style="display:flex; align-items:center; gap:8px; padding:3px 0;
+            border-bottom:1px solid var(--mud-palette-lines-default)">
+    <MudSwitch T="bool"
+               Value="@GetValor()"
+               ValueChanged="@HandleChange"
+               Color="Color.Primary" Size="Size.Small" />
+    <span style="font-size:0.87rem; flex:1">@Item.Nombre</span>
+    @if (Item.EsOverride)
+    {
+        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined"
+                 Style="height:18px; font-size:0.65rem; padding:0 6px">
+            override
+        </MudChip>
+    }
+    @if (Hijos.Count > 0)
+    {
+        <span style="font-size:0.72rem; opacity:0.5">(@Hijos.Count)</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ModuloVisibilidadItem Item { get; set; } = default!;
+    [Parameter, EditorRequired] public Dictionary<int, bool> Pending { get; set; } = [];
+    [Parameter] public List<ModuloVisibilidadItem> Hijos { get; set; } = [];
+    [Parameter] public EventCallback<KeyValuePair<int, bool>> OnChange { get; set; }
+
+    private bool GetValor() =>
+        Pending.TryGetValue(Item.ModuloID, out var v) ? v : (Item.Visible ?? true);
+
+    private async Task HandleChange(bool val)
+    {
+        if (val && Item.Codigo.StartsWith("RRHH"))
+        {
+            var ok = await DialogService.ShowMessageBox(
+                "Módulo sensible - Recursos Humanos",
+                $"El módulo '{Item.Nombre}' forma parte de Recursos Humanos, un área con información " +
+                $"confidencial (empleados, salarios, asistencia). " +
+                $"¿Seguro que deseas habilitarlo para este usuario?",
+                yesText: "Sí, habilitar", cancelText: "Cancelar");
+            if (ok != true) return;
+        }
+        await OnChange.InvokeAsync(new KeyValuePair<int, bool>(Item.ModuloID, val));
+        // Cascade a hijos del grupo
+        foreach (var hijo in Hijos)
+            await OnChange.InvokeAsync(new KeyValuePair<int, bool>(hijo.ModuloID, val));
+    }
+}

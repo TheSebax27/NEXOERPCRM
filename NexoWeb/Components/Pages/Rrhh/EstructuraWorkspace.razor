@@ -1,0 +1,34 @@
+@page "/rrhh/estructura"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>Estructura — NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Estructura organizacional</h1>
+        </div>
+    </div>
+</div>
+
+<MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true"
+         Class="nexo-bi-tabs mb-2"
+         ActivePanelIndex="_tabIndex" ActivePanelIndexChanged="OnTabChanged">
+    <MudTabPanel Text="Cargos y Dptos." Icon="@Icons.Material.Filled.Work">
+        <CargosDepartamentos />
+    </MudTabPanel>
+    <MudTabPanel Text="Organigrama" Icon="@Icons.Material.Filled.AccountTree">
+        <Organigrama />
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")] public int TabQuery { get; set; }
+    private int _tabIndex;
+
+    protected override void OnParametersSet() => _tabIndex = TabQuery;
+
+    private void OnTabChanged(int idx) => _tabIndex = idx;
+}

@@ -1,0 +1,87 @@
+# ============================================================
+# .NET build output
+# ============================================================
+bin/
+obj/
+obj2/
+publish/
+Publish/
+**/publish/
+**/Publish/
+
+# ============================================================
+# Secrets — NEVER commit real values
+# ============================================================
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Staging.json
+appsettings.local.json
+appsettings.Local.json
+# The base appsettings.json should only have placeholder values
+# Real secrets go in appsettings.Development.json (ignored above)
+
+# Certificates / keys
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+secrets.json
+.env
+.env.*
+
+# ============================================================
+# Vendor / generated static assets (restore with libman/npm)
+# ============================================================
+**/wwwroot/lib/
+**/wwwroot/tailwind.css
+
+# ============================================================
+# Visual Studio / Rider / VS Code
+# ============================================================
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.pidb
+*.booproj
+*.svd
+*.userprefs
+
+# ============================================================
+# OS noise
+# ============================================================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ============================================================
+# Claude Code worktrees / session files
+# ============================================================
+.claude/worktrees/
+.claude/projects/
+
+# ============================================================
+# NuGet
+# ============================================================
+*.nupkg
+**/packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ============================================================
+# Logs / crash dumps
+# ============================================================
+*.log
+*.log.*
+*.trace
+*.dmp
+nohup.out

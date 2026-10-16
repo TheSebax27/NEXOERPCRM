@@ -1,0 +1,92 @@
+@page "/formularios/{FormularioID:int}/respuestas"
+@using System.Text.Json
+@inject INexoApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Respuestas | NEXO ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+
+    <div class="d-flex align-center mb-4 gap-3">
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack"
+                   OnClick="@(() => Nav.NavigateTo("/formularios"))" Size="Size.Small">
+            Formularios
+        </MudButton>
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">@(_formulario?.Titulo ?? "Respuestas")</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@_respuestas.Count respuesta(s)</MudText>
+        </div>
+    </div>
+
+    @if (_cargando)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-3" />
+    }
+
+    @if (!_cargando && _respuestas.Count == 0)
+    {
+        <MudPaper Class="pa-4 pa-sm-10 text-center" Elevation="0"
+                  Style="border:2px dashed var(--mud-palette-lines-default);border-radius:16px">
+            <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
+            <MudText Color="Color.Secondary">Aún no hay respuestas para este formulario.</MudText>
+        </MudPaper>
+    }
+
+    @foreach (var r in _respuestas)
+    {
+        <MudPaper Class="pa-4 mb-3 frm-respuesta-card" Elevation="0"
+                  Style="border:1px solid var(--mud-palette-lines-default);border-radius:12px">
+            <div class="d-flex justify-space-between align-center mb-3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" />
+                    @r.FechaRespuesta.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                </MudText>
+                @if (!string.IsNullOrEmpty(r.IPOrigen))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">IP: @r.IPOrigen</MudText>
+                }
+            </div>
+            <div class="frm-respuesta-campos">
+                @foreach (var campo in _campos)
+                {
+                    var valor = ObtenerValor(r.Datos, campo.Etiqueta);
+                    <div class="frm-resp-campo">
+                        <div class="frm-resp-label">@campo.Etiqueta</div>
+                        <div class="frm-resp-valor">@(string.IsNullOrWhiteSpace(valor) ? "-" : valor)</div>
+                    </div>
+                }
+            </div>
+        </MudPaper>
+    }
+
+</MudContainer>
+
+@code {
+    [Parameter] public int FormularioID { get; set; }
+
+    private FormularioItem? _formulario;
+    private List<FormularioRespuestaItem> _respuestas = new();
+    private List<FormularioCampoItem> _campos = new();
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cargando = true;
+        _formulario = await Api.GetAsync<FormularioItem>($"api/formularios/{FormularioID}");
+        _campos = (await Api.GetAsync<List<FormularioCampoItem>>($"api/formularios/{FormularioID}/campos") ?? []);
+        _respuestas = (await Api.GetAsync<List<FormularioRespuestaItem>>($"api/formularios/{FormularioID}/respuestas") ?? []);
+        _cargando = false;
+    }
+
+    private static string ObtenerValor(string json, string etiqueta)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty(etiqueta, out var v)
+                ? v.GetString() ?? string.Empty
+                : string.Empty;
+        }
+        catch { return string.Empty; }
+    }
+}

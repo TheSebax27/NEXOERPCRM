@@ -1,0 +1,617 @@
+﻿@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.Helpers
+@using NexoWeb.Components.Pages.Crm
+@inject ISnackbar Snackbar
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfigEmpresa
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:10px">
+            <MudIcon Icon="@Icons.Material.Outlined.Receipt" Style="color:var(--mud-palette-primary)" />
+            <div>
+                <div style="font-weight:700; font-size:1.05rem">Nueva Factura</div>
+                <div style="font-size:0.75rem; opacity:.65">Completa los datos del documento.</div>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form" Model="@this">
+
+            @* ── Centro de Costo de venta (va primero para determinar si Visions gestiona el número) ── *@
+            @if (CentrosCosto.Count > 0)
+            {
+                <AppSelect TValue="int?" Value="_centroCostoId" Label="Centro de Costo"
+                           Class="mb-3" Placeholder="Sin asignar" ValueChanged="OnCentroCostoCambiado"
+                           Items="@(CentrosCosto.Select(cc => new AppSelectItem<int?>(cc.Nombre, (int?)cc.CentroCostoID)))" />
+            }
+
+            @* ── Cabecera: Tipo de documento + Nro ── *@
+            @if (_ccTieneVisions)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3" Icon="@Icons.Material.Outlined.ReceiptLong">
+                    Visions asignará el tipo y número de documento de forma automática.
+                </MudAlert>
+            }
+            else
+            {
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px">
+                    <AppSelect TValue="string" @bind-Value="_tipDoc" Label="Tipo de Documento"
+                               Items="@(TiposDocumento.Todos.Select(td => new AppSelectItem<string>(td, td)))" />
+                    <MudTextField @bind-Value="_nroDoc" Label="Nro. Documento (opcional)"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </div>
+            }
+
+            @* ── Cliente ── *@
+            <div class="d-flex align-center mb-2" style="gap:1rem">
+                <MudSwitch Value="_consumidorFinal" ValueChanged="OnConsumidorFinalCambiado"
+                           T="bool" Color="Color.Primary" Label="Consumidor Final" />
+            </div>
+            @if (!_consumidorFinal)
+            {
+                @if (ClienteIdPre is not null)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3"
+                              Icon="@Icons.Material.Outlined.LocalShipping">
+                        Cliente: <strong>@ClienteNombrePre</strong> (desde despacho)
+                    </MudAlert>
+                }
+                else
+                {
+                    <div class="mb-3">
+                        <MudTextField T="string?" Value="_nitBusqueda"
+                                      ValueChanged="OnNitBusquedaCambiado"
+                                      Label="NIT / Documento del cliente"
+                                      Placeholder="Escribe el NIT o cédula"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                      Immediate="true" DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        @if (_clienteEncontrado is not null)
+                        {
+                            <MudAlert Severity="Severity.Success" Dense="true" Class="mt-1"
+                                      Icon="@Icons.Material.Outlined.CheckCircle">
+                                <strong>@_clienteEncontrado.Nombre</strong> — NIT @_clienteEncontrado.NIT
+                            </MudAlert>
+                        }
+                        else if (_nitNoEncontrado)
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-1">
+                                NIT <strong>@_nitBusqueda</strong> no está registrado.
+                                <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Text"
+                                           OnClick="AbrirCreacionClienteAsync" Class="ml-1">
+                                    Crear cliente
+                                </MudButton>
+                            </MudAlert>
+                        }
+                    </div>
+                }
+            }
+
+            <div style="display:grid; grid-template-columns:160px 1fr; gap:10px; margin-bottom:14px">
+                <MudDatePicker @bind-Date="_fecha" Label="Fecha" Required="true"
+                               DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_notas" Label="Notas (opcional)"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+
+            <MudDivider Class="mb-3" />
+
+            @* ── Tabla unificada de lineas (articulos + combos) ── *@
+            <div class="d-flex align-center justify-space-between mb-2">
+                <MudText Typo="Typo.subtitle2">Artículos / Combos</MudText>
+                <div class="d-flex" style="gap:.4rem">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="AgregarLinea">Agregar artículo</MudButton>
+                    @if (!UsaVisions)
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.LocalOffer"
+                                   Color="Color.Secondary" OnClick="AgregarCombo">Agregar combo</MudButton>
+                    }
+                </div>
+            </div>
+
+            @if (_lineas.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Agrega al menos un artículo o combo.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_lineas" Dense="true" Hover="false" Elevation="0"
+                          Style="border:1px solid var(--mud-palette-divider); border-radius:8px; overflow:hidden">
+                    <HeaderContent>
+                        <MudTh Style="width:40%">Artículo / Combo</MudTh>
+                        <MudTh Style="width:18%">Cantidad</MudTh>
+                        <MudTh Style="width:20%">Precio unit.</MudTh>
+                        <MudTh Style="text-align:right; width:14%">Subtotal</MudTh>
+                        <MudTh Style="width:8%"></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        @{
+                            var art = context.TipoLinea == TipoLinea.Articulo ? context.Articulo : null;
+                        }
+                        <MudTd>
+                            @if (context.TipoLinea == TipoLinea.Articulo)
+                            {
+                                <div class="d-flex align-center" style="gap:6px">
+                                    <div @onclick="@(() => _imagenAmpliada = (art?.TieneImagen == true ? art.ArticuloID : (int?)null))"
+                                         style="width:32px;min-width:32px;height:32px;border-radius:5px;overflow:hidden;background:var(--mud-palette-surface);border:1px solid var(--mud-palette-divider);display:flex;align-items:center;justify-content:center;cursor:@(art?.TieneImagen == true ? "pointer" : "default");">
+                                        @if (art?.TieneImagen == true)
+                                        {
+                                            <img src="api/catalogo/articulos/@art.ArticuloID/imagen" style="width:100%;height:100%;object-fit:cover;" alt="" />
+                                        }
+                                        else
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Outlined.Image" Size="Size.Small" Style="color:var(--n-text-3)" />
+                                        }
+                                    </div>
+                                    <div style="flex:1">
+                                        <MudAutocomplete T="ArticuloItem?" Dense="true" Margin="Margin.Dense"
+                                                         Variant="Variant.Text" Style="font-size:0.85rem"
+                                                         Value="@context.Articulo"
+                                                         ValueChanged="@((ArticuloItem? a) => OnArticuloAutocompletado(context, a))"
+                                                         SearchFunc="@BuscarArticulo"
+                                                         ToStringFunc="@(a => a is null ? "" : $"{a.SKU} – {a.Nombre}")"
+                                                         Placeholder="Busca por nombre o SKU..."
+                                                         MinCharacters="0" MaxItems="12"
+                                                         ResetValueOnEmptyText="false"
+                                                         CoerceText="false" CoerceValue="false" />
+                                        @if (art is not null)
+                                        {
+                                            <div style="font-size:0.68rem; color:var(--n-text-3); margin-top:1px; line-height:1.2">
+                                                Disp:&nbsp;<strong style="color:@(art.Existencias > 0 ? "var(--mud-palette-success-darken)" : "var(--mud-palette-error)")">@art.Existencias.ToString("N0")</strong>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                var comboSel = _combosActivos.FirstOrDefault(c => c.ComboID == context.ComboID);
+                                <div class="d-flex align-center" style="gap:4px">
+                                    <div @onclick="@(() => { if (comboSel?.TieneImagen == true) _imagenAmpliadaComboUri = comboSel.ImagenDataUri; })"
+                                         style="width:32px;min-width:32px;height:32px;border-radius:5px;overflow:hidden;background:var(--mud-palette-surface);border:1px solid var(--mud-palette-divider);display:flex;align-items:center;justify-content:center;cursor:@(comboSel?.TieneImagen == true ? "pointer" : "default");">
+                                        @if (comboSel?.TieneImagen == true)
+                                        {
+                                            <img src="@comboSel.ImagenDataUri" style="width:100%;height:100%;object-fit:cover;" alt="" />
+                                        }
+                                        else
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.LocalOffer" Size="Size.Small" Style="color:var(--n-text-3)" />
+                                        }
+                                    </div>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary"
+                                             Icon="@Icons.Material.Filled.LocalOffer" Class="ma-0">COMBO</MudChip>
+                                    <MudAutocomplete T="ComboItem?" Dense="true" Margin="Margin.Dense"
+                                                     Variant="Variant.Text" Style="font-size:0.85rem; flex:1"
+                                                     Value="@(_combosActivos.FirstOrDefault(c => c.ComboID == context.ComboID))"
+                                                     ValueChanged="@((ComboItem? c) => OnComboAutocompletado(context, c))"
+                                                     SearchFunc="@BuscarCombo"
+                                                     ToStringFunc="@(c => c?.Nombre ?? "")"
+                                                     Placeholder="Busca combo..."
+                                                     MinCharacters="0" MaxItems="10"
+                                                     ResetValueOnEmptyText="false"
+                                                     CoerceText="false" CoerceValue="false" />
+                                </div>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            @if (context.TipoLinea == TipoLinea.Articulo && art?.EsUnidadCaja == true)
+                            {
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:2px">
+                                    <MudNumericField T="int" @bind-Value="context.Cajas" Label="Cjs"
+                                                     Dense="true" Margin="Margin.Dense" Variant="Variant.Text" Min="0" />
+                                    @if (!art.SoloEnCajas)
+                                    {
+                                        <MudNumericField T="int" @bind-Value="context.Unidades" Label="Und"
+                                                         Dense="true" Margin="Margin.Dense" Variant="Variant.Text"
+                                                         Min="0" Max="@((int)(art.UnidadesPorEmbalaje!.Value - 1))" />
+                                    }
+                                </div>
+                                <MudText Typo="Typo.caption" Style="color:var(--n-text-3); font-size:0.7rem">
+                                    = @CantidadFinal(context).ToString("N4")
+                                </MudText>
+                            }
+                            else
+                            {
+                                <MudNumericField T="decimal" @bind-Value="context.CantidadSimple"
+                                                 Dense="true" Margin="Margin.Dense" Variant="Variant.Text"
+                                                 Min="0.01m" Format="N2" />
+                            }
+                            @if (art is not null && CantidadFinal(context) > art.Existencias)
+                            {
+                                <div style="font-size:0.67rem; color:var(--mud-palette-error); margin-top:1px; white-space:nowrap">
+                                    ⚠ Supera stock (@art.Existencias.ToString("N0") disp.)
+                                </div>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            @if (context.UsarPrecioCatalogo && context.TipoLinea == TipoLinea.Articulo)
+                            {
+                                <div class="d-flex align-center" style="gap:2px">
+                                    <MudText Typo="Typo.body2">@context.PrecioUnitario.ToString("N0")</MudText>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => context.UsarPrecioCatalogo = false)"
+                                                   Title="Precio personalizado" />
+                                </div>
+                            }
+                            else
+                            {
+                                <MudNumericField T="decimal" @bind-Value="context.PrecioUnitario"
+                                                 Dense="true" Margin="Margin.Dense" Variant="Variant.Text"
+                                                 Min="0m" Format="N0" />
+                            }
+                            @if (context.TipoLinea == TipoLinea.Articulo && art is not null
+                                 && !context.UsarPrecioCatalogo && context.PrecioUnitario != art.PrecioVenta)
+                            {
+                                <MudText Typo="Typo.caption" Style="color:var(--mud-palette-warning); font-size:0.7rem">Precio especial</MudText>
+                            }
+                            @if (context.UltimoPrecio is { } up)
+                            {
+                                <MudText Typo="Typo.caption" Style="color:var(--mud-palette-info); font-size:0.7rem"
+                                         title="@($"Factura {up.NroDoc ?? "s/n"} del {up.Fecha:dd/MM/yy}")">
+                                    Últ: @up.Precio.ToString("N0") (@up.Fecha.ToString("dd/MM/yy"))
+                                </MudText>
+                            }
+                        </MudTd>
+                        <MudTd Style="text-align:right; font-weight:600">
+                            @((CantidadFinal(context) * context.PrecioUnitario).ToString("C0"))
+                        </MudTd>
+                        <MudTd Style="text-align:center">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                           Size="Size.Small" OnClick="@(() => _lineas.Remove(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                    <FooterContent>
+                        <MudTd colspan="5" Style="text-align:right; padding-right:12px; font-weight:700; font-size:1rem; border-top:1px solid var(--mud-palette-divider)">
+                            Total: @_lineas.Sum(l => CantidadFinal(l) * l.PrecioUnitario).ToString("C0")
+                        </MudTd>
+                    </FooterContent>
+                </MudTable>
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        @{
+            var _lineasSinStock = _lineas.Where(l => l.TipoLinea == TipoLinea.Articulo
+                && l.Articulo is not null && CantidadFinal(l) > l.Articulo.Existencias).ToList();
+        }
+        @if (_lineasSinStock.Count > 0)
+        {
+            <div style="width:100%; padding:0 8px 8px">
+                <MudAlert Severity="@(ConfigEmpresa.VenderSinStock ? Severity.Warning : Severity.Error)" Dense="true" Class="mb-2" Style="font-size:0.78rem">
+                    @if (ConfigEmpresa.VenderSinStock)
+                    {
+                        @($"Stock insuficiente en {_lineasSinStock.Count} artículo(s). Se facturará igual — el stock quedará en negativo.")
+                    }
+                    else if (_lineasSinStock.Count == 1)
+                    {
+                        @($"No hay stock suficiente de '{_lineasSinStock[0].Articulo!.Nombre}' ({_lineasSinStock[0].Articulo!.Existencias:N0} disponibles). Debes producir antes de facturar.")
+                    }
+                    else
+                    {
+                        @($"{_lineasSinStock.Count} artículos no tienen stock suficiente. Debes producirlos antes de facturar.")
+                    }
+                </MudAlert>
+                @if (!ConfigEmpresa.VenderSinStock)
+                {
+                    <div style="display:flex; flex-wrap:wrap; gap:8px">
+                        @foreach (var linea in _lineasSinStock)
+                        {
+                            <MudButton Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Outlined.PrecisionManufacturing"
+                                       OnClick="@(() => IrAProducirAsync(linea.Articulo!))"
+                                       Disabled="_navegandoAProduccion">
+                                Producir @linea.Articulo!.Nombre
+                            </MudButton>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync"
+                   Disabled="_lineasSinStock.Count > 0 && !ConfigEmpresa.VenderSinStock">
+            Crear Factura
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@if (_imagenAmpliada.HasValue)
+{
+    <div @onclick="@(() => _imagenAmpliada = null)"
+         style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+        <img src="api/catalogo/articulos/@_imagenAmpliada/imagen"
+             style="max-width:80vw;max-height:80vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.6);" alt="" />
+    </div>
+}
+
+@if (_imagenAmpliadaComboUri is not null)
+{
+    <div @onclick="@(() => _imagenAmpliadaComboUri = null)"
+         style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+        <img src="@_imagenAmpliadaComboUri"
+             style="max-width:80vw;max-height:80vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.6);" alt="" />
+    </div>
+}
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    private int? _imagenAmpliada;
+    private string? _imagenAmpliadaComboUri;
+
+    // Clientes y Articulos se buscan por API — no se pasan como listas
+    [Parameter] public List<ComboItem> CombosActivos { get; set; } = new();
+    [Parameter] public List<CentroCostoBasicoItem> CentrosCosto { get; set; } = new();
+    [Parameter] public bool UsaVisions { get; set; } = false;
+
+    // Pre-fill desde un despacho (opcional): si se pasan, se salta la búsqueda de NIT
+    [Parameter] public int? ClienteIdPre { get; set; }
+    [Parameter] public string? ClienteNombrePre { get; set; }
+    [Parameter] public int? CentroCostoIdPre { get; set; }
+
+    private enum TipoLinea { Articulo, Combo }
+
+    private class LineaEditable
+    {
+        public TipoLinea   TipoLinea      { get; set; } = TipoLinea.Articulo;
+        public int?        ArticuloID     { get; set; }
+        public ArticuloItem? Articulo     { get; set; }
+        public int?        ComboID        { get; set; }
+        public string?     NombreCombo    { get; set; }
+        public int         Cajas          { get; set; } = 1;
+        public int         Unidades       { get; set; } = 0;
+        public decimal     CantidadSimple { get; set; } = 1;
+        public decimal     PrecioUnitario { get; set; }
+        public bool        UsarPrecioCatalogo { get; set; } = true;
+        public UltimoPrecioItem? UltimoPrecio { get; set; }
+    }
+
+    private const int ClienteConsumidorFinalId = 11;
+
+    private MudForm _form = default!;
+    private bool _navegandoAProduccion;
+    private string _tipDoc = "FACTURA";
+    private string? _nroDoc;
+    private bool _consumidorFinal;
+    private int? _clienteId;
+    private int? _centroCostoId;
+
+    // Búsqueda de cliente por NIT
+    private string? _nitBusqueda;
+    private ClienteItem? _clienteEncontrado;
+    private bool _nitNoEncontrado;
+    private bool _ccTieneVisions;
+    private DateTime? _fecha = NexoWeb.Common.ColombiaClock.Today;
+    private string? _notas;
+    private List<LineaEditable> _lineas = new() { new LineaEditable() };
+    private List<ComboItem> _combosActivos => CombosActivos;
+
+
+
+    protected override void OnInitialized()
+    {
+        if (ClienteIdPre is not null)
+            _clienteId = ClienteIdPre;
+        if (CentroCostoIdPre is not null)
+            OnCentroCostoCambiado(CentroCostoIdPre);
+        else if (CentrosCosto.Count == 1)
+            OnCentroCostoCambiado(CentrosCosto[0].CentroCostoID);
+    }
+
+    private void OnConsumidorFinalCambiado(bool valor)
+    {
+        _consumidorFinal = valor;
+        _nitBusqueda = null;
+        _clienteEncontrado = null;
+        _nitNoEncontrado = false;
+        _clienteId = null;
+    }
+
+    private async Task OnNitBusquedaCambiado(string? nit)
+    {
+        _nitBusqueda = nit?.Trim();
+        _clienteEncontrado = null;
+        _nitNoEncontrado = false;
+        _clienteId = null;
+        if (string.IsNullOrWhiteSpace(_nitBusqueda)) return;
+
+        StateHasChanged();
+        try
+        {
+            var resp = await ApiClient.GetAsync<ClientesPaginadosResponse>(
+                $"api/crm/clientes/paginados?texto={Uri.EscapeDataString(_nitBusqueda)}&tamano=10");
+            var c = resp?.Items?.FirstOrDefault(x => x.NIT?.Trim() == _nitBusqueda);
+            if (c is not null)
+            {
+                _clienteEncontrado = c;
+                _clienteId = c.ClienteID;
+            }
+            else
+            {
+                _nitNoEncontrado = true;
+            }
+        }
+        finally
+        {
+        }
+    }
+
+    private async Task AbrirCreacionClienteAsync()
+    {
+        var parametros = new DialogParameters<ClienteDialog>
+        {
+            { x => x.Cliente, null },
+            { x => x.Empleados, new() },
+            { x => x.NitInicial, _nitBusqueda }
+        };
+        var dialogo = await DialogService.ShowAsync<ClienteDialog>("Nuevo Cliente", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+
+        var req = (CrearClienteRequest)resultado.Data!;
+        try
+        {
+            await ApiClient.PostAsync<CrearClienteRequest, object?>("api/crm/clientes", req);
+            await OnNitBusquedaCambiado(_nitBusqueda);
+            if (_clienteEncontrado is not null)
+                Snackbar.Add("Cliente creado y seleccionado.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al crear cliente: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void OnCentroCostoCambiado(int? id)
+    {
+        _centroCostoId = id;
+        var cc = CentrosCosto.FirstOrDefault(c => c.CentroCostoID == id);
+        _ccTieneVisions = cc?.TieneVisions ?? false;
+        if (_ccTieneVisions)
+        {
+            _tipDoc = "FACTURA";
+            _nroDoc = null;
+        }
+    }
+
+    private void AgregarLinea() =>
+        _lineas.Add(new LineaEditable { TipoLinea = TipoLinea.Articulo });
+
+    private void AgregarCombo() =>
+        _lineas.Add(new LineaEditable { TipoLinea = TipoLinea.Combo });
+
+    private decimal CantidadFinal(LineaEditable linea)
+    {
+        if (linea.TipoLinea == TipoLinea.Combo)
+            return linea.CantidadSimple;
+
+        if (linea.Articulo?.EsUnidadCaja == true)
+            return StockHelper.CajasYUnidadesADecimal(linea.Cajas, linea.Unidades, linea.Articulo.UnidadesPorEmbalaje!.Value);
+
+        return linea.CantidadSimple;
+    }
+
+    private async Task<IEnumerable<ArticuloItem?>> BuscarArticulo(string? texto, CancellationToken ct)
+    {
+        var q = string.IsNullOrWhiteSpace(texto)
+            ? "api/catalogo/articulos?estado=true&pagina=1&tamano=15"
+            : $"api/catalogo/articulos?texto={Uri.EscapeDataString(texto)}&estado=true&pagina=1&tamano=15";
+        var resp = await ApiClient.GetAsync<ArticulosPaginadosResponse>(q);
+        return resp?.Items?.Cast<ArticuloItem?>() ?? Enumerable.Empty<ArticuloItem?>();
+    }
+
+    private Task<IEnumerable<ComboItem?>> BuscarCombo(string? texto, CancellationToken ct)
+    {
+        IEnumerable<ComboItem?> resultado = string.IsNullOrWhiteSpace(texto)
+            ? _combosActivos.Take(10).Cast<ComboItem?>()
+            : _combosActivos.Where(c =>
+                c.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase))
+              .Take(10).Cast<ComboItem?>();
+        return Task.FromResult(resultado);
+    }
+
+    private async void OnArticuloAutocompletado(LineaEditable linea, ArticuloItem? art)
+    {
+        linea.ArticuloID = art?.ArticuloID;
+        linea.Articulo = art;
+        linea.Cajas = 1;
+        linea.Unidades = 0;
+        linea.CantidadSimple = 1;
+        linea.PrecioUnitario = art?.PrecioVenta ?? 0;
+        linea.UsarPrecioCatalogo = true;
+        linea.UltimoPrecio = null;
+
+        if (art is not null && _clienteId is > 0)
+        {
+            try
+            {
+                linea.UltimoPrecio = await ApiClient.GetAsync<UltimoPrecioItem>(
+                    $"api/facturacion/ultimo-precio?clienteId={_clienteId}&articuloId={art.ArticuloID}");
+            }
+            catch { /* no crítico */ }
+            StateHasChanged();
+        }
+    }
+
+    private void OnComboAutocompletado(LineaEditable linea, ComboItem? combo)
+    {
+        linea.ComboID = combo?.ComboID;
+        linea.NombreCombo = combo?.Nombre;
+        linea.PrecioUnitario = combo?.PrecioEfectivo ?? 0;
+        linea.CantidadSimple = 1;
+    }
+
+    // Mantenido por si algún caller externo lo necesita; la tabla de líneas usa OnArticuloAutocompletado.
+    private void OnArticuloCambiado(LineaEditable linea, int? articuloId) { }
+
+    private void OnComboCambiado(LineaEditable linea, int? comboId)
+    {
+        linea.ComboID = comboId;
+        var combo = _combosActivos.FirstOrDefault(c => c.ComboID == comboId);
+        linea.NombreCombo = combo?.Nombre;
+        linea.PrecioUnitario = combo?.PrecioEfectivo ?? 0;
+        linea.CantidadSimple = 1;
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        var clienteIdFinal = _consumidorFinal ? ClienteConsumidorFinalId : _clienteId;
+        if (!_form.IsValid || _fecha is null)
+            return;
+        if (!_consumidorFinal && clienteIdFinal is null)
+        {
+            Snackbar.Add("Ingresa el NIT del cliente y verifica que exista antes de crear la factura.", Severity.Warning);
+            return;
+        }
+
+        var lineasValidas = _lineas
+            .Where(l => l.TipoLinea == TipoLinea.Articulo
+                        ? l.ArticuloID is not null && CantidadFinal(l) > 0
+                        : l.ComboID is not null && CantidadFinal(l) > 0)
+            .Select(l => l.TipoLinea == TipoLinea.Articulo
+                ? new LineaFacturaInput(l.ArticuloID, null, null, CantidadFinal(l), l.PrecioUnitario)
+                : new LineaFacturaInput(null, l.ComboID, l.NombreCombo, CantidadFinal(l), l.PrecioUnitario))
+            .ToList();
+
+        if (lineasValidas.Count == 0)
+        {
+            Snackbar.Add("Agrega al menos un artículo o combo con cantidad mayor a cero.", Severity.Warning);
+            return;
+        }
+
+        var request = new CrearFacturaRequest(
+            clienteIdFinal!.Value, _fecha.Value, _notas,
+            _tipDoc, _nroDoc,
+            lineasValidas,
+            _centroCostoId);
+        MudDialog.Close(DialogResult.Ok(request));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+
+    private async Task IrAProducirAsync(ArticuloItem art)
+    {
+        _navegandoAProduccion = true;
+        string destino;
+        try
+        {
+            var recetas = await ApiClient.GetAsync<List<RecetaResumen>>(
+                $"api/produccion/recetas?productoTerminadoId={art.ArticuloID}&soloActivas=true");
+            destino = (recetas?.Count ?? 0) > 0
+                ? $"/produccion/ordenes/crear?articuloId={art.ArticuloID}"
+                : $"/produccion/recetas/crear?articuloId={art.ArticuloID}";
+        }
+        catch
+        {
+            destino = $"/produccion/ordenes/crear?articuloId={art.ArticuloID}";
+        }
+        MudDialog.Cancel();
+        Nav.NavigateTo(destino);
+    }
+}

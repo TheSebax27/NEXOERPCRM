@@ -1,0 +1,267 @@
+﻿@page "/inventario/traspasos"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Traspasos — NEXO</PageTitle>
+
+<div class="inv-header">
+    <div class="inv-header__left">
+        <h1 class="inv-header__title">
+            <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Class="inv-header__icon" />
+            Traspasos entre Bodegas
+        </h1>
+        <p class="inv-header__sub">El stock se descuenta de la bodega origen al enviar y se suma en destino al confirmar la recepción.</p>
+    </div>
+    <div class="inv-header__actions" style="display:flex;align-items:center;gap:8px;">
+        <VistaToggle OnCambio="StateHasChanged" />
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+                   StartIcon="@Icons.Material.Filled.Add">
+            Nuevo Traspaso
+        </MudButton>
+    </div>
+</div>
+<InfoAyuda Texto="Mueve stock entre bodegas: se descuenta en origen al enviar y se acredita en destino al confirmar la recepción del traspaso." />
+
+
+@* ── Resumen ─────────────────────────────────────────────────────────── *@
+@if (!_cargando && _traspasos.Count > 0)
+{
+    <div class="inv-kpis">
+        <div class="inv-kpi">
+            <span class="inv-kpi__label">Total</span>
+            <span class="inv-kpi__value">@_traspasos.Count</span>
+        </div>
+        @if (_traspasos.Any(t => t.EstadoTraspaso == "EN_TRANSITO"))
+        {
+            <div class="inv-kpi inv-kpi--warn">
+                <span class="inv-kpi__label">En tránsito</span>
+                <span class="inv-kpi__value">@_traspasos.Count(t => t.EstadoTraspaso == "EN_TRANSITO")</span>
+            </div>
+        }
+        @if (_traspasos.Any(t => t.EstadoTraspaso == "RECIBIDO"))
+        {
+            <div class="inv-kpi">
+                <span class="inv-kpi__label">Recibidos</span>
+                <span class="inv-kpi__value">@_traspasos.Count(t => t.EstadoTraspaso == "RECIBIDO")</span>
+            </div>
+        }
+    </div>
+}
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los traspasos: @_errorCarga</MudAlert>
+}
+
+@if (_cargando)
+{
+    <div class="inv-skeleton">
+        @for (int i = 0; i < 6; i++) { <div class="inv-skeleton__row"></div> }
+    </div>
+}
+else if (_traspasos.Count == 0)
+{
+    <div class="inv-vacio">
+        <MudIcon Icon="@Icons.Material.Outlined.SwapHoriz" Style="font-size:3rem; color:var(--n-text-3); display:block; margin-bottom:.75rem;" />
+        <p>No hay traspasos registrados aún.</p>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+                   StartIcon="@Icons.Material.Filled.Add" Class="mt-2">
+            Crear primer traspaso
+        </MudButton>
+    </div>
+}
+else if (Preferencias.VistaListado == "tarjetas")
+{
+    <div class="inv-grid">
+        @foreach (var t in _traspasos)
+        {
+            <div class="tra-card">
+                <div class="tra-card__head">
+                    <span class="tra-codigo">@t.Codigo</span>
+                    <span class="tra-estado tra-estado--@t.EstadoTraspaso.ToLower()">@EstadoLabel(t.EstadoTraspaso)</span>
+                </div>
+                <div class="tra-card__ruta">
+                    <span>@t.BodegaOrigen</span>
+                    <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Style="font-size:1rem; color:var(--n-text-3);" />
+                    <span>@t.BodegaDestino</span>
+                </div>
+                <div class="tra-card__fechas">
+                    @if (t.FechaEnvio.HasValue)
+                    {
+                        <div><span class="inv-muted">Envío</span> @t.FechaEnvio.Value.ToString("dd/MM/yyyy HH:mm")</div>
+                    }
+                    @if (t.FechaRecepcion.HasValue)
+                    {
+                        <div><span class="inv-muted">Recepción</span> @t.FechaRecepcion.Value.ToString("dd/MM/yyyy HH:mm")</div>
+                    }
+                </div>
+                <div class="tra-card__actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               OnClick="@(() => VerDetalleAsync(t.TraspasoID))">
+                        Ver detalle
+                    </MudButton>
+                    @if (t.EstadoTraspaso == "EN_TRANSITO")
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="@(() => RecibirAsync(t.TraspasoID))">
+                            Recibir
+                        </MudButton>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="inv-table-wrap">
+        <table class="inv-table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Origen</th>
+                    <th></th>
+                    <th>Destino</th>
+                    <th>Estado</th>
+                    <th>Envío</th>
+                    <th>Recepción</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _traspasos)
+                {
+                    <tr class="inv-table__row">
+                        <td><span class="tra-codigo">@t.Codigo</span></td>
+                        <td>@t.BodegaOrigen</td>
+                        <td class="inv-muted" style="text-align:center; padding:0 4px;">→</td>
+                        <td>@t.BodegaDestino</td>
+                        <td>
+                            <span class="tra-estado tra-estado--@t.EstadoTraspaso.ToLower()">
+                                @EstadoLabel(t.EstadoTraspaso)
+                            </span>
+                        </td>
+                        <td class="inv-muted" style="white-space:nowrap; font-size:0.8rem;">
+                            @(t.FechaEnvio?.ToString("dd/MM/yyyy HH:mm") ?? "—")
+                        </td>
+                        <td class="inv-muted" style="white-space:nowrap; font-size:0.8rem;">
+                            @(t.FechaRecepcion?.ToString("dd/MM/yyyy HH:mm") ?? "—")
+                        </td>
+                        <td>
+                            <div class="tra-acciones">
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                           OnClick="@(() => VerDetalleAsync(t.TraspasoID))">
+                                    Detalle
+                                </MudButton>
+                                @if (t.EstadoTraspaso == "EN_TRANSITO")
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                               OnClick="@(() => RecibirAsync(t.TraspasoID))">
+                                        Recibir
+                                    </MudButton>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<TraspasoResumen> _traspasos = new();
+    private List<BodegaItem>      _bodegas   = new();
+    private bool    _cargando   = true;
+    private string? _errorCarga;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true; _errorCarga = null;
+        try
+        {
+            _traspasos = await ApiClient.GetAsync<List<TraspasoResumen>>("api/inventario/traspasos") ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        if (_bodegas.Count == 0)
+        {
+            _bodegas = await ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas") ?? new();
+        }
+
+        var parametros = new DialogParameters<CrearTraspasoDialog>
+        {
+            { x => x.Bodegas, _bodegas }
+        };
+
+        var dialogo = await DialogService.ShowAsync<CrearTraspasoDialog>("Nuevo Traspaso", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+
+        try
+        {
+            var request = (CrearTraspasoRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearTraspasoRequest, object?>("api/inventario/traspasos", request);
+            Snackbar.Add("Traspaso enviado. Stock descontado de la bodega origen.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task VerDetalleAsync(int traspasoId)
+    {
+        List<TraspasoDetalleItem> detalle;
+        try { detalle = await ApiClient.GetAsync<List<TraspasoDetalleItem>>($"api/inventario/traspasos/{traspasoId}/detalle") ?? new(); }
+        catch (HttpRequestException ex) { Snackbar.Add($"No se pudo cargar el detalle: {ex.Message}", Severity.Error); return; }
+
+        var p = new DialogParameters<TraspasoDetalleDialog>
+        {
+            { x => x.Detalle,     detalle },
+            { x => x.SoloLectura, true    }
+        };
+        await DialogService.ShowAsync<TraspasoDetalleDialog>("Detalle del Traspaso", p,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+    }
+
+    private async Task RecibirAsync(int traspasoId)
+    {
+        List<TraspasoDetalleItem> detalle;
+        try { detalle = await ApiClient.GetAsync<List<TraspasoDetalleItem>>($"api/inventario/traspasos/{traspasoId}/detalle") ?? new(); }
+        catch (HttpRequestException ex) { Snackbar.Add($"No se pudo cargar el detalle: {ex.Message}", Severity.Error); return; }
+
+        var p = new DialogParameters<TraspasoDetalleDialog> { { x => x.Detalle, detalle } };
+        var dialogo = await DialogService.ShowAsync<TraspasoDetalleDialog>(
+            "Confirmar Recepción de Traspaso", p,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+
+        try
+        {
+            await ApiClient.PostAsync($"api/inventario/traspasos/{traspasoId}/recibir");
+            Snackbar.Add("Traspaso recibido. Stock actualizado en bodega destino.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private static string EstadoLabel(string estado) => estado switch
+    {
+        "PENDIENTE"  => "Pendiente",
+        "EN_TRANSITO"=> "En tránsito",
+        "RECIBIDO"   => "Recibido",
+        "CANCELADO"  => "Cancelado",
+        _            => estado
+    };
+}
+

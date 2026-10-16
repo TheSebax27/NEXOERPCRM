@@ -1,0 +1,314 @@
+/* ================================================================
+   AuthLayout — Diseño completo de pantalla de autenticación
+   Nebulosa animada + hero fusionado + borde cónico + panel izquierdo
+   ================================================================ */
+
+@property --auth-border-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes auth-border-spin {
+  to { --auth-border-angle: 360deg; }
+}
+
+@keyframes bgDrift {
+  0%   { background-position: 0% 0%; }
+  50%  { background-position: 40% 25%; }
+  100% { background-position: 15% 45%; }
+}
+
+/* ── Contenedor raíz: ocupa todo el viewport ─────────────── */
+.auth-bg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 34px;
+  background:
+    radial-gradient(circle at 100% 100%, #3a1d49 0%, transparent 38%),
+    radial-gradient(circle at 78%  82%, #2c1440 0%, transparent 48%),
+    radial-gradient(circle at 10%  55%, #12163a 0%, transparent 45%),
+    radial-gradient(circle at 90%  15%, #151a45 0%, transparent 40%),
+    radial-gradient(circle at 68%  45%, #3a2570 0%, transparent 32%),
+    radial-gradient(circle at 60%  70%, #4a1f4a 0%, transparent 26%),
+    #050712;
+  background-size: 180% 180%;
+  animation: bgDrift 24s ease-in-out infinite alternate;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Orbes de ambiente ───────────────────────────────────── */
+.ambient-blob {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(55px);
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: screen;
+  opacity: 0.5;
+}
+
+.ambient-blob.b1 {
+  width: 460px; height: 460px;
+  background: radial-gradient(circle, #7c4dff, transparent 70%);
+  top: -140px; left: -120px;
+  animation: floatBlob1 18s ease-in-out infinite;
+}
+.ambient-blob.b2 {
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, #ff4d9d, transparent 70%);
+  bottom: -160px; right: -100px;
+  animation: floatBlob2 21s ease-in-out infinite;
+}
+.ambient-blob.b3 {
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, #4facfe, transparent 70%);
+  top: 38%; right: 8%;
+  animation: floatBlob3 16s ease-in-out infinite;
+}
+.ambient-blob.b4 {
+  width: 260px; height: 260px;
+  background: radial-gradient(circle, #9d6bff, transparent 70%);
+  top: 55%; left: 6%;
+  animation: floatBlob4 19s ease-in-out infinite;
+}
+
+@keyframes floatBlob1 {
+  0%,100% { transform: translate(0,0) scale(1) rotate(0deg);    filter: blur(55px) hue-rotate(0deg);   }
+  33%     { transform: translate(140px,90px) scale(1.3) rotate(20deg);   filter: blur(55px) hue-rotate(25deg);  }
+  66%     { transform: translate(60px,180px) scale(0.9) rotate(-15deg);  filter: blur(55px) hue-rotate(-15deg); }
+}
+@keyframes floatBlob2 {
+  0%,100% { transform: translate(0,0) scale(1) rotate(0deg);      filter: blur(55px) hue-rotate(0deg);  }
+  33%     { transform: translate(-120px,-100px) scale(1.25) rotate(-25deg); filter: blur(55px) hue-rotate(-20deg); }
+  66%     { transform: translate(-60px,-40px)  scale(0.85) rotate(15deg);  filter: blur(55px) hue-rotate(15deg);  }
+}
+@keyframes floatBlob3 {
+  0%,100% { transform: translate(0,0) scale(1) rotate(0deg); opacity: 0.45; }
+  50%     { transform: translate(-110px,120px) scale(1.35) rotate(30deg); opacity: 0.7; }
+}
+@keyframes floatBlob4 {
+  0%,100% { transform: translate(0,0) scale(1) rotate(0deg); opacity: 0.4; }
+  50%     { transform: translate(100px,-90px) scale(1.3) rotate(-25deg); opacity: 0.65; }
+}
+
+/* ── Destellos tipo estrella ─────────────────────────────── */
+.twinkle {
+  position: fixed;
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: #ffffff;
+  pointer-events: none;
+  z-index: 0;
+  animation: twinkle 3.5s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%,100% { opacity: 0.15; transform: scale(1);   }
+  50%     { opacity: 0.9;  transform: scale(1.6); }
+}
+
+/* ── Shell principal ─────────────────────────────────────── */
+.shell {
+  position: relative;
+  width: 100%;
+  max-width: 1536px;
+  min-height: calc(100vh - 68px); /* viewport - 2 × 34px padding */
+  display: flex;
+  flex-direction: column;
+  border-radius: 26px;
+  overflow: hidden;
+  isolation: isolate;
+  background: transparent;
+}
+
+/* Borde cónico animado */
+.shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 26px;
+  padding: 1.5px;
+  background: conic-gradient(from var(--auth-border-angle),
+    transparent          0deg,
+    transparent         40deg,
+    rgba(255,255,255,0.95) 75deg,
+    rgba(150,130,255,0.9) 100deg,
+    rgba(255,255,255,0.5) 120deg,
+    transparent         160deg,
+    transparent         360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: auth-border-spin 5s linear infinite;
+  pointer-events: none;
+  z-index: 9;
+}
+
+/* ── Foto hero fusionada ─────────────────────────────────── */
+.shell-photo {
+  position: absolute;
+  inset: 0;
+  width: 68%;
+  height: 100%;
+  z-index: 0;
+  background-image:
+    linear-gradient(100deg, rgba(5,7,18,0.94) 0%, rgba(5,7,18,0.78) 30%, rgba(10,10,30,0.55) 60%, rgba(5,7,18,0.35) 100%),
+    linear-gradient(0deg,   rgba(5,7,18,0.85) 0%, transparent 40%),
+    url('/images/login-hero.png');
+  background-size: cover;
+  background-position: center;
+  filter: saturate(85%);
+  mask-image: radial-gradient(ellipse 58% 62% at 44% 48%, black 22%, rgba(0,0,0,0.5) 62%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 58% 62% at 44% 48%, black 22%, rgba(0,0,0,0.5) 62%, transparent 100%);
+}
+.shell-photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 85% 30%, rgba(124,77,255,0.12), transparent 55%);
+  mix-blend-mode: screen;
+}
+
+/* ── SVG deco lines ──────────────────────────────────────── */
+.deco-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Área principal ──────────────────────────────────────── */
+.main-area {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  position: relative;
+  padding: 56px 80px;
+  z-index: 1;
+  gap: 40px;
+}
+
+/* ── Panel izquierdo ─────────────────────────────────────── */
+.left-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: #f4f5fb;
+  max-width: 620px;
+}
+
+/* Logo */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 56px;
+}
+.logo-img { height: 36px; width: auto; object-fit: contain; }
+.logo-text {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: #f4f5fb;
+}
+.logo-text span { color: #8a5cf6; }
+
+/* Titular */
+.heading {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -1px;
+  margin-bottom: 18px;
+  color: #f4f5fb;
+}
+.accent {
+  background: linear-gradient(90deg, #8a5cf6, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: block;
+}
+
+/* Feature cards */
+.features {
+  display: flex;
+  gap: 16px;
+  margin-top: auto;
+}
+.feature-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255,255,255,0.15);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border-radius: 14px;
+  padding: 14px 18px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 8px 24px rgba(0,0,0,0.25);
+}
+.feature-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.07);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  color: #c8cbe0;
+}
+.feature-icon svg { width: 17px; height: 17px; }
+.feature-title { font-size: 13.5px; font-weight: 600; color: #f4f5fb; }
+.feature-sub   { font-size: 12px; color: #8b90ad; }
+
+/* ── Slot del panel derecho (Login.razor) ────────────────── */
+.right-panel-wrap {
+  width: 460px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.auth-footer {
+  text-align: center;
+  font-size: 12.5px;
+  color: #6b7099;
+  padding: 20px 0 26px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .main-area        { flex-direction: column; padding: 40px; }
+  .right-panel-wrap { width: 100%; }
+  .shell-photo      { width: 100%; }
+}
+
+@media (max-width: 768px) {
+  .auth-bg      { padding: 16px; }
+  .shell        { border-radius: 18px; min-height: calc(100vh - 32px); }
+  .main-area    { padding: 28px 24px; gap: 28px; }
+  .heading      { font-size: 32px; letter-spacing: -.5px; }
+  .logo         { margin-bottom: 32px; }
+  .features     { flex-wrap: wrap; gap: 10px; }
+  .feature-card { flex: 1 1 calc(50% - 5px); min-width: 0; }
+}
+
+@media (max-width: 480px) {
+  .auth-bg          { padding: 8px; }
+  .shell            { border-radius: 14px; min-height: calc(100vh - 16px); }
+  .main-area        { padding: 16px; gap: 16px; }
+  .left-panel       { display: none; }
+  .right-panel-wrap { width: 100%; }
+  .login-card       { padding: 28px 20px 24px; border-radius: 18px; }
+}

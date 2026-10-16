@@ -1,0 +1,222 @@
+@page "/produccion/sobrantes"
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <div class="d-flex align-center justify-space-between mb-3">
+        <MudText Typo="Typo.h5">Sobrantes de Material</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Outlined.AddBox"
+                   OnClick="AbrirRegistrar">
+            Registrar sobrante
+        </MudButton>
+    </div>
+
+    <MudPaper Class="pa-3 mb-3" Elevation="1">
+        <MudGrid>
+            <MudItem xs="12" sm="3">
+                <MudSelect T="string?" Value="_filtroEstado" ValueChanged="OnEstadoChanged"
+                           Label="Estado" Variant="Variant.Outlined" Clearable="true">
+                    <MudSelectItem T="string?" Value=@("DISPONIBLE")>DISPONIBLE</MudSelectItem>
+                    <MudSelectItem T="string?" Value=@("USADO")>USADO</MudSelectItem>
+                    <MudSelectItem T="string?" Value=@("DESECHADO")>DESECHADO</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_cargando)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else if (_sobrantes.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">Sin sobrantes con el filtro actual.</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_sobrantes" Dense="true" Hover="true" Striped="true" Elevation="1">
+            <HeaderContent>
+                <MudTh>Material</MudTh>
+                <MudTh>Largo</MudTh>
+                <MudTh>Ancho</MudTh>
+                <MudTh>Espesor</MudTh>
+                <MudTh>Piezas</MudTh>
+                <MudTh>Estado</MudTh>
+                <MudTh>Bodega</MudTh>
+                <MudTh>Orden</MudTh>
+                <MudTh>Fecha</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Material"><strong>@context.NombreArticulo</strong></MudTd>
+                <MudTd DataLabel="Largo">@context.Largo.ToString("N1") @context.UnidadMedida</MudTd>
+                <MudTd DataLabel="Ancho">@context.Ancho.ToString("N1") @context.UnidadMedida</MudTd>
+                <MudTd DataLabel="Espesor">@context.Espesor.ToString("N1") @context.UnidadMedida</MudTd>
+                <MudTd DataLabel="Piezas">@context.CantidadPiezas</MudTd>
+                <MudTd DataLabel="Estado">
+                    <MudChip T="string" Size="Size.Small" Color="@EstadoColor(context.Estado)">
+                        @context.Estado
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Bodega">@(context.NombreBodega ?? "-")</MudTd>
+                <MudTd DataLabel="Orden">@(context.CodigoOP ?? "-")</MudTd>
+                <MudTd DataLabel="Fecha">@context.FechaRegistro.ToString("dd/MM/yy")</MudTd>
+                <MudTd>
+                    @if (context.Estado == "DISPONIBLE")
+                    {
+                        <MudTooltip Text="Marcar USADO">
+                            <MudIconButton Icon="@Icons.Material.Outlined.CheckCircleOutline"
+                                           Size="Size.Small" Color="Color.Success"
+                                           OnClick="@(() => MarcarUsadoAsync(context.SobranteID))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Desechar">
+                            <MudIconButton Icon="@Icons.Material.Outlined.DeleteSweep"
+                                           Size="Size.Small" Color="Color.Warning"
+                                           OnClick="@(() => DesecharAsync(context.SobranteID))" />
+                        </MudTooltip>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudContainer>
+
+<MudDrawer @bind-Open="_drawerOpen" Anchor="Anchor.Right" Width="420px" Elevation="4">
+    <MudDrawerHeader>
+        <MudText Typo="Typo.h6">Registrar sobrante</MudText>
+    </MudDrawerHeader>
+    <div class="pa-4">
+        <MudAutocomplete T="ArticuloItem?" Value="_regArticulo"
+                         ValueChanged="@(a => { _regArticulo = a; _regArticuloID = a?.ArticuloID ?? 0; })"
+                         Label="Material / Artículo"
+                         SearchFunc="BuscarArticulos"
+                         ToStringFunc="@(a => a is null ? "" : $"{a.Referencia} — {a.Nombre}")"
+                         Variant="Variant.Outlined" Class="mb-2"
+                         MinCharacters="0" ResetValueOnEmptyText="true" DebounceInterval="300"
+                         Placeholder="Buscar por nombre o referencia..." />
+        <MudGrid>
+            <MudItem xs="4">
+                <MudNumericField T="decimal" @bind-Value="_regLargo" Label="Largo"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="4">
+                <MudNumericField T="decimal" @bind-Value="_regAncho" Label="Ancho"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="4">
+                <MudNumericField T="decimal" @bind-Value="_regEspesor" Label="Espesor"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+            </MudItem>
+        </MudGrid>
+        <MudSelect T="string" @bind-Value="_regUnidad" Label="Unidad"
+                   Variant="Variant.Outlined" Class="mt-2">
+            <MudSelectItem Value=@("mm")>mm</MudSelectItem>
+            <MudSelectItem Value=@("cm")>cm</MudSelectItem>
+            <MudSelectItem Value=@("in")>in</MudSelectItem>
+            <MudSelectItem Value=@("m")>m</MudSelectItem>
+        </MudSelect>
+        <MudNumericField T="int" @bind-Value="_regCantidad" Label="Cantidad piezas"
+                         Variant="Variant.Outlined" HideSpinButtons="true" Min="1" Class="mt-2" />
+        <MudTextField @bind-Value="_regNotas" Label="Notas" Variant="Variant.Outlined" Class="mt-2" />
+        <div class="d-flex mt-3" style="gap:0.5rem;">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="RegistrarAsync" Disabled="_guardando" FullWidth="true">
+                Registrar
+            </MudButton>
+            <MudButton OnClick="@(() => _drawerOpen = false)" FullWidth="true">Cancelar</MudButton>
+        </div>
+    </div>
+</MudDrawer>
+
+@code {
+    private List<SobranteMaterialItem> _sobrantes = new();
+    private string? _filtroEstado = "DISPONIBLE";
+    private bool _cargando, _guardando, _drawerOpen;
+
+    private ArticuloItem? _regArticulo;
+    private int     _regArticuloID;
+    private decimal _regLargo, _regAncho, _regEspesor;
+    private string  _regUnidad   = "mm";
+    private int     _regCantidad = 1;
+    private string? _regNotas;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task OnEstadoChanged(string? valor)
+    {
+        _filtroEstado = valor;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        StateHasChanged();
+        try
+        {
+            var q = _filtroEstado != null ? $"?estado={_filtroEstado}" : "";
+            _sobrantes = await ApiClient.GetAsync<List<SobranteMaterialItem>>(
+                $"api/produccion/sobrantes{q}") ?? new();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _cargando = false; }
+    }
+
+    private void AbrirRegistrar()
+    {
+        _regArticulo = null; _regArticuloID = 0;
+        _regLargo = 0; _regAncho = 0; _regEspesor = 0;
+        _regUnidad = "mm"; _regCantidad = 1; _regNotas = null;
+        _drawerOpen = true;
+    }
+
+    private Task<IEnumerable<ArticuloItem>> BuscarArticulos(string? texto, CancellationToken ct)
+        => ApiClient.BuscarArticulosAsync(texto, ct);
+
+    private async Task RegistrarAsync()
+    {
+        if (_regArticuloID <= 0 || _regLargo <= 0 || _regAncho <= 0 || _regEspesor <= 0)
+        {
+            Snackbar.Add("Completa artículo y dimensiones.", Severity.Warning);
+            return;
+        }
+        _guardando = true;
+        try
+        {
+            var req = new CrearSobranteRequest(null, _regArticuloID, _regLargo, _regAncho, _regEspesor,
+                                              _regUnidad, _regCantidad, null, _regNotas);
+            await ApiClient.PostAsync<CrearSobranteRequest, object?>("api/produccion/sobrantes", req);
+            _drawerOpen = false;
+            await CargarAsync();
+            Snackbar.Add("Sobrante registrado.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private Task MarcarUsadoAsync(int id) => CambiarEstadoAsync(id, "USADO");
+    private Task DesecharAsync(int id)    => CambiarEstadoAsync(id, "DESECHADO");
+
+    private async Task CambiarEstadoAsync(int sobranteId, string estado)
+    {
+        try
+        {
+            var req = new ActualizarEstadoSobranteRequest(estado);
+            await ApiClient.PatchAsync<ActualizarEstadoSobranteRequest, object?>(
+                $"api/produccion/sobrantes/{sobranteId}/estado", req);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private static Color EstadoColor(string estado) => estado switch
+    {
+        "DISPONIBLE" => Color.Success,
+        "USADO"      => Color.Default,
+        "DESECHADO"  => Color.Error,
+        _            => Color.Default
+    };
+}

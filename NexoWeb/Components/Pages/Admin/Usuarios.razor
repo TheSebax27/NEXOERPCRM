@@ -1,0 +1,207 @@
+﻿@page "/admin/usuarios"
+@attribute [Authorize(Roles = "Administracion")]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Usuarios - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Usuarios</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Crea usuarios del sistema y asígnales un rol (Administracion, Jefes, Empleados o Subempleados) y un Centro de Costo. El rol determina qué pantallas puede ver y qué acciones puede hacer." />
+
+<MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+           StartIcon="@Icons.Material.Filled.PersonAdd" Class="mb-4">
+    Nuevo Usuario
+</MudButton>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los usuarios: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_usuarios.Count == 0)
+{
+    <MudText>No hay usuarios registrados.</MudText>
+}
+else if (Preferencias.VistaListado == "tarjetas")
+{
+    <div class="nexo-card-grid">
+        @foreach (var usuario in _usuarios)
+        {
+            <div class="nexo-item-card">
+                <div class="d-flex align-center justify-space-between">
+                    <div class="nexo-item-card__title">@usuario.Nombres @usuario.Apellidos</div>
+                    <MudChip T="string" Color="@(usuario.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                        @(usuario.Estado ? "Activo" : "Inactivo")
+                    </MudChip>
+                </div>
+                <div class="nexo-item-card__sub">@usuario.Username · @usuario.Email</div>
+                <div class="nexo-item-card__row"><span>Rol</span><strong>@usuario.Rol</strong></div>
+                <div class="nexo-item-card__row"><span>Centro de Costo</span><strong>@(usuario.CentroCosto ?? "-")</strong></div>
+                <div class="nexo-item-card__row"><span>Último Acceso</span><strong>@(usuario.UltimoAcceso?.ToString("dd/MM/yyyy HH:mm") ?? "Nunca")</strong></div>
+                <div class="nexo-item-card__actions">
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(usuario))">Editar</MudButton>
+                    <MudButton Size="Size.Small" Color="Color.Warning" OnClick="@(() => AbrirResetPasswordAsync(usuario))">Resetear clave</MudButton>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <MudTable Items="_usuarios" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Usuario</MudTh>
+            <MudTh>Email</MudTh>
+            <MudTh>Rol</MudTh>
+            <MudTh>Centro de Costo</MudTh>
+            <MudTh>Último Acceso</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Acción</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Nombres @context.Apellidos</MudTd>
+            <MudTd DataLabel="Usuario">@context.Username</MudTd>
+            <MudTd DataLabel="Email">@context.Email</MudTd>
+            <MudTd DataLabel="Rol">@context.Rol</MudTd>
+            <MudTd DataLabel="Centro de Costo">@(context.CentroCosto ?? "-")</MudTd>
+            <MudTd DataLabel="Último Acceso">@(context.UltimoAcceso?.ToString("dd/MM/yyyy HH:mm") ?? "Nunca")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                    @(context.Estado ? "Activo" : "Inactivo")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Accion">
+                <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">
+                    Editar
+                </MudButton>
+                <MudButton Size="Size.Small" Color="Color.Warning" OnClick="@(() => AbrirResetPasswordAsync(context))">
+                    Resetear clave
+                </MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private List<UsuarioItem> _usuarios = new();
+    private List<RolItem> _roles = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        _errorCarga = null;
+
+        try
+        {
+            var tareaUsuarios = ApiClient.GetAsync<List<UsuarioItem>>("api/auth/usuarios");
+            var tareaRoles = ApiClient.GetAsync<List<RolItem>>("api/auth/roles");
+            var tareaCentrosCosto = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo");
+            await Task.WhenAll(tareaUsuarios, tareaRoles, tareaCentrosCosto);
+
+            _usuarios = tareaUsuarios.Result ?? new();
+            _roles = tareaRoles.Result ?? new();
+            _centrosCosto = tareaCentrosCosto.Result ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<UsuarioDialog>
+        {
+            { x => x.Roles, _roles },
+            { x => x.CentrosCosto, _centrosCosto }
+        };
+
+        var dialogo = await DialogService.ShowAsync<UsuarioDialog>("Nuevo Usuario", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (CrearUsuarioRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearUsuarioRequest, object?>("api/auth/usuarios", request);
+            Snackbar.Add("Usuario creado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirEdicionAsync(UsuarioItem usuario)
+    {
+        var parametros = new DialogParameters<UsuarioDialog>
+        {
+            { x => x.Roles, _roles },
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.Usuario, usuario }
+        };
+
+        var dialogo = await DialogService.ShowAsync<UsuarioDialog>("Editar Usuario", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (ActualizarUsuarioRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarUsuarioRequest, object?>($"api/auth/usuarios/{usuario.UsuarioID}", request);
+            Snackbar.Add("Usuario actualizado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirResetPasswordAsync(UsuarioItem usuario)
+    {
+        var dialogo = await DialogService.ShowAsync<ResetearPasswordDialog>("Resetear Contrasena");
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (ResetearPasswordRequest)resultado.Data!;
+            await ApiClient.PostAsync<ResetearPasswordRequest, object?>($"api/auth/usuarios/{usuario.UsuarioID}/resetear-password", request);
+            Snackbar.Add("Contrasena actualizada correctamente.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

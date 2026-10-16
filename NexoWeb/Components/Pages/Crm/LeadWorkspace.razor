@@ -1,0 +1,667 @@
+@page "/crm/leads/{LeadId:int}"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@using NexoWeb.Common.Helpers
+
+<PageTitle>@(_lead?.Nombre ?? "Lead") - NEXO</PageTitle>
+
+<MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack"
+           OnClick="@(async () => await JS.InvokeVoidAsync("history.back"))" Class="mb-2">
+    Volver
+</MudButton>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_errorCarga</MudAlert>
+}
+else if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_lead is null)
+{
+    <MudAlert Severity="Severity.Warning">Lead no encontrado.</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4">
+        <div class="d-flex align-center flex-wrap mb-3" style="gap:0.75rem">
+            <div style="width:44px;height:44px;border-radius:50%;background:@HexEtapa(_lead.Etapa);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.15rem;flex-shrink:0">
+                @(_lead.Nombre.Length > 0 ? _lead.Nombre[0].ToString().ToUpper() : "?")
+            </div>
+            <div style="flex:1;min-width:0">
+                <MudText Typo="Typo.h5" Style="line-height:1.2">@_lead.Nombre</MudText>
+                @if (!string.IsNullOrEmpty(_lead.Empresa))
+                {
+                    <MudText Typo="Typo.body2" Style="opacity:.6">@_lead.Empresa</MudText>
+                }
+            </div>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Edit"
+                       OnClick="AbrirEdicionAsync">Editar</MudButton>
+            @{
+                var _sigEtapaHeader = _lead.Etapa switch
+                {
+                    "NUEVO" or "CONTACTADO" or "CALIFICADO" => "CONTACTO_INICIAL",
+                    "CONTACTO_INICIAL" => "PRESENTACION",
+                    "PRESENTACION"     => "REVISITA",
+                    "REVISITA"         => "VENTA_GANADA",
+                    _                  => (string?)null
+                };
+            }
+            @if (_lead.Etapa is not ("CONTACTO_NO_UTIL" or "DESCARTADO" or "CONVERTIDO"))
+            {
+                @if (_sigEtapaHeader is not null)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.TrendingUp"
+                               OnClick="@(() => IniciarAvanceEtapaAsync(_sigEtapaHeader))">
+                        → @EtiquetaEtapa(_sigEtapaHeader)
+                    </MudButton>
+                }
+                else if (_lead.Etapa == "VENTA_GANADA")
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.TrendingUp"
+                               OnClick="CrearOportunidadAsync">Crear Oportunidad</MudButton>
+                }
+            }
+            @if (!_lead.ClienteIDConvertido.HasValue && _lead.Etapa != "DESCARTADO")
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success"
+                           StartIcon="@Icons.Material.Filled.PersonAdd"
+                           OnClick="AbrirConversionAsync">Pasar a Cliente</MudButton>
+            }
+        </div>
+        <div class="d-flex flex-wrap" style="gap:0.4rem">
+            <MudChip T="string" Size="Size.Small" Color="@ColorEtapa(_lead.Etapa)">@EtiquetaEtapa(_lead.Etapa)</MudChip>
+            <MudChip T="string" Size="Size.Small">Responsable: @(_lead.Responsable ?? "Sin asignar")</MudChip>
+            @if (_lead.ClienteIDConvertido.HasValue)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">
+                    Convertido a cliente
+                </MudChip>
+            }
+            <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Outlined.CalendarToday">
+                Creado: @_lead.FechaCreacion.ToString("dd/MM/yyyy")
+            </MudChip>
+        </div>
+    </MudPaper>
+
+    <MudPaper Class="pa-0">
+    <MudTabs Class="nexo-bi-tabs" PanelClass="pa-4" @bind-ActivePanelIndex="_tabActivo">
+
+        <!-- ══ INFO ══ -->
+        <MudTabPanel Text="Información" Icon="@Icons.Material.Outlined.Person">
+            <div class="d-flex flex-wrap" style="gap:1.5rem">
+                <div style="flex:1;min-width:280px">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2" Style="opacity:.65;text-transform:uppercase;letter-spacing:.05em;font-size:0.72rem">Contacto</MudText>
+                    @if (!string.IsNullOrEmpty(_lead.Telefono))
+                    {
+                        <div class="d-flex align-center mb-2" style="gap:0.5rem">
+                            <MudIcon Icon="@Icons.Material.Outlined.Phone" Size="Size.Small" />
+                            <span>@_lead.Telefono</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(_lead.Email))
+                    {
+                        <div class="d-flex align-center mb-2" style="gap:0.5rem">
+                            <MudIcon Icon="@Icons.Material.Outlined.Email" Size="Size.Small" />
+                            <span>@_lead.Email</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(_lead.Direccion))
+                    {
+                        <div class="d-flex align-center mb-2" style="gap:0.5rem">
+                            <MudIcon Icon="@Icons.Material.Outlined.Place" Size="Size.Small" />
+                            <span>@_lead.Direccion</span>
+                        </div>
+                    }
+                </div>
+                <div style="flex:1;min-width:280px">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2" Style="opacity:.65;text-transform:uppercase;letter-spacing:.05em;font-size:0.72rem">CRM</MudText>
+                    @if (!string.IsNullOrEmpty(_lead.FuenteContacto))
+                    {
+                        <div class="d-flex align-center mb-2" style="gap:0.5rem">
+                            <MudIcon Icon="@Icons.Material.Outlined.Source" Size="Size.Small" />
+                            <span>Fuente: @_lead.FuenteContacto</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(_lead.TipoCliente))
+                    {
+                        <div class="d-flex align-center mb-2" style="gap:0.5rem">
+                            <MudIcon Icon="@Icons.Material.Outlined.Category" Size="Size.Small" />
+                            <span>Tipo: @_lead.TipoCliente</span>
+                        </div>
+                    }
+                    @if (_lead.FechaConversion.HasValue)
+                    {
+                        <div class="d-flex align-center mb-2" style="gap:0.5rem">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="color:var(--mud-palette-success)" />
+                            <span>Convertido: @_lead.FechaConversion.Value.ToString("dd/MM/yyyy")</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (_lead.Etapa is not ("CONTACTO_NO_UTIL" or "DESCARTADO" or "CONVERTIDO"))
+            {
+                <MudDivider Class="my-4" />
+                <MudText Typo="Typo.subtitle2" Class="mb-2" Style="opacity:.65;text-transform:uppercase;letter-spacing:.05em;font-size:0.72rem">Avanzar etapa</MudText>
+                <div class="d-flex flex-wrap" style="gap:0.5rem">
+                    @{
+                        var sig = _lead.Etapa switch
+                        {
+                            "NUEVO" or "CONTACTADO" or "CALIFICADO" => "CONTACTO_INICIAL",
+                            "CONTACTO_INICIAL" => "PRESENTACION",
+                            "PRESENTACION"     => "REVISITA",
+                            "REVISITA"         => "VENTA_GANADA",
+                            _                  => (string?)null
+                        };
+                    }
+                    @if (_lead.Etapa == "VENTA_GANADA")
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.TrendingUp"
+                                   OnClick="CrearOportunidadAsync">Crear Oportunidad</MudButton>
+                    }
+                    else if (sig is not null)
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                   OnClick="@(() => IniciarAvanceEtapaAsync(sig))">
+                            → @EtiquetaEtapa(sig)
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                               OnClick="@(() => IniciarAvanceEtapaAsync("CONTACTO_NO_UTIL"))">
+                        Marcar como No útil
+                    </MudButton>
+                </div>
+            }
+        </MudTabPanel>
+
+        <!-- ══ NOTAS ══ -->
+        <MudTabPanel Text="Notas" Icon="@Icons.Material.Outlined.Notes">
+            <div class="d-flex align-end mb-4" style="gap:0.5rem">
+                <MudTextField @bind-Value="_nuevaNota" Label="Agregar nota..."
+                              Variant="Variant.Outlined" Lines="2" Style="flex:1"
+                              Placeholder="Observaciones, contexto, resultado del contacto..." />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           Style="padding:8px 14px;min-width:80px"
+                           Disabled="@(string.IsNullOrWhiteSpace(_nuevaNota) || _guardandoNota)"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AgregarNotaAsync">Agregar</MudButton>
+            </div>
+            @if (_cargandoNotas)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            }
+            else if (_notas.Count == 0)
+            {
+                <MudText Style="opacity:.55;font-size:0.85rem">Sin notas registradas.</MudText>
+            }
+            else
+            {
+                <div style="display:flex;flex-direction:column;gap:0.6rem">
+                    @foreach (var nota in _notas)
+                    {
+                        var (badgeColor, badgeText) = nota.Tipo switch
+                        {
+                            "AVANCE_ETAPA" => ("var(--mud-palette-primary)", "↑ Avance"),
+                            "CONVERSION"   => ("#66BB6A", "✓ Conversión"),
+                            _              => ("var(--mud-palette-text-secondary)", "Nota"),
+                        };
+                        <div style="border-left:3px solid @badgeColor;padding:0.6rem 0.875rem;background:var(--mud-palette-background-grey);border-radius:0 8px 8px 0">
+                            <div class="d-flex align-center flex-wrap mb-1" style="gap:0.4rem">
+                                <span style="font-size:0.68rem;font-weight:700;color:@badgeColor;text-transform:uppercase;letter-spacing:.04em">@badgeText</span>
+                                @if (!string.IsNullOrEmpty(nota.EtapaOrigen) && !string.IsNullOrEmpty(nota.EtapaDestino))
+                                {
+                                    <span style="font-size:0.68rem;opacity:.6">@EtiquetaEtapa(nota.EtapaOrigen) → @EtiquetaEtapa(nota.EtapaDestino)</span>
+                                }
+                                <span style="font-size:0.68rem;opacity:.5;margin-left:auto">@nota.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                                @if (!string.IsNullOrEmpty(nota.Usuario))
+                                {
+                                    <span style="font-size:0.68rem;opacity:.5">· @nota.Usuario</span>
+                                }
+                            </div>
+                            <div style="font-size:0.85rem;white-space:pre-wrap">@nota.Texto</div>
+                        </div>
+                    }
+                </div>
+            }
+        </MudTabPanel>
+
+        <!-- ══ OPORTUNIDADES ══ -->
+        <MudTabPanel Text="Oportunidades" Icon="@Icons.Material.Outlined.TrendingUp">
+            @if (_cargandoOportunidades)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            }
+            else if (_oportunidades.Count == 0)
+            {
+                <MudText Style="opacity:.55" Class="mb-3">Sin oportunidades vinculadas.</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.TrendingUp"
+                           OnClick="CrearOportunidadAsync">Crear Oportunidad</MudButton>
+            }
+            else
+            {
+                @foreach (var op in _oportunidades)
+                {
+                    <div style="border:1px solid var(--mud-palette-lines-default);border-radius:10px;overflow:hidden;margin-bottom:1rem;border-top:3px solid @HexEtapaOp(op.Etapa)">
+                        <!-- Header oportunidad -->
+                        <div style="padding:0.875rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+                            <div style="flex:1;min-width:0">
+                                <div style="font-weight:700;font-size:0.95rem">@op.Nombre</div>
+                                <div style="font-size:0.75rem;opacity:.6;margin-top:2px">
+                                    Creada: @op.FechaCreacion.ToString("dd/MM/yyyy")
+                                    @if (op.FechaCierreEsperada.HasValue)
+                                    {
+                                        <span> · Cierre esperado: @op.FechaCierreEsperada.Value.ToString("dd/MM/yyyy")</span>
+                                    }
+                                    @if (op.FechaCierre.HasValue)
+                                    {
+                                        <span> · Cerrada: @op.FechaCierre.Value.ToString("dd/MM/yyyy")</span>
+                                    }
+                                </div>
+                            </div>
+                            <div class="d-flex flex-wrap" style="gap:0.4rem;align-items:center">
+                                <MudChip T="string" Size="Size.Small" Color="@ColorEtapaOp(op.Etapa)" Style="font-size:0.7rem">
+                                    @op.Etapa
+                                </MudChip>
+                                @if (op.ValorEstimado > 0)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Outlined.AttachMoney" Style="font-size:0.7rem">
+                                        @op.ValorEstimado.ToString("C0")
+                                    </MudChip>
+                                }
+                                <MudChip T="string" Size="Size.Small" Style="font-size:0.7rem;opacity:.7">
+                                    @ConfianzaEtiqueta(op.ConfianzaCierre)
+                                </MudChip>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(op.Notas))
+                        {
+                            <div style="padding:0.5rem 1rem;background:var(--mud-palette-background-grey);font-size:0.82rem;border-top:1px solid var(--mud-palette-lines-default)">
+                                @op.Notas
+                            </div>
+                        }
+
+                        <!-- Acciones de etapa -->
+                        @if (op.Etapa is not ("GANADA" or "PERDIDA"))
+                        {
+                            <div style="padding:0.6rem 1rem;border-top:1px solid var(--mud-palette-lines-default);display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center">
+                                <span style="font-size:0.72rem;opacity:.5;text-transform:uppercase;letter-spacing:.04em">Avanzar:</span>
+                                @{
+                                    var sigOp = op.Etapa switch
+                                    {
+                                        "PROSPECCION" => "PROPUESTA",
+                                        "PROPUESTA"   => "NEGOCIACION",
+                                        "NEGOCIACION" => "GANADA",
+                                        _             => (string?)null
+                                    };
+                                }
+                                @if (sigOp is not null)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                               OnClick="@(() => CambiarEtapaOportunidadAsync(op, sigOp))">
+                                        → @sigOp
+                                    </MudButton>
+                                }
+                                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                                           OnClick="@(() => CambiarEtapaOportunidadAsync(op, "PERDIDA"))">
+                                    Perder
+                                </MudButton>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </MudTabPanel>
+
+        <!-- ══ ACTIVIDADES ══ -->
+        <MudTabPanel Text="Actividades" Icon="@Icons.Material.Outlined.Assignment">
+            @if (_cargandoActividades)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            }
+            else
+            {
+                @if (_actividades.Count == 0)
+                {
+                    <MudText Style="opacity:.55" Class="mb-2">Sin actividades registradas.</MudText>
+                    @if (_oportunidades.Count == 0)
+                    {
+                        <MudText Style="opacity:.45;font-size:0.82rem" Class="mb-2">Las actividades se vinculan a una oportunidad. Crea una primero.</MudText>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.TrendingUp"
+                                   OnClick="CrearOportunidadAsync">Crear Oportunidad</MudButton>
+                    }
+                }
+                else
+                {
+                    @foreach (var act in _actividades.OrderBy(a => a.Completada).ThenBy(a => a.FechaVencimiento))
+                    {
+                        <div class="d-flex align-center mb-2" style="gap:0.75rem;padding:0.6rem;border:1px solid var(--mud-palette-lines-default);border-radius:8px">
+                            <MudIconButton Icon="@(act.Completada ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
+                                           Color="@(act.Completada ? Color.Success : Color.Default)"
+                                           Size="Size.Small" Style="flex-shrink:0"
+                                           OnClick="@(() => ToggleActividadAsync(act))" />
+                            <div style="flex:1;min-width:0">
+                                <div style="font-weight:600;font-size:0.85rem;@(act.Completada ? "text-decoration:line-through;opacity:.45" : "")">@act.Titulo</div>
+                                <div style="font-size:0.72rem;opacity:.55;display:flex;gap:8px;margin-top:2px">
+                                    <span>@act.Tipo</span>
+                                    @if (act.FechaVencimiento.HasValue)
+                                    {
+                                        <span style="@(act.FechaVencimiento < DateTime.UtcNow && !act.Completada ? "color:var(--mud-palette-error);font-weight:600;opacity:1" : "")">
+                                            Vence: @act.FechaVencimiento.Value.ToLocalTime().ToString("dd/MM/yyyy")
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small"
+                                           Color="Color.Error" Style="opacity:.5"
+                                           OnClick="@(() => EliminarActividadAsync(act))" />
+                        </div>
+                    }
+                }
+
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.subtitle2" Class="mb-2" Style="opacity:.65;text-transform:uppercase;letter-spacing:.05em;font-size:0.72rem">Nueva actividad</MudText>
+                <div class="d-flex flex-wrap" style="gap:0.5rem;align-items:flex-end">
+                    <AppSelect TValue="string" @bind-Value="_nuevoTipo" Label="Tipo" Style="min-width:130px"
+                               Items="@(new AppSelectItem<string>[]{ new("Llamada","LLAMADA"), new("Email","EMAIL"), new("Reunión","REUNION"), new("Tarea","TAREA") })" />
+                    <MudTextField @bind-Value="_nuevoTitulo" Label="Título" Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" Style="min-width:200px;flex:1"
+                                  Placeholder="Ej: Llamar para seguimiento" />
+                    <MudDatePicker @bind-Date="_nuevaFechaAct" Label="Vence" Variant="Variant.Outlined"
+                                   Margin="Margin.Dense" DateFormat="dd/MM/yyyy" Style="min-width:150px" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               Disabled="@string.IsNullOrWhiteSpace(_nuevoTitulo)"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="CrearActividadAsync">Agregar</MudButton>
+                </div>
+            }
+        </MudTabPanel>
+
+    </MudTabs>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int LeadId { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabInicial { get; set; }
+
+    private int _tabActivo;
+    private LeadItem? _lead;
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    private List<NotaLeadItem> _notas = new();
+    private bool _cargandoNotas;
+    private string _nuevaNota = "";
+    private bool _guardandoNota;
+
+    private List<OportunidadItem> _oportunidades = new();
+    private bool _cargandoOportunidades;
+
+    private List<ActividadItem> _actividades = new();
+    private bool _cargandoActividades;
+
+    private string _nuevoTipo = "LLAMADA";
+    private string _nuevoTitulo = "";
+    private DateTime? _nuevaFechaAct;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tabActivo = TabInicial == "oportunidades" ? 2 : 0;
+        await CargarTodoAsync();
+    }
+
+    private async Task CargarTodoAsync()
+    {
+        _cargando = true; _errorCarga = null;
+        try
+        {
+            _lead = await ApiClient.GetAsync<LeadItem>($"api/crm/leads/{LeadId}");
+            if (_lead is not null)
+            {
+                await Task.WhenAll(CargarOportunidadesAsync(), CargarActividadesAsync(), CargarNotasAsync());
+            }
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarOportunidadesAsync()
+    {
+        _cargandoOportunidades = true;
+        try
+        {
+            _oportunidades = await ApiClient.GetAsync<List<OportunidadItem>>($"api/crm/oportunidades?leadId={LeadId}") ?? new();
+        }
+        catch { }
+        finally { _cargandoOportunidades = false; }
+    }
+
+    private async Task CargarActividadesAsync()
+    {
+        _cargandoActividades = true;
+        try
+        {
+            _actividades = new();
+            foreach (var op in _oportunidades)
+            {
+                var acts = await ApiClient.GetAsync<IEnumerable<ActividadItem>>(
+                    $"api/crm/actividades?soloActivas=false&oportunidadId={op.OportunidadID}") ?? [];
+                _actividades.AddRange(acts);
+            }
+        }
+        catch { }
+        finally { _cargandoActividades = false; }
+    }
+
+    private async Task CargarNotasAsync()
+    {
+        _cargandoNotas = true;
+        try { _notas = await ApiClient.GetAsync<List<NotaLeadItem>>($"api/crm/leads/{LeadId}/notas") ?? new(); }
+        catch { }
+        finally { _cargandoNotas = false; }
+    }
+
+    private async Task AgregarNotaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevaNota)) return;
+        _guardandoNota = true;
+        try
+        {
+            await ApiClient.PostAsync<CrearNotaLeadRequest, object>(
+                $"api/crm/leads/{LeadId}/notas",
+                new CrearNotaLeadRequest(_nuevaNota.Trim()));
+            _nuevaNota = "";
+            await CargarNotasAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        finally { _guardandoNota = false; }
+    }
+
+    private async Task IniciarAvanceEtapaAsync(string nuevaEtapa)
+    {
+        var etiqueta = EtiquetaEtapa(nuevaEtapa);
+        var dialogParams = new DialogParameters { ["EtapaDestino"] = etiqueta };
+        var opts = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<AvanzarEtapaDialog>($"Avanzar a {etiqueta}", dialogParams, opts);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+        var data = (AvanzarEtapaDialog.AvanzarEtapaResult)result.Data!;
+        try
+        {
+            var etapaAnterior = _lead?.Etapa ?? "";
+            await ApiClient.PatchAsync<object, object>($"api/crm/leads/{LeadId}/etapa", new { Etapa = nuevaEtapa });
+            // Auto-save nota de avance de etapa
+            try
+            {
+                await ApiClient.PostAsync<CrearNotaLeadRequest, object>(
+                    $"api/crm/leads/{LeadId}/notas",
+                    new CrearNotaLeadRequest(data.Nota, "AVANCE_ETAPA", etapaAnterior, nuevaEtapa));
+            }
+            catch { }
+            if (data.ProximoContacto.HasValue)
+            {
+                try
+                {
+                    var inicio = DateTime.SpecifyKind(data.ProximoContacto.Value.Date.AddHours(9), DateTimeKind.Local).ToUniversalTime();
+                    var evReq = new CrearEventoRequest(
+                        $"Seguimiento CRM: {_lead!.Nombre}",
+                        "SEGUIMIENTO", inicio, inicio.AddHours(1),
+                        null, null, $"Etapa: {etiqueta}. {data.Nota}", null, new List<int>());
+                    await ApiClient.PostAsync<CrearEventoRequest, object>("api/calendario/eventos", evReq);
+                    Snackbar.Add("Evento agendado", Severity.Info);
+                }
+                catch { }
+            }
+            Snackbar.Add($"Etapa avanzada a {etiqueta}", Severity.Success);
+            await CargarTodoAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task CrearOportunidadAsync()
+    {
+        if (_lead is null) return;
+        var req = new CrearOportunidadDesdeLeadRequest(
+            Nombre: _lead.Nombre, ValorEstimado: 0, ConfianzaCierre: "NEUTRO",
+            FechaCierreEsperada: null, Notas: null);
+        try
+        {
+            await ApiClient.PostAsync<CrearOportunidadDesdeLeadRequest, object>(
+                $"api/crm/pipeline/lead/{LeadId}/oportunidad", req);
+            Snackbar.Add("Oportunidad creada", Severity.Success);
+            await CargarOportunidadesAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task AbrirEdicionAsync()
+    {
+        if (_lead is null) return;
+        var empleados = await ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true") ?? new();
+        var parametros = new DialogParameters<LeadDialog> { { x => x.Empleados, empleados }, { x => x.Lead, _lead } };
+        var dialogo = await DialogService.ShowAsync<LeadDialog>("Editar Lead", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialogo.Result;
+        if (result is { Canceled: false, Data: ActualizarLeadRequest req })
+        {
+            try
+            {
+                await ApiClient.PutAsync<ActualizarLeadRequest>($"api/crm/leads/{LeadId}", req);
+                Snackbar.Add("Lead actualizado", Severity.Success);
+                await CargarTodoAsync();
+            }
+            catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        }
+    }
+
+    private async Task CrearActividadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoTitulo)) return;
+        try
+        {
+            var fechaUtc = _nuevaFechaAct.HasValue
+                ? DateTime.SpecifyKind(_nuevaFechaAct.Value, DateTimeKind.Local).ToUniversalTime()
+                : (DateTime?)null;
+            int? opId = _oportunidades.Count > 0 ? _oportunidades[0].OportunidadID : null;
+            var req = new CrearActividadRequest(_nuevoTipo, _nuevoTitulo.Trim(), null, fechaUtc,
+                opId, _lead?.ClienteIDConvertido, null);
+            await ApiClient.PostAsync<CrearActividadRequest, object>("api/crm/actividades", req);
+            _nuevoTitulo = "";
+            _nuevaFechaAct = null;
+            await CargarActividadesAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task ToggleActividadAsync(ActividadItem act)
+    {
+        try
+        {
+            await ApiClient.PatchAsync<CompletarActividadRequest, object>(
+                $"api/crm/actividades/{act.ActividadID}/completar",
+                new CompletarActividadRequest(!act.Completada));
+            await CargarActividadesAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task EliminarActividadAsync(ActividadItem act)
+    {
+        try
+        {
+            await ApiClient.DeleteAsync($"api/crm/actividades/{act.ActividadID}");
+            await CargarActividadesAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task AbrirConversionAsync()
+    {
+        if (_lead is null) return;
+        var faltanDatos = string.IsNullOrWhiteSpace(_lead.NIT)
+            || string.IsNullOrWhiteSpace(_lead.Telefono)
+            || string.IsNullOrWhiteSpace(_lead.Departamento);
+        if (faltanDatos)
+        {
+            var dialogParams = new DialogParameters<ConvertirLeadDialog> { { x => x.Lead, _lead } };
+            var opts = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+            var dialog = await DialogService.ShowAsync<ConvertirLeadDialog>("Completar datos del cliente", dialogParams, opts);
+            var result = await dialog.Result;
+            if (result is null || result.Canceled) return;
+            var datos = (ConvertirLeadDialog.ConvertirDatos)result.Data!;
+            var req = new ActualizarLeadRequest(
+                _lead.Nombre, _lead.Empresa,
+                datos.Telefono ?? _lead.Telefono, _lead.Email,
+                _lead.FuenteContacto, _lead.Etapa, _lead.Notas, _lead.ResponsableID,
+                datos.NIT ?? _lead.NIT, _lead.Direccion, _lead.TipoCliente, _lead.TipoPersona, _lead.TipoIdentificacion,
+                _lead.PrimerNombre, _lead.SegundoNombre, _lead.PrimerApellido, _lead.SegundoApellido,
+                datos.Departamento ?? _lead.Departamento, datos.Ciudad ?? _lead.Ciudad,
+                datos.CodigoDept ?? _lead.CodigoDept, datos.CodigoMuni ?? _lead.CodigoMuni,
+                datos.DigitoVerificacion ?? _lead.DigitoVerificacion);
+            try { await ApiClient.PutAsync<ActualizarLeadRequest>($"api/crm/leads/{LeadId}", req); }
+            catch (Exception ex) { Snackbar.Add($"Error al actualizar: {ex.Message}", Severity.Error); return; }
+        }
+        try
+        {
+            await ApiClient.PostAsync($"api/crm/leads/{LeadId}/convertir");
+            Snackbar.Add("Lead convertido a cliente", Severity.Success);
+            await CargarTodoAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private static string HexEtapa(string etapa)    => CrmEtapaHelper.HexEtapa(etapa);
+    private static Color ColorEtapa(string etapa)   => CrmEtapaHelper.ColorEtapa(etapa);
+    private static Color ColorEtapaOp(string etapa) => CrmEtapaHelper.ColorEtapaOp(etapa);
+    private static string HexEtapaOp(string etapa)  => CrmEtapaHelper.HexEtapaOp(etapa);
+    private static string ConfianzaEtiqueta(string? c) => CrmEtapaHelper.ConfianzaEtiqueta(c);
+    private static string EtiquetaEtapa(string etapa)  => CrmEtapaHelper.EtiquetaEtapa(etapa);
+
+    private async Task CambiarEtapaOportunidadAsync(OportunidadItem op, string nuevaEtapa)
+    {
+        try
+        {
+            var req = new ActualizarOportunidadRequest(
+                op.Nombre, op.ValorEstimado, op.ConfianzaCierre,
+                nuevaEtapa, op.FechaCierreEsperada, op.ResponsableID, op.Notas);
+            await ApiClient.PutAsync<ActualizarOportunidadRequest>($"api/crm/oportunidades/{op.OportunidadID}", req);
+            Snackbar.Add($"Oportunidad → {nuevaEtapa}", Severity.Success);
+            await CargarOportunidadesAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+}

@@ -1,0 +1,53 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_codigo" Label="Código" Required="true"
+                      RequiredError="El código es obligatorio" Class="mb-3"
+                      HelperText="Máx. 10 caracteres, sin espacios" />
+        <MudTextField @bind-Value="_nombre" Label="Nombre de la marca" Required="true"
+                      RequiredError="El nombre es obligatorio" Class="mb-2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync" Disabled="_guardando">
+            @if (_guardando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+            Crear marca
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    public record Result(string Codigo, string Nombre);
+
+    private string _codigo = string.Empty;
+    private string _nombre = string.Empty;
+    private bool   _guardando;
+
+    private async Task GuardarAsync()
+    {
+        var codigo = _codigo.Trim().ToUpper();
+        var nombre = _nombre.Trim();
+        if (string.IsNullOrWhiteSpace(codigo) || string.IsNullOrWhiteSpace(nombre)) return;
+        if (codigo.Length > 10) { Snackbar.Add("El código no puede superar 10 caracteres.", Severity.Warning); return; }
+
+        _guardando = true;
+        try
+        {
+            await ApiClient.PostAsync<CrearMarcaRequest, object?>("api/catalogo/marcas", new CrearMarcaRequest(codigo, nombre));
+            MudDialog.Close(DialogResult.Ok(new Result(codigo, nombre)));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+}

@@ -1,0 +1,90 @@
+@* AuthLayout: shell visual completo para pantallas de autenticación.
+   Fondo de nebulosa animado + imagen hero fusionada + panel izquierdo
+   de marca + slot @Body para el formulario. *@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="@NexoTheme.Theme" />
+<MudPopoverProvider />
+<MudSnackbarProvider />
+
+<div class="auth-bg">
+
+    @* ── Orbes de ambiente flotantes ─────────────────────── *@
+    <div class="ambient-blob b1"></div>
+    <div class="ambient-blob b2"></div>
+    <div class="ambient-blob b3"></div>
+    <div class="ambient-blob b4"></div>
+
+    @* ── Destellos tipo estrella ──────────────────────────── *@
+    <div class="twinkle" style="top:12%;left:22%;animation-delay:0s;"></div>
+    <div class="twinkle" style="top:68%;left:8%;animation-delay:0.8s;"></div>
+    <div class="twinkle" style="top:30%;left:75%;animation-delay:1.6s;"></div>
+    <div class="twinkle" style="top:80%;left:60%;animation-delay:2.2s;"></div>
+    <div class="twinkle" style="top:15%;left:55%;animation-delay:1.1s;"></div>
+
+    @* ── Shell principal con borde cónico animado ─────────── *@
+    <div class="shell">
+
+        @* Hero fusionado detrás del panel izquierdo *@
+        <div class="shell-photo"></div>
+
+        @* Líneas decorativas *@
+        <svg class="deco-lines" viewBox="0 0 1536 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0 650 C 200 600, 250 750, 450 700 C 600 660, 650 780, 850 720" stroke="#5b7fd6" stroke-width="1.2"/>
+            <path d="M0 720 C 220 680, 260 820, 480 760" stroke="#5b7fd6" stroke-width="1.2"/>
+        </svg>
+
+        <div class="main-area">
+
+            @* ── Panel izquierdo ─────────────────────────────── *@
+            <div class="left-panel">
+
+                <div class="logo">
+                    <img src="/images/LogoV.png" alt="Logo" class="logo-img" />
+                    <div class="logo-text">NEXO <span>ERP</span></div>
+                </div>
+
+                <div class="heading">
+                    Gestiona tu empresa
+                    <span class="accent">sin fricciones.</span>
+                </div>
+
+                <div class="features">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="5" y="11" width="14" height="10" rx="2"/>
+                                <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="feature-title">Conexión segura</div>
+                            <div class="feature-sub">Tus datos están protegidos</div>
+                        </div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="feature-title">Siempre disponible</div>
+                            <div class="feature-sub">Accede desde cualquier lugar</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            @* ── Panel derecho: Login.razor se monta aquí ─────── *@
+            <div class="right-panel-wrap">
+                @Body
+            </div>
+
+        </div>
+
+        <div class="auth-footer">© 2025 NEXO ERP. Todos los derechos reservados.</div>
+
+    </div>
+</div>

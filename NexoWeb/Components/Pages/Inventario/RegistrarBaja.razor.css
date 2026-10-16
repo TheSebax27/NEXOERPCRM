@@ -1,0 +1,90 @@
+/* ── Header ────────────────────────────────────────────────────────── */
+.inv-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap;
+    max-width: 640px; margin-left: auto; margin-right: auto;
+}
+.inv-header__left  { display: flex; flex-direction: column; gap: .25rem; }
+.inv-header__title { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--n-text-1); }
+.inv-header__icon  { color: rgb(244,67,54); }
+.inv-header__sub   { margin: 0; font-size: .84rem; color: var(--n-text-3); }
+
+/* ── Tarjeta de formulario ─────────────────────────────────────────── */
+.inv-form-card {
+    background: var(--n-card);
+    border: 1px solid var(--n-border);
+    border-radius: var(--n-radius);
+    box-shadow: var(--n-shadow);
+    padding: 1.75rem;
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+/* ── Campo ─────────────────────────────────────────────────────────── */
+.inv-form-section { display: flex; flex-direction: column; gap: .35rem; }
+.inv-form-label   { font-size: .78rem; font-weight: 600; color: var(--n-text-2); text-transform: uppercase; letter-spacing: .04em; }
+.inv-form-field   { width: 100%; }
+.inv-req          { color: rgb(244,67,54); margin-left: 2px; }
+
+/* ── Info artículo ─────────────────────────────────────────────────── */
+.inv-art-info {
+    display: flex; gap: 1rem; flex-wrap: wrap;
+    padding: .65rem .85rem;
+    background: rgba(124,92,255,.06);
+    border: 1px solid rgba(124,92,255,.15);
+    border-radius: var(--n-radius);
+    font-size: .84rem;
+}
+.inv-art-info__item { display: flex; flex-direction: column; gap: 2px; }
+
+/* ── Unidad junto al input ─────────────────────────────────────────── */
+.inv-unidad-label {
+    font-weight: 600; color: var(--n-text-2);
+    font-size: .9rem; padding-bottom: .5rem;
+    white-space: nowrap;
+}
+
+/* ── Alerta de cantidad ────────────────────────────────────────────── */
+.inv-alerta-cant {
+    font-size: .8rem; color: rgb(255,152,0);
+    background: rgba(255,152,0,.08); border: 1px solid rgba(255,152,0,.2);
+    border-radius: 4px; padding: .3rem .6rem; margin-top: .25rem;
+}
+
+/* ── Alerta irreversible ───────────────────────────────────────────── */
+.inv-baja-alerta {
+    display: flex; align-items: center;
+    padding: .65rem .85rem;
+    background: rgba(244,67,54,.06);
+    border: 1px solid rgba(244,67,54,.2);
+    border-radius: var(--n-radius);
+    font-size: .84rem;
+    color: var(--n-text-2);
+}
+
+/* ── Cantidad fraccionada ──────────────────────────────────────────── */
+.inv-cant-frac {
+    display: flex; gap: .75rem;
+}
+.inv-cant-frac > * { flex: 1; }
+.inv-cant-total {
+    font-size: .8rem; color: var(--n-text-2);
+    background: rgba(0,0,0,.04); border-radius: 4px;
+    padding: .3rem .6rem; margin-top: .25rem;
+}
+.inv-modo-link {
+    background: none; border: none; cursor: pointer;
+    font-size: .78rem; color: var(--n-purple);
+    text-align: right; padding: 0; margin-top: .15rem;
+    text-decoration: underline;
+}
+
+/* ── Acciones ──────────────────────────────────────────────────────── */
+.inv-form-actions { display: flex; justify-content: flex-end; padding-top: .5rem; border-top: 1px solid var(--n-border); }
+
+/* ── Muted ─────────────────────────────────────────────────────────── */
+.inv-muted { color: var(--n-text-3); }

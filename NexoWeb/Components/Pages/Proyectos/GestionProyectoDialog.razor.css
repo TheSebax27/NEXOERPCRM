@@ -1,0 +1,123 @@
+/* ── Tabs dentro del dialog: borde inferior simple, sin pill flotante ── */
+::deep .nexo-proyecto-tabs .mud-tabs-tabbar {
+  background: transparent !important;
+  border-bottom: 1px solid var(--n-border, rgba(0,0,0,0.10)) !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin-bottom: 16px !important;
+  box-shadow: none !important;
+  display: flex !important;
+  width: 100% !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+::deep .nexo-proyecto-tabs .mud-tab {
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  border-radius: 0 !important;
+  padding: 8px 14px !important;
+  min-width: unset !important;
+  color: var(--n-text-2, #6B6B8A) !important;
+}
+::deep .nexo-proyecto-tabs .mud-tab.mud-tab-active {
+  color: var(--n-purple, #7C5CFF) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+::deep .nexo-proyecto-tabs .mud-tab-slider {
+  background: var(--n-purple, #7C5CFF) !important;
+  height: 2px !important;
+}
+
+/* ── Tablero Kanban de tareas -- 3 columnas ─────────────────────────────── */
+.nexo-kanban {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.nexo-kanban__columna {
+  background: var(--n-bg-2, #F4F5F9);
+  border-radius: 10px;
+  padding: 0.6rem;
+  min-height: 80px;
+}
+
+.nexo-kanban__columna-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--n-text-3, #9B9BB4);
+  margin-bottom: 0.5rem;
+  padding: 0 0.15rem;
+}
+
+.nexo-kanban__contador {
+  background: rgba(124,92,255,0.15);
+  color: #7C5CFF;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.45rem;
+  font-weight: 700;
+}
+
+.nexo-kanban__tarjeta {
+  background: var(--n-bg-1, #FFFFFF);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.5rem;
+}
+
+.nexo-kanban__tarjeta-titulo {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.nexo-kanban__tarjeta-meta {
+  font-size: 0.72rem;
+  color: var(--n-text-3, #9B9BB4);
+  line-height: 1.4;
+}
+
+.nexo-kanban__tarjeta-dependencia {
+  font-size: 0.7rem;
+  color: #E29A00;
+  margin-top: 0.2rem;
+  line-height: 1.35;
+}
+
+.nexo-kanban__tarjeta-acciones {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 700px) {
+  .nexo-kanban {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Dark mode kanban ──────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .nexo-kanban__columna {
+    background: rgba(255,255,255,0.05) !important;
+  }
+  :root:not([data-theme="light"]) .nexo-kanban__tarjeta {
+    background: rgba(255,255,255,0.09) !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.30) !important;
+  }
+  :root:not([data-theme="light"]) .nexo-kanban__tarjeta-titulo {
+    color: rgba(255,255,255,0.92) !important;
+  }
+  :root:not([data-theme="light"]) ::deep .nexo-proyecto-tabs .mud-tabs-tabbar {
+    border-bottom-color: rgba(255,255,255,0.10) !important;
+  }
+}

@@ -1,0 +1,100 @@
+@inject Microsoft.JSInterop.IJSRuntime Js
+@inject NexoWeb.Common.ApiClient.INexoApiClient Api
+@using NexoWeb.Common.Dtos
+@implements IAsyncDisposable
+
+<MudDialog Style="min-width:min(900px,95vw)">
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:8px">
+            <MudIcon Icon="@Icons.Material.Filled.Map" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Mapa de Clientes</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_cargando)
+        {
+            <div class="d-flex justify-center align-center" style="height:460px">
+                <MudProgressCircular Indeterminate="true" Size="Size.Large" />
+            </div>
+        }
+        else
+        {
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+                @foreach (var g in _grupoDept.OrderByDescending(d => d.Value.Count).Take(8))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                        @g.Key: @g.Value.Count cliente(s)
+                    </MudChip>
+                }
+            </div>
+            <div id="@_mapaId"
+                 style="height:460px;border-radius:12px;overflow:hidden;border:1px solid var(--mud-palette-lines-default)" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = null!;
+
+    private readonly string _mapaId = $"nexo-mapa-dlg-{Guid.NewGuid():N}";
+    private List<ClienteItem> _clientes = [];
+    private Dictionary<string, List<ClienteItem>> _grupoDept = [];
+    private bool _cargando = true;
+    private record ClientesPaginadosResponse(List<ClienteItem> Items, int Total);
+
+    private static readonly Dictionary<string, (double Lat, double Lng)> _coords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Amazonas"]          = (-1.0, -71.9), ["Antioquia"]        = (6.7, -75.5),
+        ["Arauca"]            = (7.1, -70.8),  ["Atlántico"]        = (10.7, -74.9),
+        ["Bogotá"]            = (4.71, -74.07),["Bolívar"]          = (9.0, -74.5),
+        ["Boyacá"]            = (5.5, -73.3),  ["Caldas"]           = (5.3, -75.0),
+        ["Caquetá"]           = (1.0, -74.3),  ["Casanare"]         = (5.5, -71.5),
+        ["Cauca"]             = (2.5, -76.6),  ["Cesar"]            = (9.7, -73.3),
+        ["Chocó"]             = (5.7, -76.7),  ["Córdoba"]          = (8.3, -75.6),
+        ["Cundinamarca"]      = (4.8, -74.3),  ["Guainía"]          = (3.0, -68.5),
+        ["Guaviare"]          = (1.5, -72.6),  ["Huila"]            = (2.5, -75.5),
+        ["La Guajira"]        = (11.5, -72.5), ["Magdalena"]        = (10.4, -74.4),
+        ["Meta"]              = (3.9, -73.1),  ["Nariño"]           = (1.5, -77.3),
+        ["Norte de Santander"]= (7.9, -72.5),  ["Putumayo"]         = (0.6, -76.6),
+        ["Quindío"]           = (4.5, -75.7),  ["Risaralda"]        = (5.3, -75.9),
+        ["San Andrés"]        = (12.5, -81.7), ["Santander"]        = (6.6, -73.1),
+        ["Sucre"]             = (9.3, -75.4),  ["Tolima"]           = (4.1, -75.2),
+        ["Valle del Cauca"]   = (3.8, -76.5),  ["Vaupés"]           = (1.0, -70.5),
+        ["Vichada"]           = (4.4, -69.8),
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var resp = await Api.GetAsync<ClientesPaginadosResponse>("api/crm/clientes/paginados?pagina=1&tamano=500");
+        _clientes = resp?.Items ?? [];
+        _grupoDept = _clientes
+            .Where(c => !string.IsNullOrWhiteSpace(c.Departamento))
+            .GroupBy(c => c.Departamento!)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        _cargando = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _cargando) return;
+        var puntos = _grupoDept
+            .Where(g => _coords.ContainsKey(g.Key))
+            .Select(g =>
+            {
+                var (lat, lng) = _coords[g.Key];
+                return new { lat, lng, dept = g.Key, total = g.Value.Count,
+                             nombres = g.Value.Take(5).Select(c => c.Nombre).ToList() };
+            }).ToList();
+        await Js.InvokeVoidAsync("nexoMapa.init", _mapaId, puntos);
+    }
+
+    private void Cerrar() => MudDialog.Cancel();
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await Js.InvokeVoidAsync("nexoMapa.destroy", _mapaId); } catch { }
+    }
+}

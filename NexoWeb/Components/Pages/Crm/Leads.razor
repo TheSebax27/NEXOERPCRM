@@ -1,0 +1,338 @@
+﻿@page "/crm/leads"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Leads - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Leads</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Un Lead es un prospecto que todavía no es cliente. Sigue su propio embudo (Nuevo → Contactado → Calificado → Convertido/Descartado). Al convertirlo se crea el Cliente automáticamente, con la misma información." />
+
+@if (!_cargando && _leads.Count == 0 && _filtroEtapa is null && _filtroResponsableId is null)
+{
+    @* Estado vacío: sin datos y sin filtro activo — mostrar solo el CTA grande *@
+    <NexoEmptyState
+        Icono="@Icons.Material.Outlined.PersonSearch"
+        Titulo="Crea tu primer lead"
+        Descripcion="Un lead es un prospecto que aún no es cliente. Registra su información, sigue su progreso en el embudo y conviértelo cuando esté listo."
+        BotonTexto="Nuevo lead"
+        BotonOnClick="AbrirCreacionAsync" />
+}
+else
+{
+    <div class="d-flex align-center flex-wrap mb-4" style="gap: 1rem;">
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync" StartIcon="@Icons.Material.Filled.PersonAddAlt">
+            Nuevo Lead
+        </MudButton>
+        <AppSelect TValue="string" Value="_filtroEtapa" ValueChanged="OnFiltroEtapaCambiadoAsync" Label="Etapa" Style="max-width: 200px;"
+                   Items="@(new AppSelectItem<string>[]{ new("Nuevo","NUEVO"), new("Contactado","CONTACTADO"), new("Calificado","CALIFICADO"), new("Convertido","CONVERTIDO"), new("Descartado","DESCARTADO") })" />
+        <AppSelect TValue="int?" Value="_filtroResponsableId" ValueChanged="OnFiltroResponsableCambiadoAsync" Label="Responsable" Style="max-width: 220px;"
+                   Items="@(_empleados.Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+    </div>
+
+    @if (_errorCarga is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los leads: @_errorCarga</MudAlert>
+    }
+    @if (_cargando)
+    {
+        <MudProgressCircular Indeterminate="true" Class="ma-4" />
+    }
+    else if (_leads.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">No hay leads con ese filtro.</MudAlert>
+    }
+else
+{
+    @if (Preferencias.VistaListado == "lista")
+    {
+    <MudTable Items="_leads" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>NIT</MudTh>
+            <MudTh>Empresa</MudTh>
+            <MudTh>Fuente</MudTh>
+            <MudTh>Responsable</MudTh>
+            <MudTh>Etapa</MudTh>
+            <MudTh>Score</MudTh>
+            <MudTh>Fecha</MudTh>
+            <MudTh>Accion</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+            <MudTd DataLabel="NIT">@(context.NIT ?? "-")</MudTd>
+            <MudTd DataLabel="Empresa">@(context.Empresa ?? "-")</MudTd>
+            <MudTd DataLabel="Fuente">@(context.FuenteContacto ?? "-")</MudTd>
+            <MudTd DataLabel="Responsable">@(context.Responsable ?? "-")</MudTd>
+            <MudTd DataLabel="Etapa">
+                <MudChip T="string" Size="Size.Small" Color="@ColorEtapa(context.Etapa)">@context.Etapa</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Score">
+                @if (context.Score.HasValue)
+                {
+                    <span style="@EstiloScore(context.Score.Value)" title="Score de lead">@context.Score</span>
+                }
+                else { <span style="opacity:.4">—</span> }
+            </MudTd>
+            <MudTd DataLabel="Fecha">@context.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Accion">
+                <div class="d-flex flex-wrap" style="gap: 0.25rem;">
+                @if (context.Etapa == "NUEVO")
+                {
+                    <MudButton Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
+                               OnClick="@(() => CambiarEtapaAsync(context, "CONTACTADO"))">
+                        Marcar Contactado
+                    </MudButton>
+                    <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                               OnClick="@(() => CambiarEtapaAsync(context, "DESCARTADO"))">
+                        Descartar
+                    </MudButton>
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">Editar</MudButton>
+                }
+                else if (context.Etapa == "CONTACTADO")
+                {
+                    <MudButton Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
+                               OnClick="@(() => CambiarEtapaAsync(context, "CALIFICADO"))">
+                        Marcar Calificado
+                    </MudButton>
+                    <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                               OnClick="@(() => CambiarEtapaAsync(context, "DESCARTADO"))">
+                        Descartar
+                    </MudButton>
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">Editar</MudButton>
+                }
+                else if (context.Etapa == "CALIFICADO")
+                {
+                    <MudButton Size="Size.Small" Color="Color.Success" OnClick="@(() => ConvertirAsync(context))">
+                        Convertir a Cliente
+                    </MudButton>
+                    <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                               OnClick="@(() => CambiarEtapaAsync(context, "DESCARTADO"))">
+                        Descartar
+                    </MudButton>
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">Editar</MudButton>
+                }
+                else if (context.Etapa == "DESCARTADO")
+                {
+                    <MudButton Size="Size.Small" Color="Color.Default" Variant="Variant.Text"
+                               OnClick="@(() => CambiarEtapaAsync(context, "NUEVO"))">
+                        Reactivar
+                    </MudButton>
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">Editar</MudButton>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Style="color: var(--n-text-3, #9B9BB4);">
+                        Convertido @context.FechaConversion?.ToLocalTime().ToString("dd/MM/yyyy")
+                    </MudText>
+                }
+                </div>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    }
+    else
+    {
+    <div class="nexo-cards-grid">
+        @foreach (var l in _leads)
+        {
+            <div class="nexo-ec nexo-ec--crm">
+                <div class="nexo-ec__header">
+                    <div class="nexo-ec__avatar" style="background:linear-gradient(135deg,#22D3EE,#0EA5E9)">
+                        @(l.Nombre?.Length > 0 ? l.Nombre[0..1].ToUpper() : "L")
+                    </div>
+                    <div class="nexo-ec__title-block">
+                        <div class="nexo-ec__name">@l.Nombre</div>
+                        <div class="nexo-ec__sub">@(l.Empresa ?? l.NIT ?? "Sin empresa")</div>
+                    </div>
+                    <MudChip T="string" Size="Size.Small" Color="@ColorEtapa(l.Etapa)" Style="font-size:0.7rem">@l.Etapa</MudChip>
+                    @if (l.Score.HasValue)
+                    {
+                        <span style="@EstiloScoreBadge(l.Score.Value)" title="Score de lead">@l.Score</span>
+                    }
+                </div>
+                <div class="nexo-ec__body">
+                    @if (!string.IsNullOrEmpty(l.FuenteContacto))
+                    {
+                        <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.Source" Size="Size.Small" /><span>@l.FuenteContacto</span></div>
+                    }
+                    @if (!string.IsNullOrEmpty(l.Responsable))
+                    {
+                        <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.Person" Size="Size.Small" /><span>@l.Responsable</span></div>
+                    }
+                    <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.CalendarToday" Size="Size.Small" /><span>@l.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy")</span></div>
+                </div>
+                <div class="nexo-ec__footer">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => AbrirEdicionAsync(l))">Editar</MudButton>
+                    @if (l.Etapa == "CALIFICADO")
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Success" OnClick="@(() => ConvertirAsync(l))">Convertir</MudButton>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+    }
+    }
+}
+
+@code {
+    private List<LeadItem> _leads = new();
+    private List<EmpleadoItem> _empleados = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+    private string? _filtroEtapa;
+    private int? _filtroResponsableId;
+
+    private Color ColorEtapa(string etapa) => etapa switch
+    {
+        "CONVERTIDO" => Color.Success,
+        "DESCARTADO" => Color.Error,
+        "CALIFICADO" => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string EstiloScore(int score)
+    {
+        var (bg, fg) = score >= 70 ? ("#22c55e", "#fff")
+                     : score >= 40 ? ("#f59e0b", "#fff")
+                     : ("#ef4444", "#fff");
+        return $"display:inline-block;min-width:30px;text-align:center;padding:1px 6px;border-radius:10px;font-size:0.72rem;font-weight:700;background:{bg};color:{fg}";
+    }
+
+    private static string EstiloScoreBadge(int score)
+        => EstiloScore(score) + ";margin-left:4px;flex-shrink:0";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaLeads = ApiClient.GetAsync<List<LeadItem>>("api/crm/leads");
+            var tareaEmpleados = ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true");
+
+            await Task.WhenAll(tareaLeads, tareaEmpleados);
+
+            _leads = await tareaLeads ?? new();
+            _empleados = await tareaEmpleados ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task OnFiltroEtapaCambiadoAsync(string? nuevoValor)
+    {
+        _filtroEtapa = nuevoValor;
+        await CargarLeadsAsync();
+    }
+
+    private async Task OnFiltroResponsableCambiadoAsync(int? nuevoValor)
+    {
+        _filtroResponsableId = nuevoValor;
+        await CargarLeadsAsync();
+    }
+
+    private async Task CargarLeadsAsync()
+    {
+        try
+        {
+            var q = new List<string>();
+            if (_filtroEtapa is not null)          q.Add($"etapa={_filtroEtapa}");
+            if (_filtroResponsableId.HasValue)     q.Add($"responsableId={_filtroResponsableId}");
+            var ruta = "api/crm/leads" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
+            _leads = await ApiClient.GetAsync<List<LeadItem>>(ruta) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<LeadDialog> { { x => x.Empleados, _empleados } };
+        var dialogo = await DialogService.ShowAsync<LeadDialog>("Nuevo Lead", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (CrearLeadRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearLeadRequest, object?>("api/crm/leads", request);
+            Snackbar.Add("Lead creado correctamente.", Severity.Success);
+            await CargarLeadsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirEdicionAsync(LeadItem lead)
+    {
+        var parametros = new DialogParameters<LeadDialog>
+        {
+            { x => x.Lead, lead },
+            { x => x.Empleados, _empleados }
+        };
+        var dialogo = await DialogService.ShowAsync<LeadDialog>("Editar Lead", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (ActualizarLeadRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarLeadRequest, object?>($"api/crm/leads/{lead.LeadID}", request);
+            Snackbar.Add("Lead actualizado correctamente.", Severity.Success);
+            await CargarLeadsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task CambiarEtapaAsync(LeadItem lead, string nuevaEtapa)
+    {
+        try
+        {
+            await ApiClient.PatchAsync<CambiarEtapaLeadRequest, object?>(
+                $"api/crm/leads/{lead.LeadID}/etapa",
+                new CambiarEtapaLeadRequest(nuevaEtapa));
+            await CargarLeadsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ConvertirAsync(LeadItem lead)
+    {
+        try
+        {
+            await ApiClient.PostAsync($"api/crm/leads/{lead.LeadID}/convertir");
+            Snackbar.Add("Lead convertido a cliente correctamente.", Severity.Success);
+            await CargarLeadsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

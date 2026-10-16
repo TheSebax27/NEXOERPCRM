@@ -1,0 +1,48 @@
+@* Estado vacío reutilizable. Muestra un CTA centrado cuando no hay datos.
+   Uso: <NexoEmptyState Icono="..." Titulo="Crea tu primer lead"
+            Descripcion="..." BotonTexto="Nuevo lead" BotonOnClick="AbrirCreacion" />
+   El componente padre debe ocultar sus botones de crear cuando hay estado vacío. *@
+
+<div class="nexo-empty">
+    <div class="nexo-empty__inner">
+        <div class="nexo-empty__icon-wrap">
+            <MudIcon Icon="@Icono" Class="nexo-empty__icon" />
+        </div>
+        <h2 class="nexo-empty__title">@Titulo</h2>
+        @if (!string.IsNullOrEmpty(Descripcion))
+        {
+            <p class="nexo-empty__desc">@Descripcion</p>
+        }
+        @if (BotonOnClick.HasDelegate && !string.IsNullOrEmpty(BotonTexto))
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Size="Size.Large"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="BotonOnClick"
+                       Class="nexo-empty__btn">
+                @BotonTexto
+            </MudButton>
+        }
+        else if (!string.IsNullOrEmpty(BotonHref) && !string.IsNullOrEmpty(BotonTexto))
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Size="Size.Large"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       Href="@BotonHref"
+                       Class="nexo-empty__btn">
+                @BotonTexto
+            </MudButton>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Icono { get; set; } = Icons.Material.Outlined.Inbox;
+    [Parameter] public string Titulo { get; set; } = "Aún no hay nada aquí";
+    [Parameter] public string? Descripcion { get; set; }
+    [Parameter] public string? BotonTexto { get; set; }
+    [Parameter] public EventCallback BotonOnClick { get; set; }
+    [Parameter] public string? BotonHref { get; set; }
+}

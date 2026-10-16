@@ -1,0 +1,27 @@
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        <MudAlert Severity="Severity.Warning" Class="mb-3">
+            Esto va a <strong>devolver el stock</strong> de @Despacho.NumeroGuia a la bodega de origen y marcar el despacho como anulado. No se puede deshacer.
+        </MudAlert>
+        <MudTextField @bind-Value="_motivo" Label="Motivo de la anulacion" Lines="2" Required="true"
+                      RequiredError="Escribe por que se anula" Class="mb-2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="Confirmar" Disabled="string.IsNullOrWhiteSpace(_motivo)">
+            Anular Despacho
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public DespachoItem Despacho { get; set; } = default!;
+
+    private string _motivo = string.Empty;
+
+    private void Confirmar() => MudDialog.Close(DialogResult.Ok(new AnularDespachoRequest(_motivo.Trim())));
+    private void Cancelar() => MudDialog.Cancel();
+}

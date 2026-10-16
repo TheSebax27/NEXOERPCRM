@@ -1,0 +1,706 @@
+﻿@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject IDialogService DialogService
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.subtitle2" Class="mb-3">@Empleado.Nombres @Empleado.Apellidos</MudText>
+
+        <MudTabs Class="nexo-bi-tabs">
+            <MudTabPanel Text="Historial Laboral">
+                <MudText Typo="Typo.caption" Class="mb-3" Style="color: var(--n-text-3, #9B9BB4);">
+                    Se registra automático cuando cambia el Cargo o el Centro de Costo del empleado.
+                </MudText>
+                @if (_historial.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin cambios registrados todavía.</MudText>
+                }
+                else
+                {
+                    @foreach (var h in _historial)
+                    {
+                        <div class="mb-3">
+                            <div class="d-flex justify-space-between">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@h.TipoEvento</MudChip>
+                                <MudText Typo="Typo.caption" Style="color: var(--n-text-3, #9B9BB4);">
+                                    @h.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm") @(h.Usuario is not null ? $"· {h.Usuario}" : "")
+                                </MudText>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mt-1">@h.ValorAnterior → @h.ValorNuevo</MudText>
+                        </div>
+                    }
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Documentos">
+                <div class="d-flex align-center flex-wrap mb-3" style="gap: 0.5rem;">
+                    <AppSelect TValue="string" @bind-Value="_tipoDocumento" Label="Tipo" Style="max-width: 200px;"
+                               Items="@(new AppSelectItem<string>[]{ new("Cédula","CEDULA"), new("Hoja de Vida","HOJA_VIDA"), new("Contrato","CONTRATO"), new("Certificado","CERTIFICADO"), new("Otro","OTRO") })" />
+                    <InputFile id="nexo-empleado-doc-input" OnChange="OnDocumentoSeleccionadoAsync" style="display:none;" />
+                    <label for="nexo-empleado-doc-input" class="nexo-perfil-panel__btn-archivo">
+                        Subir Documento
+                    </label>
+                </div>
+                <MudText Typo="Typo.caption" Class="mb-3 d-block" Style="color: var(--n-text-3, #9B9BB4);">Maximo 5 MB por documento.</MudText>
+
+                @if (_documentos.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin documentos todavía.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_documentos" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Archivo</MudTh>
+                            <MudTh>Fecha</MudTh>
+                            <MudTh>Accion</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Tipo">@context.TipoDocumento</MudTd>
+                            <MudTd DataLabel="Archivo">@context.NombreArchivo</MudTd>
+                            <MudTd DataLabel="Fecha">@context.FechaSubida.ToLocalTime().ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Accion">
+                                <MudButton Size="Size.Small" OnClick="@(() => DescargarDocumentoAsync(context))">Descargar</MudButton>
+                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => EliminarDocumentoAsync(context))">Eliminar</MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Contratos">
+                <MudForm @ref="_formContrato" Class="mb-3">
+                    <MudGrid>
+                        <MudItem xs="12" sm="4">
+                            <AppSelect TValue="string" @bind-Value="_cTipo" Label="Tipo de contrato"
+                                       Items="@(new AppSelectItem<string>[]{ new("Indefinido","INDEFINIDO"), new("Fijo","FIJO"), new("Obra o Labor","OBRA_LABOR"), new("Temporal","TEMPORAL"), new("Prácticas","PRACTICAS") })" />
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                            <MudDatePicker @bind-Date="_cFechaInicio" Label="Fecha inicio" />
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                            <MudDatePicker @bind-Date="_cFechaFin" Label="Fecha fin (opcional)" />
+                        </MudItem>
+                        <MudItem xs="12" sm="2">
+                            <MudNumericField T="decimal?" @bind-Value="_cSalarioBase" Label="Salario base" HideSpinButtons="true" Min="0" />
+                        </MudItem>
+                        <MudItem xs="12" sm="10">
+                            <MudTextField @bind-Value="_cNotas" Label="Notas (opcional)" />
+                        </MudItem>
+                        <MudItem xs="12" sm="2" Class="d-flex align-end">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                       OnClick="RegistrarContratoAsync" Disabled="_guardandoContrato" FullWidth="true">
+                                Registrar
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+                </MudForm>
+
+                <MudDivider Class="mb-3" />
+
+                @if (_contratos.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin contratos registrados.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_contratos" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Inicio</MudTh>
+                            <MudTh>Fin</MudTh>
+                            <MudTh>Salario Base</MudTh>
+                            <MudTh>Estado</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.TipoContrato</MudTd>
+                            <MudTd>@context.FechaInicio.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd>@(context.FechaFin?.ToString("dd/MM/yyyy") ?? "Indefinida")</MudTd>
+                            <MudTd>@(context.SalarioBase.HasValue ? "$" + context.SalarioBase.Value.ToString("N0") : "—")</MudTd>
+                            <MudTd>
+                                <MudChip T="string" Size="Size.Small" Color="@ColorContrato(context.Estado)">@context.Estado</MudChip>
+                            </MudTd>
+                            <MudTd>
+                                <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline"
+                                               Size="Size.Small" Color="Color.Error"
+                                               OnClick="() => EliminarContratoAsync(context.ContratoID)" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Ausencias">
+                @if (_saldoVacaciones is not null)
+                {
+                    <div class="d-flex mb-3" style="gap: 1rem; flex-wrap: wrap;">
+                        <div class="nexo-calc-chip" style="min-width:110px;">
+                            <span class="nexo-calc-chip__label">Días ganados</span>
+                            <span class="nexo-calc-chip__value">@_saldoVacaciones.DiasGanados</span>
+                        </div>
+                        <div class="nexo-calc-chip" style="min-width:110px;">
+                            <span class="nexo-calc-chip__label">Días tomados</span>
+                            <span class="nexo-calc-chip__value">@_saldoVacaciones.DiasTomados</span>
+                        </div>
+                        <div class="nexo-calc-chip @(_saldoVacaciones.DiasDisponibles > 0 ? "" : "nexo-calc-chip--muted")" style="min-width:110px;">
+                            <span class="nexo-calc-chip__label">Disponibles</span>
+                            <span class="nexo-calc-chip__value">@_saldoVacaciones.DiasDisponibles</span>
+                        </div>
+                    </div>
+                    <MudDivider Class="mb-3" />
+                }
+                <MudForm @ref="_formAusencia" Class="mb-3">
+                    <AppSelect TValue="string" @bind-Value="_tipoAusencia" Label="Tipo" Class="mb-2"
+                               Items="@(new AppSelectItem<string>[]{ new("Vacaciones","VACACIONES"), new("Incapacidad","INCAPACIDAD"), new("Permiso","PERMISO"), new("Otro","OTRO") })" />
+                    <MudDatePicker @bind-Date="_fechaInicioAusencia" Label="Fecha Inicio" Class="mb-2" />
+                    <MudDatePicker @bind-Date="_fechaFinAusencia" Label="Fecha Fin" Class="mb-2" />
+                    <MudTextField @bind-Value="_motivoAusencia" Label="Motivo (opcional)" Lines="2" Class="mb-2" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RegistrarAusenciaAsync" Size="Size.Small">
+                        Registrar
+                    </MudButton>
+                </MudForm>
+
+                <MudDivider Class="mb-3" />
+
+                @if (_ausencias.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin ausencias registradas todavía.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_ausencias" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Inicio</MudTh>
+                            <MudTh>Fin</MudTh>
+                            <MudTh>Estado</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Tipo">@context.Tipo</MudTd>
+                            <MudTd DataLabel="Inicio">@context.FechaInicio.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Fin">@context.FechaFin.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Estado">
+                                <MudChip T="string" Size="Size.Small" Color="@ColorEstadoAusencia(context.Estado)">@context.Estado</MudChip>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Evaluaciones">
+                <MudForm @ref="_formEvaluacion" Class="mb-3">
+                    <AppSelect TValue="int?" @bind-Value="_responsableEvaluacionId" Label="Responsable (opcional)" Class="mb-2"
+                               Items="@(_empleadosActivos.Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+                    <MudDatePicker @bind-Date="_fechaEvaluacion" Label="Fecha" Class="mb-2" />
+                    <MudNumericField @bind-Value="_calificacionEvaluacion" Label="Calificación (1.0 a 5.0)" Min="1m" Max="5m" Step="0.5m" Class="mb-2" />
+                    <MudTextField @bind-Value="_comentariosEvaluacion" Label="Comentarios" Lines="2" Class="mb-2" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RegistrarEvaluacionAsync" Size="Size.Small">
+                        Registrar
+                    </MudButton>
+                </MudForm>
+
+                <MudDivider Class="mb-3" />
+
+                @if (_evaluaciones.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin evaluaciones registradas todavía.</MudText>
+                }
+                else
+                {
+                    @foreach (var ev in _evaluaciones)
+                    {
+                        <div class="mb-3">
+                            <div class="d-flex justify-space-between">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@ev.Calificacion.ToString("N1") / 5.0</MudChip>
+                                <MudText Typo="Typo.caption" Style="color: var(--n-text-3, #9B9BB4);">
+                                    @ev.Fecha.ToString("dd/MM/yyyy") @(ev.Responsable is not null ? $"· {ev.Responsable}" : "")
+                                </MudText>
+                            </div>
+                            @if (ev.Comentarios is not null)
+                            {
+                                <MudText Typo="Typo.body2" Class="mt-1">@ev.Comentarios</MudText>
+                            }
+                        </div>
+                    }
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Capacitaciones">
+                <MudForm @ref="_formCapacitacion" Class="mb-3">
+                    <MudTextField @bind-Value="_nombreCapacitacion" Label="Nombre" Required="true" Class="mb-2" />
+                    <MudTextField @bind-Value="_institucionCapacitacion" Label="Institución (opcional)" Class="mb-2" />
+                    <MudDatePicker @bind-Date="_fechaRealizacionCapacitacion" Label="Fecha de Realización" Class="mb-2" />
+                    <MudDatePicker @bind-Date="_fechaVencimientoCapacitacion" Label="Fecha de Vencimiento (opcional)" Class="mb-2" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RegistrarCapacitacionAsync" Size="Size.Small">
+                        Registrar
+                    </MudButton>
+                </MudForm>
+
+                <MudDivider Class="mb-3" />
+
+                @if (_capacitaciones.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin capacitaciones registradas todavía.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_capacitaciones" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Nombre</MudTh>
+                            <MudTh>Institución</MudTh>
+                            <MudTh>Realización</MudTh>
+                            <MudTh>Vencimiento</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+                            <MudTd DataLabel="Institución">@(context.Institucion ?? "-")</MudTd>
+                            <MudTd DataLabel="Realización">@context.FechaRealizacion.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Vencimiento">
+                                @if (context.FechaVencimiento is not null)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="@(context.FechaVencimiento < NexoWeb.Common.ColombiaClock.Today ? Color.Error : Color.Default)">
+                                        @context.FechaVencimiento.Value.ToString("dd/MM/yyyy")
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    @:-
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Horas Extras">
+                <div class="mb-3">
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudDatePicker @bind-Date="_hesFecha" Label="Fecha" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="2">
+                            <MudNumericField T="decimal?" @bind-Value="_hesCantidad" Label="Horas" Variant="Variant.Outlined"
+                                             HideSpinButtons="true" Min="0.01m" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudNumericField T="decimal?" @bind-Value="_hesValorHora" Label="Valor / hora ($)" Variant="Variant.Outlined"
+                                             HideSpinButtons="true" Min="0.01m" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudTextField @bind-Value="_hesConcepto" Label="Concepto (opcional)" Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (_hesCantidad > 0 && _hesValorHora > 0)
+                    {
+                        <div class="d-flex align-center mt-2" style="gap: 0.5rem;">
+                            <MudIcon Icon="@Icons.Material.Outlined.Calculate" Size="Size.Small" />
+                            <MudText Typo="Typo.body2">
+                                Total calculado: <strong>$@((_hesCantidad!.Value * _hesValorHora!.Value).ToString("N2"))</strong>
+                            </MudText>
+                        </div>
+                    }
+
+                    <div class="d-flex mt-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Outlined.AddCircleOutline"
+                                   OnClick="RegistrarHorasExtrasAsync" Size="Size.Small"
+                                   Disabled="_guardandoHe">
+                            Registrar horas extras
+                        </MudButton>
+                    </div>
+                </div>
+
+                <MudDivider Class="mb-3" />
+
+                @if (_hesResumen is not null && _hesResumen.TotalRegistros > 0)
+                {
+                    <div class="d-flex mb-3" style="gap: 1rem; flex-wrap: wrap;">
+                        <div class="nexo-calc-chip" style="min-width:120px;">
+                            <span class="nexo-calc-chip__label">Total horas</span>
+                            <span class="nexo-calc-chip__value">@_hesResumen.TotalHoras.ToString("N1") h</span>
+                        </div>
+                        <div class="nexo-calc-chip" style="min-width:120px;">
+                            <span class="nexo-calc-chip__label">Total a pagar</span>
+                            <span class="nexo-calc-chip__value">$@_hesResumen.TotalPagado.ToString("N2")</span>
+                        </div>
+                    </div>
+                }
+
+                @if (_horasExtras.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin horas extras registradas.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_horasExtras" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Fecha</MudTh>
+                            <MudTh>Horas</MudTh>
+                            <MudTh>Valor/h</MudTh>
+                            <MudTh>Total</MudTh>
+                            <MudTh>Concepto</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Fecha">@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Horas">@context.CantidadHoras.ToString("N1")</MudTd>
+                            <MudTd DataLabel="Valor/h">$@context.ValorHora.ToString("N2")</MudTd>
+                            <MudTd DataLabel="Total"><strong>$@context.Total.ToString("N2")</strong></MudTd>
+                            <MudTd DataLabel="Concepto">@(context.Concepto ?? "-")</MudTd>
+                            <MudTd>
+                                <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline"
+                                               Size="Size.Small" Color="Color.Error"
+                                               OnClick="() => EliminarHorasExtrasAsync(context.HorasExtrasID)" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public EmpleadoItem Empleado { get; set; } = default!;
+
+    // Historial laboral
+    private List<HistorialLaboralItem> _historial = new();
+
+    // Documentos
+    private List<EmpleadoDocumentoItem> _documentos = new();
+    private string _tipoDocumento = "CEDULA";
+
+    // Ausencias
+    private MudForm _formAusencia = default!;
+    private List<AusenciaItem> _ausencias = new();
+    private string _tipoAusencia = "VACACIONES";
+    private DateTime? _fechaInicioAusencia;
+    private DateTime? _fechaFinAusencia;
+    private string? _motivoAusencia;
+
+    // Evaluaciones
+    private MudForm _formEvaluacion = default!;
+    private List<EvaluacionItem> _evaluaciones = new();
+    private List<EmpleadoItem> _empleadosActivos = new();
+    private int? _responsableEvaluacionId;
+    private DateTime? _fechaEvaluacion = NexoWeb.Common.ColombiaClock.Today;
+    private decimal _calificacionEvaluacion = 3m;
+    private string? _comentariosEvaluacion;
+
+    // Capacitaciones
+    private MudForm _formCapacitacion = default!;
+    private List<CapacitacionItem> _capacitaciones = new();
+    private string _nombreCapacitacion = string.Empty;
+    private string? _institucionCapacitacion;
+    private DateTime? _fechaRealizacionCapacitacion = NexoWeb.Common.ColombiaClock.Today;
+    private DateTime? _fechaVencimientoCapacitacion;
+
+    // Contratos
+    private MudForm _formContrato = default!;
+    private List<ContratoItem> _contratos = new();
+    private string   _cTipo          = "INDEFINIDO";
+    private DateTime? _cFechaInicio  = NexoWeb.Common.ColombiaClock.Today;
+    private DateTime? _cFechaFin;
+    private decimal?  _cSalarioBase;
+    private string?   _cNotas;
+    private bool      _guardandoContrato;
+
+    // Saldo vacaciones
+    private SaldoVacacionesItem? _saldoVacaciones;
+
+    // Horas Extras
+    private List<HorasExtrasItem> _horasExtras = new();
+    private ResumenHorasExtras? _hesResumen;
+    private DateTime? _hesFecha = NexoWeb.Common.ColombiaClock.Today;
+    private decimal? _hesCantidad;
+    private decimal? _hesValorHora;
+    private string? _hesConcepto;
+    private bool _guardandoHe;
+
+    private Color ColorEstadoAusencia(string estado) => estado switch
+    {
+        "APROBADA" => Color.Success,
+        "RECHAZADA" => Color.Error,
+        _ => Color.Default
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Task.WhenAll(
+                CargarHistorialAsync(),
+                CargarDocumentosAsync(),
+                CargarAusenciasAsync(),
+                CargarEvaluacionesAsync(),
+                CargarCapacitacionesAsync(),
+                CargarHorasExtrasAsync(),
+                CargarContratosAsync(),
+                CargarSaldoVacacionesAsync()
+            );
+        }
+        catch { /* una tarea falló; cada método interno ya protege su propia lista */ }
+        _empleadosActivos = await ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true") ?? new();
+    }
+
+    private async Task CargarHistorialAsync() =>
+        _historial = await ApiClient.GetAsync<List<HistorialLaboralItem>>($"api/rrhh/empleados/{Empleado.EmpleadoID}/historial") ?? new();
+
+    private async Task CargarDocumentosAsync() =>
+        _documentos = await ApiClient.GetAsync<List<EmpleadoDocumentoItem>>($"api/rrhh/empleados/{Empleado.EmpleadoID}/documentos") ?? new();
+
+    private async Task CargarAusenciasAsync() =>
+        _ausencias = await ApiClient.GetAsync<List<AusenciaItem>>($"api/rrhh/ausencias?empleadoId={Empleado.EmpleadoID}") ?? new();
+
+    private async Task CargarEvaluacionesAsync() =>
+        _evaluaciones = await ApiClient.GetAsync<List<EvaluacionItem>>($"api/rrhh/empleados/{Empleado.EmpleadoID}/evaluaciones") ?? new();
+
+    private async Task CargarCapacitacionesAsync() =>
+        _capacitaciones = await ApiClient.GetAsync<List<CapacitacionItem>>($"api/rrhh/empleados/{Empleado.EmpleadoID}/capacitaciones") ?? new();
+
+    private async Task OnDocumentoSeleccionadoAsync(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 5_000_000;
+
+        if (e.File.Size > maxBytes)
+        {
+            Snackbar.Add("El documento es muy grande (máximo 5 MB).", Severity.Warning);
+            return;
+        }
+
+        using var stream = e.File.OpenReadStream(maxBytes);
+        using var memoria = new MemoryStream();
+        await stream.CopyToAsync(memoria);
+        var base64 = Convert.ToBase64String(memoria.ToArray());
+
+        try
+        {
+            var request = new SubirDocumentoEmpleadoRequest(_tipoDocumento, e.File.Name, e.File.ContentType, base64);
+            await ApiClient.PostAsync<SubirDocumentoEmpleadoRequest, object?>($"api/rrhh/empleados/{Empleado.EmpleadoID}/documentos", request);
+            Snackbar.Add("Documento subido.", Severity.Success);
+            await CargarDocumentosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DescargarDocumentoAsync(EmpleadoDocumentoItem documento)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/rrhh/empleados/documentos/{documento.DocumentoID}");
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", documento.NombreArchivo, documento.ContentType, streamRef);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task EliminarDocumentoAsync(EmpleadoDocumentoItem documento)
+    {
+        var ok = await DialogService.ShowMessageBox(
+            "Eliminar documento",
+            $"¿Eliminar \"{documento.NombreArchivo}\"? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (ok != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/rrhh/empleados/documentos/{documento.DocumentoID}");
+            Snackbar.Add("Documento eliminado.", Severity.Success);
+            await CargarDocumentosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RegistrarAusenciaAsync()
+    {
+        if (_fechaInicioAusencia is null || _fechaFinAusencia is null)
+        {
+            Snackbar.Add("Selecciona fecha de inicio y fin.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var request = new CrearAusenciaRequest(Empleado.EmpleadoID, _tipoAusencia, _fechaInicioAusencia.Value, _fechaFinAusencia.Value, _motivoAusencia);
+            await ApiClient.PostAsync<CrearAusenciaRequest, object?>("api/rrhh/ausencias", request);
+            _fechaInicioAusencia = null;
+            _fechaFinAusencia = null;
+            _motivoAusencia = null;
+            Snackbar.Add("Ausencia registrada.", Severity.Success);
+            await CargarAusenciasAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RegistrarEvaluacionAsync()
+    {
+        if (_fechaEvaluacion is null)
+        {
+            Snackbar.Add("Selecciona una fecha.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var request = new CrearEvaluacionRequest(Empleado.EmpleadoID, _responsableEvaluacionId, _fechaEvaluacion.Value, _calificacionEvaluacion, _comentariosEvaluacion);
+            await ApiClient.PostAsync<CrearEvaluacionRequest, object?>("api/rrhh/empleados/evaluaciones", request);
+            _comentariosEvaluacion = null;
+            Snackbar.Add("Evaluación registrada.", Severity.Success);
+            await CargarEvaluacionesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RegistrarCapacitacionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombreCapacitacion) || _fechaRealizacionCapacitacion is null)
+        {
+            Snackbar.Add("Escribe el nombre y la fecha de realización.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var request = new CrearCapacitacionRequest(Empleado.EmpleadoID, _nombreCapacitacion.Trim(), _institucionCapacitacion,
+                _fechaRealizacionCapacitacion.Value, _fechaVencimientoCapacitacion);
+            await ApiClient.PostAsync<CrearCapacitacionRequest, object?>("api/rrhh/empleados/capacitaciones", request);
+            _nombreCapacitacion = string.Empty;
+            _institucionCapacitacion = null;
+            _fechaVencimientoCapacitacion = null;
+            Snackbar.Add("Capacitación registrada.", Severity.Success);
+            await CargarCapacitacionesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task CargarContratosAsync()
+    {
+        try
+        {
+            _contratos = await ApiClient.GetAsync<List<ContratoItem>>(
+                $"api/rrhh/empleados/{Empleado.EmpleadoID}/contratos") ?? new();
+        }
+        catch { _contratos = new(); }
+    }
+
+    private async Task CargarSaldoVacacionesAsync()
+    {
+        try
+        {
+            _saldoVacaciones = await ApiClient.GetAsync<SaldoVacacionesItem>(
+                $"api/rrhh/empleados/{Empleado.EmpleadoID}/saldo-vacaciones");
+        }
+        catch { _saldoVacaciones = null; }
+    }
+
+    private async Task RegistrarContratoAsync()
+    {
+        if (_cFechaInicio is null)
+        {
+            Snackbar.Add("Selecciona la fecha de inicio.", Severity.Warning);
+            return;
+        }
+        _guardandoContrato = true;
+        try
+        {
+            var request = new CrearContratoRequest(_cTipo, _cFechaInicio.Value, _cFechaFin, _cSalarioBase, _cNotas);
+            await ApiClient.PostAsync<CrearContratoRequest, object?>(
+                $"api/rrhh/empleados/{Empleado.EmpleadoID}/contratos", request);
+            _cFechaFin = null; _cSalarioBase = null; _cNotas = null;
+            Snackbar.Add("Contrato registrado.", Severity.Success);
+            await CargarContratosAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardandoContrato = false; }
+    }
+
+    private async Task EliminarContratoAsync(int contratoId)
+    {
+        try
+        {
+            await ApiClient.DeleteAsync($"api/rrhh/contratos/{contratoId}");
+            Snackbar.Add("Contrato eliminado.", Severity.Success);
+            await CargarContratosAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private static Color ColorContrato(string estado) => estado switch
+    {
+        "ACTIVO"      => Color.Success,
+        "TERMINADO"   => Color.Error,
+        "NO_RENOVADO" => Color.Warning,
+        _             => Color.Default
+    };
+
+    private async Task CargarHorasExtrasAsync()
+    {
+        _horasExtras = await ApiClient.GetAsync<List<HorasExtrasItem>>(
+            $"api/rrhh/empleados/{Empleado.EmpleadoID}/horas-extras") ?? new();
+        _hesResumen = await ApiClient.GetAsync<ResumenHorasExtras>(
+            $"api/rrhh/empleados/{Empleado.EmpleadoID}/horas-extras/resumen");
+    }
+
+    private async Task RegistrarHorasExtrasAsync()
+    {
+        if (_hesFecha is null || _hesCantidad is null or <= 0 || _hesValorHora is null or <= 0)
+        {
+            Snackbar.Add("Completa fecha, horas y valor por hora.", Severity.Warning);
+            return;
+        }
+        _guardandoHe = true;
+        try
+        {
+            var request = new CrearHorasExtrasRequest(_hesFecha.Value, _hesCantidad.Value, _hesValorHora.Value, _hesConcepto);
+            await ApiClient.PostAsync<CrearHorasExtrasRequest, object?>(
+                $"api/rrhh/empleados/{Empleado.EmpleadoID}/horas-extras", request);
+            _hesCantidad = null;
+            _hesConcepto = null;
+            Snackbar.Add("Horas extras registradas.", Severity.Success);
+            await CargarHorasExtrasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardandoHe = false; }
+    }
+
+    private async Task EliminarHorasExtrasAsync(int horasExtrasId)
+    {
+        try
+        {
+            await ApiClient.DeleteAsync($"api/rrhh/horas-extras/{horasExtrasId}");
+            Snackbar.Add("Registro eliminado.", Severity.Success);
+            await CargarHorasExtrasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private void Cerrar() => MudDialog.Close();
+}

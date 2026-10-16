@@ -1,0 +1,174 @@
+﻿@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+
+<MudDialog Style="min-width:min(650px,95vw); max-height:90vh; overflow-y:auto">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Schedule" Class="mr-2" />
+            @Horario.Nombre
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @* â”€â”€ Datos generales â”€â”€ *@
+        <MudGrid Spacing="2" Class="mb-3">
+            <MudItem xs="12" sm="4">
+                <MudText Typo="Typo.caption">Tipo de ciclo</MudText>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(Horario.TipoCiclo == "FIJO" ? Color.Default : Color.Secondary)">
+                    @(Horario.TipoCiclo switch { "SEMANA_AB" => "Semana A/B", "SEMANA_4" => "Semana A/B/C/D", _ => "Fijo" })
+                </MudChip>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudText Typo="Typo.caption">Marcaje</MudText>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(Horario.RegistraSalida ? Color.Info : Color.Default)">
+                    @(Horario.RegistraSalida ? "Entrada y salida" : "Solo entrada")
+                </MudChip>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudText Typo="Typo.caption">Tolerancia tardanza</MudText>
+                <MudText>@Horario.ToleranciaTardanzaMin minutos</MudText>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudText Typo="Typo.caption">Estado</MudText>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(Horario.Activo ? Color.Success : Color.Default)">
+                    @(Horario.Activo ? "Activo" : "Inactivo")
+                </MudChip>
+            </MudItem>
+        </MudGrid>
+
+        <MudDivider Class="mb-3" />
+
+        @* â”€â”€ Dias por semana â”€â”€ *@
+        @{
+            var semanas = Horario.TipoCiclo switch
+            {
+                "SEMANA_AB" => new[] { "A", "B" },
+                "SEMANA_4"  => new[] { "A", "B", "C", "D" },
+                _           => new[] { (string?)null }
+            };
+            string[] nombresDia = ["", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"];
+        }
+
+        @foreach (var sem in semanas)
+        {
+            @if (Horario.TipoCiclo != "FIJO")
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-1 mt-2" Style="font-weight:600">Semana @sem</MudText>
+            }
+
+            var diasSem = sem is null
+                ? Horario.Dias
+                : Horario.Dias.Where(d => d.Semana == sem).ToList();
+
+            @if (diasSem.Count == 0)
+            {
+                <MudText Color="Color.Secondary" Class="mb-2">Sin dias configurados.</MudText>
+            }
+            else
+            {
+                <div style="overflow-x:auto; margin-bottom:12px">
+                    <table style="width:100%; border-collapse:collapse; font-size:0.85rem">
+                        <thead>
+                            <tr style="background:var(--mud-palette-background-grey)">
+                                <th style="padding:5px 8px; text-align:left">Dia</th>
+                                <th style="padding:5px 8px; text-align:center">Entrada</th>
+                                <th style="padding:5px 8px; text-align:center">Salida</th>
+                                <th style="padding:5px 8px; text-align:center">Almuerzo</th>
+                                <th style="padding:5px 8px; text-align:center">Inicio alm.</th>
+                                <th style="padding:5px 8px; text-align:center">Fin alm.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var dia in diasSem.OrderBy(d => d.DiaSemana))
+                            {
+                                <tr style="border-bottom:1px solid var(--mud-palette-lines-default)">
+                                    <td style="padding:4px 8px">@nombresDia[dia.DiaSemana]</td>
+                                    <td style="padding:4px 8px; text-align:center">@dia.HoraEntrada.ToString("HH:mm")</td>
+                                    <td style="padding:4px 8px; text-align:center">@dia.HoraSalida.ToString("HH:mm")</td>
+                                    <td style="padding:4px 8px; text-align:center">
+                                        @if (dia.TieneAlmuerzo)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                                        }
+                                        else
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.RemoveCircleOutline" Color="Color.Default" Size="Size.Small" />
+                                        }
+                                    </td>
+                                    <td style="padding:4px 8px; text-align:center">
+                                        @(dia.HoraInicioAlmuerzo.HasValue ? dia.HoraInicioAlmuerzo.Value.ToString("HH:mm") : "—")
+                                    </td>
+                                    <td style="padding:4px 8px; text-align:center">
+                                        @(dia.HoraFinAlmuerzo.HasValue ? dia.HoraFinAlmuerzo.Value.ToString("HH:mm") : "—")
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+
+        <MudDivider Class="mb-3 mt-1" />
+
+        @* â”€â”€ Empleados asignados â”€â”€ *@
+        <div class="d-flex align-center justify-space-between mb-2">
+            <MudText Typo="Typo.subtitle2" Style="font-weight:600">Empleados asignados</MudText>
+            @if (!_cargandoAsignados)
+            {
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small"
+                               OnClick="CargarAsignadosAsync" />
+            }
+        </div>
+
+        @if (_cargandoAsignados)
+        {
+            <MudProgressLinear Indeterminate Color="Color.Primary" />
+        }
+        else if (_asignados.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense>Ningun empleado asignado actualmente.</MudAlert>
+        }
+        else
+        {
+            <div style="display:flex; flex-wrap:wrap; gap:6px">
+                @foreach (var emp in _asignados)
+                {
+                    <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Filled.Person">
+                        @emp.Nombres @emp.Apellidos
+                    </MudChip>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Close())">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public HorarioItem Horario { get; set; } = default!;
+
+    private List<EmpleadoSimpleItem> _asignados = [];
+    private bool _cargandoAsignados = true;
+
+    protected override async Task OnInitializedAsync()
+        => await CargarAsignadosAsync();
+
+    private async Task CargarAsignadosAsync()
+    {
+        _cargandoAsignados = true;
+        try
+        {
+            _asignados = await Api.GetAsync<List<EmpleadoSimpleItem>>(
+                $"api/rrhh/asistencia/horarios/{Horario.HorarioID}/asignados") ?? [];
+        }
+        catch { _asignados = []; }
+        finally { _cargandoAsignados = false; }
+    }
+}
+

@@ -1,0 +1,173 @@
+@page "/admin/audit-log"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+
+<PageTitle>Audit Log - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Audit Log</MudText>
+    <MudText Style="font-size:0.8rem;opacity:.6">Registro de todas las acciones de escritura (POST/PUT/PATCH/DELETE) exitosas</MudText>
+</div>
+
+<!-- Filtros -->
+<div class="d-flex flex-wrap mb-4" style="gap:0.75rem;align-items:flex-end">
+    <MudDatePicker @bind-Date="_desde" Label="Desde" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   DateFormat="dd/MM/yyyy" Style="max-width:160px" />
+    <MudDatePicker @bind-Date="_hasta" Label="Hasta" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   DateFormat="dd/MM/yyyy" Style="max-width:160px" />
+    <AppSelect TValue="string?" @bind-Value="_filtroAccion" Label="Acción" Style="max-width:160px"
+               Items="@(new AppSelectItem<string?>[]{ new("INSERT (Crear)","INSERT"), new("UPDATE (Editar)","UPDATE"), new("DELETE (Eliminar)","DELETE") })" />
+    <MudTextField @bind-Value="_filtroModulo" Label="Módulo / Ruta" Variant="Variant.Outlined"
+                  Margin="Margin.Dense" Placeholder="ej: crm, facturas, leads"
+                  Style="max-width:200px" />
+    <MudTextField @bind-Value="_filtroUsuario" Label="Usuario" Variant="Variant.Outlined"
+                  Margin="Margin.Dense" Placeholder="Nombre parcial"
+                  Style="max-width:160px" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Search"
+               OnClick="BuscarAsync">Buscar</MudButton>
+    <MudButton Variant="Variant.Text" Size="Size.Small"
+               OnClick="LimpiarFiltrosAsync">Limpiar</MudButton>
+</div>
+
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_resultado is null)
+{
+    <MudText Style="opacity:.55">Usa los filtros para buscar registros.</MudText>
+}
+else if (_resultado.Items.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">Sin registros con esos filtros.</MudAlert>
+}
+else
+{
+    <div class="mb-2 d-flex align-center justify-space-between">
+        <MudText Style="font-size:0.8rem;opacity:.6">@_resultado.Total registro(s) — página @_resultado.Pagina</MudText>
+        <div class="d-flex" style="gap:0.25rem">
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                           Disabled="@(_pagina <= 1)" OnClick="PaginaAnteriorAsync" />
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                           Disabled="@(_pagina * 50 >= _resultado.Total)" OnClick="PaginaSiguienteAsync" />
+        </div>
+    </div>
+
+    <MudTable Items="_resultado.Items" Dense="true" Hover="true" Striped="true">
+        <HeaderContent>
+            <MudTh Style="width:150px">Fecha</MudTh>
+            <MudTh Style="width:80px">Acción</MudTh>
+            <MudTh>Ruta</MudTh>
+            <MudTh Style="width:60px">ID</MudTh>
+            <MudTh Style="width:160px">Usuario</MudTh>
+            <MudTh Style="width:130px">IP</MudTh>
+            <MudTh>Payload</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Fecha" Style="white-space:nowrap;font-size:0.78rem">
+                @context.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+            </MudTd>
+            <MudTd DataLabel="Acción">
+                <MudChip T="string" Size="Size.Small" Color="@ColorAccion(context.Accion)"
+                         Style="font-size:0.68rem;height:20px">@context.Accion</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Ruta" Style="font-size:0.78rem;font-family:monospace">
+                @context.EsquemaTabla
+            </MudTd>
+            <MudTd DataLabel="ID" Style="font-size:0.78rem">@(context.RegistroID ?? "-")</MudTd>
+            <MudTd DataLabel="Usuario" Style="font-size:0.78rem">
+                @(context.NombreUsuario ?? (context.UsuarioID.HasValue ? $"ID {context.UsuarioID}" : "—"))
+            </MudTd>
+            <MudTd DataLabel="IP" Style="font-size:0.78rem;font-family:monospace">
+                @(context.IP ?? "—")
+            </MudTd>
+            <MudTd DataLabel="Payload">
+                @if (!string.IsNullOrEmpty(context.ValoresNuevos))
+                {
+                    <MudTooltip Text="@context.ValoresNuevos" Placement="Placement.Left" MaxWidth="MaxWidth.Large">
+                        <span style="font-size:0.72rem;font-family:monospace;opacity:.7;cursor:help;white-space:nowrap;overflow:hidden;display:inline-block;max-width:280px;text-overflow:ellipsis">
+                            @context.ValoresNuevos
+                        </span>
+                    </MudTooltip>
+                }
+                else
+                {
+                    <span style="opacity:.35">—</span>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private LogAuditoriaPaginado? _resultado;
+    private bool _cargando;
+    private int _pagina = 1;
+
+    private DateTime? _desde;
+    private DateTime? _hasta;
+    private string? _filtroAccion;
+    private string _filtroModulo = "";
+    private string _filtroUsuario = "";
+
+    private async Task BuscarAsync()
+    {
+        _pagina = 1;
+        await CargarAsync();
+    }
+
+    private async Task LimpiarFiltrosAsync()
+    {
+        _desde = null; _hasta = null;
+        _filtroAccion = null; _filtroModulo = ""; _filtroUsuario = "";
+        _pagina = 1;
+        _resultado = null;
+    }
+
+    private async Task PaginaAnteriorAsync()
+    {
+        if (_pagina <= 1) return;
+        _pagina--;
+        await CargarAsync();
+    }
+
+    private async Task PaginaSiguienteAsync()
+    {
+        _pagina++;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var qs = new List<string>();
+            if (_desde.HasValue)       qs.Add($"desde={_desde.Value:yyyy-MM-dd}");
+            if (_hasta.HasValue)       qs.Add($"hasta={_hasta.Value:yyyy-MM-ddT23:59:59}");
+            if (_filtroAccion is not null) qs.Add($"accion={Uri.EscapeDataString(_filtroAccion)}");
+            if (!string.IsNullOrWhiteSpace(_filtroModulo))   qs.Add($"modulo={Uri.EscapeDataString(_filtroModulo.Trim())}");
+            if (!string.IsNullOrWhiteSpace(_filtroUsuario)) qs.Add($"nombreUsuario={Uri.EscapeDataString(_filtroUsuario.Trim())}");
+
+            qs.Add($"pagina={_pagina}");
+            qs.Add("tamano=50");
+
+            var url = "api/auditoria/log?" + string.Join("&", qs);
+            _resultado = await ApiClient.GetAsync<LogAuditoriaPaginado>(url);
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        finally { _cargando = false; }
+    }
+
+    private static Color ColorAccion(string accion) => accion switch
+    {
+        "INSERT" => Color.Success,
+        "UPDATE" => Color.Warning,
+        "DELETE" => Color.Error,
+        _        => Color.Default
+    };
+}

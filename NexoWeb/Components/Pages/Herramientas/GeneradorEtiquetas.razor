@@ -1,0 +1,261 @@
+@page "/herramientas/etiquetas"
+@inject INexoApiClient ApiClient
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject IConfiguration Config
+
+<PageTitle>Generador de Etiquetas | NEXO</PageTitle>
+
+<div class="etq-root">
+    <!-- ═══ Panel de configuración ═══ -->
+    <div class="etq-panel etq-no-print">
+        <div class="etq-panel-header">
+            <MudIcon Icon="@Icons.Material.Filled.Label" Class="mr-2" />
+            <span>Configuración de etiqueta</span>
+        </div>
+
+        <div class="etq-panel-body">
+            <!-- Artículo -->
+            <div class="etq-field">
+                <ArticuloAutocomplete Label="Artículo"
+                                      ValueChanged="OnArticuloCambiado" />
+            </div>
+
+            <!-- Tamaño -->
+            <div class="etq-field">
+                <MudText Typo="Typo.caption" Class="etq-label-caption">Tamaño</MudText>
+                <div class="etq-size-buttons">
+                    @foreach (var s in _tamanos)
+                    {
+                        <button class="etq-size-btn @(s.Key == _tamano ? "active" : "")"
+                                @onclick="() => CambiarTamano(s.Key)">
+                            <span class="etq-size-icon" style="width:@(s.W / 5)px;height:@(s.H / 5)px"></span>
+                            <span class="etq-size-name">@s.Label</span>
+                            <span class="etq-size-dim">@s.Dim</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <!-- Cantidad -->
+            <div class="etq-field">
+                <MudNumericField @bind-Value="_cantidad"
+                                 Label="Cantidad de copias"
+                                 Variant="Variant.Outlined"
+                                 Dense="true"
+                                 Min="1" Max="100"
+                                 Adornment="Adornment.End"
+                                 AdornmentIcon="@Icons.Material.Filled.ContentCopy" />
+            </div>
+
+            <!-- Contenido y orden -->
+            <div class="etq-field">
+                <MudText Typo="Typo.caption" Class="etq-label-caption">Contenido y orden</MudText>
+                <div class="etq-order-list">
+                    @for (int i = 0; i < _elementos.Count; i++)
+                    {
+                        var idx = i;
+                        var el = _elementos[i];
+                        <div class="etq-order-row">
+                            <MudSwitch Value="el.Activo"
+                                       ValueChanged="@((bool v) => ToggleElem(idx, v))"
+                                       Color="Color.Primary" Dense="true" />
+                            <span class="etq-order-label @(!el.Activo ? "etq-order-label--off" : "")">@el.Etiqueta</span>
+                            <div class="etq-order-arrows">
+                                <button class="etq-arrow-btn" disabled="@(idx == 0)"
+                                        @onclick="() => Mover(idx, -1)" type="button">
+                                    <MudIcon Icon="@Icons.Material.Filled.ExpandLess" Style="font-size:14px" />
+                                </button>
+                                <button class="etq-arrow-btn" disabled="@(idx == _elementos.Count - 1)"
+                                        @onclick="() => Mover(idx, 1)" type="button">
+                                    <MudIcon Icon="@Icons.Material.Filled.ExpandMore" Style="font-size:14px" />
+                                </button>
+                            </div>
+                        </div>
+                        @if (el.Key == "extra" && el.Activo)
+                        {
+                            <div class="etq-order-sub">
+                                <MudTextField @bind-Value="_textoExtra"
+                                              Placeholder="Ej: Bodega A · Lote 01"
+                                              Variant="Variant.Outlined"
+                                              Dense="true"
+                                              Margin="Margin.Dense" />
+                            </div>
+                        }
+                        @if (el.Key == "codes" && el.Activo)
+                        {
+                            <div class="etq-order-sub">
+                                <MudSwitch @bind-Value="_mostrarBarcode" Color="Color.Primary" Label="Código barras" Dense="true" />
+                                <MudSwitch @bind-Value="_mostrarQr" Color="Color.Primary" Label="Código QR" Dense="true" />
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
+            <!-- Botón imprimir -->
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Print"
+                       FullWidth="true"
+                       Disabled="_articulo is null"
+                       OnClick="Imprimir"
+                       Class="mt-2">
+                Imprimir @(_cantidad > 1 ? $"{_cantidad} etiquetas" : "etiqueta")
+            </MudButton>
+        </div>
+    </div>
+
+    <!-- ═══ Área de vista previa ═══ -->
+    <div class="etq-preview-area">
+        <div class="etq-preview-toolbar etq-no-print">
+            <MudText Typo="Typo.subtitle2" Class="etq-preview-title">
+                @if (_articulo is null)
+                {
+                    <span>Selecciona un artículo para ver la vista previa</span>
+                }
+                else
+                {
+                    <span>Vista previa — @_articulo.Nombre</span>
+                }
+            </MudText>
+        </div>
+
+        <div id="etq-print-area" class="etq-labels-grid @TamanoClass">
+            @if (_articulo is not null)
+            {
+                @for (int i = 0; i < _cantidad; i++)
+                {
+                    var labelIdx = i;
+                    <div class="etq-label @TamanoClass">
+                        @foreach (var el in _elementos.Where(e => e.Activo))
+                        {
+                            @if (el.Key == "nombre")
+                            {
+                                <div class="etq-nombre">@_articulo.Nombre</div>
+                            }
+                            else if (el.Key == "ref")
+                            {
+                                <div class="etq-ref">Ref: @_articulo.Referencia</div>
+                            }
+                            else if (el.Key == "precio" && _articulo.PPublico > 0)
+                            {
+                                <div class="etq-precio">@_articulo.PPublico!.Value.ToString("C0")</div>
+                            }
+                            else if (el.Key == "extra" && !string.IsNullOrWhiteSpace(_textoExtra))
+                            {
+                                <div class="etq-extra">@_textoExtra</div>
+                            }
+                            else if (el.Key == "codes" && (_mostrarBarcode || _mostrarQr))
+                            {
+                                <div class="etq-codes-row">
+                                    @if (_mostrarBarcode)
+                                    {
+                                        <div class="etq-barcode-wrap">
+                                            <svg id="bc-@labelIdx"></svg>
+                                        </div>
+                                    }
+                                    @if (_mostrarQr && !string.IsNullOrEmpty(_articulo.Referencia))
+                                    {
+                                        <div class="etq-qr-wrap">
+                                            <img src="@QrUrl" alt="QR" class="etq-qr-img" />
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="etq-empty">
+                    <MudIcon Icon="@Icons.Material.Outlined.Label" Style="font-size:3rem;opacity:.2;" />
+                    <MudText Style="opacity:.4;margin-top:.5rem;">Ningún artículo seleccionado</MudText>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    ArticuloItem? _articulo;
+    string _tamano = "mediana";
+    int _cantidad = 1;
+    bool _mostrarBarcode = true;
+    bool _mostrarQr = true;
+    string _textoExtra = "";
+
+    record EtqElem(string Key, string Etiqueta, bool Activo);
+
+    List<EtqElem> _elementos = new()
+    {
+        new("nombre", "Nombre",          true),
+        new("ref",    "Referencia",      true),
+        new("precio", "Precio",          true),
+        new("extra",  "Texto adicional", false),
+        new("codes",  "Código / QR",     true),
+    };
+
+    void ToggleElem(int idx, bool v) =>
+        _elementos[idx] = _elementos[idx] with { Activo = v };
+
+    void Mover(int idx, int dir)
+    {
+        var newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= _elementos.Count) return;
+        (_elementos[idx], _elementos[newIdx]) = (_elementos[newIdx], _elementos[idx]);
+    }
+
+    record TamanoInfo(string Key, string Label, string Dim, int W, int H);
+
+    readonly List<TamanoInfo> _tamanos = new()
+    {
+        new("pequeña", "Pequeña", "50×25 mm", 189, 95),
+        new("mediana", "Mediana", "70×40 mm", 265, 151),
+        new("grande",  "Grande",  "100×60 mm", 378, 227),
+    };
+
+    string TamanoClass => $"etq-{_tamano}";
+
+    string QrUrl => _articulo is null ? "" :
+        $"{Config["NexoApi:BaseUrl"]!.TrimEnd('/')}/api/utils/qr-png?contenido={Uri.EscapeDataString(_articulo.Referencia)}&px=5";
+
+    async Task OnArticuloCambiado(ArticuloItem? art)
+    {
+        _articulo = art;
+        StateHasChanged();
+        await Task.Delay(80);
+        await RenderBarcodesAsync();
+    }
+
+    async Task CambiarTamano(string t)
+    {
+        _tamano = t;
+        StateHasChanged();
+        await Task.Delay(80);
+        await RenderBarcodesAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender && _articulo is not null)
+            await RenderBarcodesAsync();
+    }
+
+    async Task RenderBarcodesAsync()
+    {
+        if (_articulo is null || !_mostrarBarcode) return;
+        try
+        {
+            await JS.InvokeVoidAsync("nexoEtiqueta.renderAllBarcodes", "bc-", _articulo.Referencia, _cantidad);
+        }
+        catch { /* JS not ready */ }
+    }
+
+    async Task Imprimir()
+    {
+        if (_articulo is null) return;
+        await JS.InvokeVoidAsync("nexoEtiqueta.print");
+    }
+}

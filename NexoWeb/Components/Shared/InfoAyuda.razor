@@ -1,0 +1,16 @@
+@* Banner descriptivo de ayuda (estilo MudAlert Info) debajo del titulo de
+   cada pagina -- se oculta por completo si el usuario apaga "Mostrar
+   informacion en cada pagina" en Settings. Uso: <InfoAyuda Texto="..." />
+   como bloque de ancho completo, no en linea con el titulo. *@
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+
+@if (Preferencias.MostrarAyuda)
+{
+    <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.Info">
+        @Texto
+    </MudAlert>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Texto { get; set; } = "";
+}

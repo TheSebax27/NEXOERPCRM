@@ -1,0 +1,393 @@
+﻿@page "/rrhh/horarios"
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialog
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+
+<PageTitle>Horarios — NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Horarios de Trabajo</h1>
+        </div>
+    </div>
+    <div class="d-flex align-center" style="gap:8px">
+        <VistaToggle OnCambio="StateHasChanged" />
+        <AuthorizeView Roles="Administracion" Context="authHero">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="AbrirNuevoHorario">
+                Nuevo Horario
+            </MudButton>
+        </AuthorizeView>
+    </div>
+</div>
+<InfoAyuda Texto="Define los horarios de trabajo (turnos) de la empresa. Cada horario se asigna a empleados para controlar su jornada y asistencia." />
+
+@* ── Lista de horarios ── *@
+<MudPaper Class="pa-4 mb-6" Elevation="1">
+    <div class="nexo-chart-header mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Class="nexo-chart-header__icon" />
+        <div>
+            <div class="nexo-chart-header__title">Horarios definidos</div>
+            <div class="nexo-chart-header__sub">Cada negocio puede tener varios horarios (turnos manana, tarde, etc.)</div>
+        </div>
+    </div>
+
+    @if (_cargando)
+    {
+        <MudProgressLinear Indeterminate Color="Color.Primary" />
+    }
+    else if (_horarios.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">No hay horarios creados aun.</MudAlert>
+    }
+    else if (Preferencias.VistaListado == "lista")
+    {
+        <MudTable Items="_horarios" Dense Hover Bordered>
+            <HeaderContent>
+                <MudTh>Nombre</MudTh>
+                <MudTh>Ciclo</MudTh>
+                <MudTh>Marcaje</MudTh>
+                <MudTh>Tolerancia</MudTh>
+                <MudTh>Dias configurados</MudTh>
+                <MudTh>Estado</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nombre"><strong>@context.Nombre</strong></MudTd>
+                <MudTd DataLabel="Ciclo">
+                    <MudChip T="string" Size="Size.Small" Color="@(context.TipoCiclo == "FIJO" ? Color.Default : Color.Secondary)">
+                        @(context.TipoCiclo switch { "SEMANA_AB" => "A/B", "SEMANA_4" => "A/B/C/D", _ => "Fijo" })
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Marcaje">
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.RegistraSalida ? Color.Info : Color.Default)"
+                             Icon="@(context.RegistraSalida ? Icons.Material.Filled.SwapHoriz : Icons.Material.Filled.Login)">
+                        @(context.RegistraSalida ? "Entrada y salida" : "Solo entrada")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Tolerancia">@context.ToleranciaTardanzaMin min</MudTd>
+                <MudTd DataLabel="Dias">@ResumenDias(context)</MudTd>
+                <MudTd DataLabel="Estado">
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.Activo ? Color.Success : Color.Default)">
+                        @(context.Activo ? "Activo" : "Inactivo")
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    <div class="d-flex" style="gap:4px;">
+                        <MudTooltip Text="Ver detalle">
+                            <MudIconButton Icon="@Icons.Material.Filled.Visibility"
+                                           Size="Size.Small" Color="Color.Info"
+                                           OnClick="@(() => VerHorarioAsync(context))" />
+                        </MudTooltip>
+                        <AuthorizeView Roles="Administracion" Context="auth">
+                            <MudTooltip Text="Editar">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small" Color="Color.Primary"
+                                               OnClick="@(() => EditarHorarioAsync(context))" />
+                            </MudTooltip>
+                            <MudTooltip Text="@(context.Activo ? "Desactivar" : "Activar")">
+                                <MudIconButton Icon="@(context.Activo ? Icons.Material.Filled.ToggleOff : Icons.Material.Filled.ToggleOn)"
+                                               Size="Size.Small"
+                                               Color="@(context.Activo ? Color.Default : Color.Success)"
+                                               OnClick="@(() => ToggleActivoAsync(context))" />
+                            </MudTooltip>
+                            <MudTooltip Text="Eliminar">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small" Color="Color.Error"
+                                               OnClick="@(() => EliminarAsync(context))" />
+                            </MudTooltip>
+                        </AuthorizeView>
+                    </div>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+    else
+    {
+        <div class="nexo-cards-grid">
+            @foreach (var h in _horarios)
+            {
+                <div class="nexo-ec nexo-ec--rrhh">
+                    <div class="nexo-ec__header">
+                        <div class="nexo-ec__avatar" style="background:linear-gradient(135deg,#EC4899,#BE185D)">
+                            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Style="color:#fff" />
+                        </div>
+                        <div class="nexo-ec__title-block">
+                            <div class="nexo-ec__name">@h.Nombre</div>
+                            <div class="nexo-ec__sub">@(h.TipoCiclo switch { "SEMANA_AB" => "A/B", "SEMANA_4" => "A/B/C/D", _ => "Fijo" }) · @(h.RegistraSalida ? "E+S" : "Solo E")</div>
+                        </div>
+                        <MudChip T="string" Size="Size.Small" Color="@(h.Activo ? Color.Success : Color.Default)" Style="font-size:0.7rem">@(h.Activo ? "Activo" : "Inactivo")</MudChip>
+                    </div>
+                    <div class="nexo-ec__body">
+                        <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.AccessTime" Size="Size.Small" /><span>Tolerancia: @h.ToleranciaTardanzaMin min</span></div>
+                        <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.CalendarViewWeek" Size="Size.Small" /><span>@ResumenDias(h)</span></div>
+                    </div>
+                    <div class="nexo-ec__footer">
+                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => VerHorarioAsync(h))">Ver</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => EditarHorarioAsync(h))">Editar</MudButton>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</MudPaper>
+
+@* ── Configuración del QR de asistencia (solo admin) ── *@
+<AuthorizeView Roles="Administracion" Context="authQr">
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <div class="nexo-chart-header mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.QrCode2" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Modo de seguridad del QR</div>
+                <div class="nexo-chart-header__sub">
+                    Esta configuracion es permanente y aplica al kiosco de asistencia.
+                </div>
+            </div>
+        </div>
+
+        @if (_cargandoConfig)
+        {
+            <MudProgressLinear Indeterminate Color="Color.Primary" />
+        }
+        else
+        {
+            <MudRadioGroup T="string" @bind-Value="_modoQr">
+                <MudRadio T="string" Value="@("TTL")" Color="Color.Primary">
+                    <div>
+                        <strong>Por tiempo (5 minutos)</strong>
+                        <div style="font-size:.85rem; color:var(--mud-palette-text-secondary)">
+                            El código cambia automáticamente cada 5 minutos. Cualquiera con la imagen puede usarlo durante ese tiempo.
+                        </div>
+                    </div>
+                </MudRadio>
+                <MudRadio T="string" Value="@("SINGLE_USE")" Color="Color.Secondary" Class="mt-2">
+                    <div>
+                        <strong>Un solo uso (máxima seguridad)</strong>
+                        <div style="font-size:.85rem; color:var(--mud-palette-text-secondary)">
+                            El código se invalida inmediatamente al ser escaneado. El kiosco genera uno nuevo en segundos.
+                            Una captura de pantalla ya no sirve para múltiples marcajes.
+                        </div>
+                    </div>
+                </MudRadio>
+            </MudRadioGroup>
+
+            <div class="mt-4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           Disabled="_guardandoConfig"
+                           OnClick="GuardarModoQrAsync">
+                    @(_guardandoConfig ? "Guardando..." : "Guardar configuración")
+                </MudButton>
+            </div>
+        }
+    </MudPaper>
+</AuthorizeView>
+
+@* ── Asignar horario a empleado (solo admin) ── *@
+<AuthorizeView Roles="Administracion" Context="authAsig">
+    <MudPaper Class="pa-4" Elevation="1">
+        <div class="nexo-chart-header mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Asignar horario a empleado</div>
+                <div class="nexo-chart-header__sub">Solo empleados sin horario activo. Cada empleado puede tener un unico horario vigente.</div>
+            </div>
+        </div>
+
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4">
+                <AppSelect TValue="int?" @bind-Value="_asigEmpleadoId" Label="Empleado" Placeholder="Selecciona el empleado"
+                           Items="@(_empleadosSinHorario.Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <AppSelect TValue="int?" @bind-Value="_asigHorarioId" Label="Horario" Placeholder="Selecciona el horario"
+                           Items="@(_horarios.Where(x => x.Activo).Select(h => new AppSelectItem<int?>(h.Nombre, (int?)h.HorarioID)))" />
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudDatePicker @bind-Date="_asigDesde" Label="Vigente desde"
+                               DateFormat="dd/MM/yyyy" />
+            </MudItem>
+            <MudItem xs="12" sm="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth
+                           Disabled="@(!AsignacionValida || _asignando)"
+                           OnClick="AsignarHorarioAsync">
+                    @(_asignando ? "Guardando..." : "Asignar")
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+</AuthorizeView>
+
+@code {
+    List<HorarioItem> _horarios = [];
+    List<EmpleadoSimpleItem> _empleadosSinHorario = [];
+    bool _cargando;
+
+    // Config QR
+    string _modoQr = "TTL";
+    bool _cargandoConfig = true;
+    bool _guardandoConfig;
+
+    int? _asigEmpleadoId;
+    int? _asigHorarioId;
+    DateTime? _asigDesde = NexoWeb.Common.ColombiaClock.Today;
+    bool _asignando;
+
+    bool AsignacionValida =>
+        _asigEmpleadoId.HasValue && _asigHorarioId.HasValue && _asigDesde.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var tHorarios  = Api.GetAsync<List<HorarioItem>>("api/rrhh/asistencia/horarios");
+            var tEmpleados = Api.GetAsync<List<EmpleadoSimpleItem>>("api/rrhh/asistencia/empleados-sin-horario");
+            var tConfig    = Api.GetAsync<ConfigQrResponse>("api/rrhh/asistencia/config-qr");
+            await Task.WhenAll(tHorarios, tEmpleados, tConfig);
+            _horarios            = tHorarios.Result  ?? [];
+            _empleadosSinHorario = tEmpleados.Result ?? [];
+            _modoQr              = tConfig.Result?.Modo ?? "TTL";
+        }
+        finally { _cargando = false; _cargandoConfig = false; }
+    }
+
+    async Task GuardarModoQrAsync()
+    {
+        _guardandoConfig = true;
+        try
+        {
+            await Api.PutAsync("api/rrhh/asistencia/config-qr", new ConfigQrRequest(_modoQr));
+            Snackbar.Add(
+                _modoQr == "SINGLE_USE"
+                    ? "Modo un solo uso activado. El QR se renovará en cada escaneo."
+                    : "Modo por tiempo activado. El QR rota cada 5 minutos.",
+                Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardandoConfig = false; }
+    }
+
+    private record ConfigQrResponse(string Modo);
+    private record ConfigQrRequest(string Modo);
+
+    async Task AbrirNuevoHorario()
+    {
+        var opts = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+        var dialogo = await Dialog.ShowAsync<NuevoHorarioDialog>("Nuevo Horario", opts);
+        var resultado = await dialogo.Result;
+        if (resultado is { Canceled: false, Data: CrearHorarioRequest req })
+        {
+            try
+            {
+                await Api.PostAsync<CrearHorarioRequest>("api/rrhh/asistencia/horarios", req);
+                _horarios = await Api.GetAsync<List<HorarioItem>>("api/rrhh/asistencia/horarios") ?? [];
+                Snackbar.Add($"Horario '{req.Nombre}' creado.", Severity.Success);
+            }
+            catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        }
+    }
+
+    async Task EditarHorarioAsync(HorarioItem horario)
+    {
+        var opts = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+        var parametros = new DialogParameters<EditarHorarioDialog>
+        {
+            { x => x.Horario, horario }
+        };
+        var dialogo = await Dialog.ShowAsync<EditarHorarioDialog>("Editar Horario", parametros, opts);
+        var resultado = await dialogo.Result;
+        if (resultado is { Canceled: false, Data: CrearHorarioRequest req })
+        {
+            try
+            {
+                await Api.PutAsync($"api/rrhh/asistencia/horarios/{horario.HorarioID}", req);
+                _horarios = await Api.GetAsync<List<HorarioItem>>("api/rrhh/asistencia/horarios") ?? [];
+                Snackbar.Add($"Horario '{horario.Nombre}' actualizado.", Severity.Success);
+            }
+            catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        }
+    }
+
+    async Task VerHorarioAsync(HorarioItem horario)
+    {
+        var opts = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var parametros = new DialogParameters<VerHorarioDialog>
+        {
+            { x => x.Horario, horario }
+        };
+        await Dialog.ShowAsync<VerHorarioDialog>(horario.Nombre, parametros, opts);
+    }
+
+    async Task AsignarHorarioAsync()
+    {
+        if (!AsignacionValida) return;
+        _asignando = true;
+        try
+        {
+            await Api.PostAsync<AsignarHorarioEmpleadoRequest>(
+                $"api/rrhh/asistencia/empleados/{_asigEmpleadoId}/horario",
+                new AsignarHorarioEmpleadoRequest(_asigHorarioId!.Value, _asigDesde!.Value));
+
+            var horarioNombre = _horarios.FirstOrDefault(h => h.HorarioID == _asigHorarioId)?.Nombre ?? "";
+            var emp = _empleadosSinHorario.FirstOrDefault(e => e.EmpleadoID == _asigEmpleadoId!.Value);
+            var empleadoNombre = emp is not null ? $"{emp.Nombres} {emp.Apellidos}" : "";
+            Snackbar.Add($"Horario '{horarioNombre}' asignado a {empleadoNombre} desde {_asigDesde!.Value:dd/MM/yyyy}.", Severity.Success);
+            _asigEmpleadoId = null;
+            _asigHorarioId = null;
+            _asigDesde = NexoWeb.Common.ColombiaClock.Today;
+            // Recargar empleados sin horario (el asignado ya no debe aparecer)
+            _empleadosSinHorario = await Api.GetAsync<List<EmpleadoSimpleItem>>("api/rrhh/asistencia/empleados-sin-horario") ?? [];
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _asignando = false; }
+    }
+
+    async Task ToggleActivoAsync(HorarioItem horario)
+    {
+        try
+        {
+            await Api.PatchAsync($"api/rrhh/asistencia/horarios/{horario.HorarioID}/toggle-activo");
+            _horarios = await Api.GetAsync<List<HorarioItem>>("api/rrhh/asistencia/horarios") ?? [];
+            Snackbar.Add($"Horario '{horario.Nombre}' {(horario.Activo ? "desactivado" : "activado")}.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    async Task EliminarAsync(HorarioItem horario)
+    {
+        var confirm = await Dialog.ShowMessageBox(
+            "Confirmar eliminacion",
+            $"Eliminar el horario '{horario.Nombre}'? Esta accion no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (confirm != true) return;
+
+        try
+        {
+            await Api.DeleteAsync($"api/rrhh/asistencia/horarios/{horario.HorarioID}");
+            _horarios = await Api.GetAsync<List<HorarioItem>>("api/rrhh/asistencia/horarios") ?? [];
+            Snackbar.Add($"Horario '{horario.Nombre}' eliminado.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    static string ResumenDias(HorarioItem h)
+    {
+        if (h.Dias.Count == 0) return "—";
+        var n = new[] { "", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom" };
+        if (h.TipoCiclo == "FIJO")
+            return string.Join(", ", h.Dias.Select(d => n[d.DiaSemana]));
+        var semanas = h.Dias.Select(d => d.Semana).Distinct().OrderBy(s => s).ToList();
+        return string.Join(" / ", semanas.Select(s =>
+            $"{s}: {string.Join(",", h.Dias.Where(d => d.Semana == s).Select(d => n[d.DiaSemana]))}"));
+    }
+}

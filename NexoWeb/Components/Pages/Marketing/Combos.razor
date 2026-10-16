@@ -1,0 +1,243 @@
+﻿@page "/marketing/combos"
+@using NexoWeb.Common.Dtos
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Combos / Ofertas</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-3 flex-wrap" style="gap:.5rem">
+    <MudText Typo="Typo.h5">Combos y Ofertas</MudText>
+    <div class="d-flex align-center" style="gap:8px">
+        <VistaToggle OnCambio="StateHasChanged" />
+        <AuthorizeView Roles="Administracion,Jefes,Marketing">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="NuevoCombo">
+                Nuevo combo
+            </MudButton>
+        </AuthorizeView>
+    </div>
+</div>
+<InfoAyuda Texto="Crea combos y ofertas especiales agrupando artículos con precio fijo o descuento. Actívalos por período y aplícalos en ventas." />
+
+<MudPaper Class="pa-3 mb-3" Elevation="0" Outlined="true">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="4">
+            <AppSelect TValue="string?" @bind-Value="_filtroEstado" Label="Estado" Placeholder="Todos"
+                       Items="@(new AppSelectItem<string?>[]{ new("Activo","Activo"), new("Inactivo","Inactivo"), new("Borrador","Borrador") })" />
+        </MudItem>
+        <MudItem xs="12" sm="4" Class="d-flex align-end">
+            <MudButton Variant="Variant.Outlined" OnClick="CargarAsync">Filtrar</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_cargando)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_combos.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No hay combos registrados.</MudAlert>
+}
+else if (Preferencias.VistaListado == "lista")
+{
+    <MudTable Items="_combos" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Origen</MudTh>
+            <MudTh Style="text-align:right">Precio</MudTh>
+            <MudTh>Vigencia</MudTh>
+            <MudTh>Acción</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+            <MudTd DataLabel="Estado"><MudChip T="string" Size="Size.Small" Color="@ChipEstado(context.Estado)">@context.Estado</MudChip></MudTd>
+            <MudTd DataLabel="Origen">
+                <MudChip T="string" Size="Size.Small" Color="@(context.Origen == "VISIONS" ? Color.Info : Color.Default)">@context.Origen</MudChip>
+                @if (!context.ExportadoVisions && context.Origen == "NEXO")
+                {
+                    <MudTooltip Text="Pendiente de sincronizar a VISIONS">
+                        <MudIcon Icon="@Icons.Material.Outlined.Sync" Size="Size.Small" Color="Color.Warning" />
+                    </MudTooltip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Precio" Style="text-align:right">@context.PrecioEfectivo.ToString("C0")</MudTd>
+            <MudTd DataLabel="Vigencia">@(context.FechaInicio?.ToString("dd/MM") ?? "—") — @(context.FechaFin?.ToString("dd/MM/yyyy") ?? "—")</MudTd>
+            <MudTd DataLabel="Acción">
+                @if (context.Origen != "VISIONS")
+                {
+                    <MudButton Size="Size.Small" OnClick="@(() => EditarCombo(context))">Editar</MudButton>
+                }
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => VerCombo(context))">Ver</MudButton>
+                @if (_esAdmin && context.Origen != "VISIONS")
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                   OnClick="@(() => EliminarComboAsync(context))" />
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else
+{
+    <MudGrid Spacing="3">
+        @foreach (var combo in _combos)
+        {
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Style="height:100%; display:flex; flex-direction:column;">
+                    @if (combo.TieneImagen)
+                    {
+                        <img src="@combo.ImagenDataUri"
+                             style="width:100%; height:160px; object-fit:cover; display:block;" />
+                    }
+                    else
+                    {
+                        <div style="height:80px; display:flex; align-items:center; justify-content:center; background:var(--mud-palette-background-grey);">
+                            <MudIcon Icon="@Icons.Material.Filled.LocalOffer" Style="font-size:2.5rem; color:var(--mud-palette-text-disabled);" />
+                        </div>
+                    }
+                    <MudCardContent Style="flex:1">
+                        <div class="d-flex align-center justify-space-between mb-1">
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600">@combo.Nombre</MudText>
+                            <div class="d-flex align-center" style="gap:4px">
+                                <MudChip T="string" Size="Size.Small" Color="@(combo.Origen == "VISIONS" ? Color.Info : Color.Default)">@combo.Origen</MudChip>
+                                <MudChip T="string" Size="Size.Small" Color="@ChipEstado(combo.Estado)">@combo.Estado</MudChip>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(combo.Descripcion))
+                        {
+                            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary)" Class="mb-1">@combo.Descripcion</MudText>
+                        }
+
+                        @* Artículos incluidos *@
+                        @if (combo.Items.Count > 0)
+                        {
+                            <div style="border-top:1px solid var(--mud-palette-divider); margin:6px 0 6px; padding-top:6px;">
+                                @foreach (var item in combo.Items)
+                                {
+                                    <div class="d-flex align-center justify-space-between"
+                                         style="font-size:0.78rem; padding:2px 0; color:var(--mud-palette-text-secondary)">
+                                        <span>@item.NombreArticulo</span>
+                                        <span style="font-weight:600; color:var(--mud-palette-text-primary); white-space:nowrap; margin-left:8px;">
+                                            ×@item.Cantidad.ToString("G29") @item.Unidad
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div class="mt-1 d-flex align-center" style="gap:8px;">
+                            <MudText Typo="Typo.h6" Color="Color.Primary">@combo.PrecioEfectivo.ToString("C0")</MudText>
+                            @if (combo.PorcentajeDescuento > 0)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success">-@combo.PorcentajeDescuento.ToString("G29")%</MudChip>
+                            }
+                        </div>
+                        @if (combo.FechaInicio.HasValue || combo.FechaFin.HasValue)
+                        {
+                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                                @(combo.FechaInicio?.ToString("dd/MM") ?? "…") — @(combo.FechaFin?.ToString("dd/MM/yyyy") ?? "…")
+                            </MudText>
+                        }
+                    </MudCardContent>
+                    <MudCardActions>
+                        @if (combo.Origen != "VISIONS")
+                        {
+                            <AuthorizeView Roles="Administracion,Jefes,Marketing">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                               OnClick="@(() => EditarCombo(combo))" />
+                            </AuthorizeView>
+                            <AuthorizeView Roles="Administracion">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                               OnClick="@(() => EliminarComboAsync(combo))" />
+                            </AuthorizeView>
+                        }
+                        <MudIconButton Icon="@Icons.Material.Filled.Info" Size="Size.Small"
+                                       OnClick="@(() => VerCombo(combo))" />
+                        @if (!combo.ExportadoVisions && combo.Origen == "NEXO")
+                        {
+                            <MudTooltip Text="Pendiente de sincronizar a VISIONS">
+                                <MudIcon Icon="@Icons.Material.Outlined.Sync" Size="Size.Small" Color="Color.Warning" Style="margin:auto 4px" />
+                            </MudTooltip>
+                        }
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private List<ComboItem> _combos = [];
+    private bool _cargando;
+    private string? _filtroEstado;
+    private bool _esAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _esAdmin = state.User.IsInRole("Administracion");
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var url = "api/marketing/combos" + (_filtroEstado is not null ? $"?estado={_filtroEstado}" : "");
+            _combos = await ApiClient.GetAsync<List<ComboItem>>(url) ?? [];
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _cargando = false; }
+    }
+
+    private async Task NuevoCombo()
+    {
+        var dialog = await DialogService.ShowAsync<ComboDialog>("Nuevo combo", new DialogParameters(), new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (!result!.Canceled) await CargarAsync();
+    }
+
+    private async Task EditarCombo(ComboItem combo)
+    {
+        var params_ = new DialogParameters { ["ComboId"] = combo.ComboID };
+        var dialog = await DialogService.ShowAsync<ComboDialog>($"Editar — {combo.Nombre}", params_, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (!result!.Canceled) await CargarAsync();
+    }
+
+    private async Task VerCombo(ComboItem combo)
+    {
+        var params_ = new DialogParameters { ["ComboId"] = combo.ComboID, ["SoloVer"] = true };
+        await DialogService.ShowAsync<ComboDialog>(combo.Nombre, params_, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+    }
+
+    private async Task EliminarComboAsync(ComboItem combo)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Eliminar combo", $"¿Eliminar «{combo.Nombre}»? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (confirm != true) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/marketing/combos/{combo.ComboID}");
+            Snackbar.Add("Combo eliminado.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private static Color ChipEstado(string estado) => estado switch
+    {
+        "Activo"   => Color.Success,
+        "Inactivo" => Color.Default,
+        _          => Color.Warning
+    };
+}

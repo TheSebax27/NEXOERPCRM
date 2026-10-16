@@ -1,0 +1,293 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog Style="min-width:720px;">
+    <DialogContent>
+        <MudText Typo="Typo.subtitle2" Class="mb-3">
+            Orden: <strong>@CodigoOP</strong>
+        </MudText>
+
+        @if (_plan is null)
+        {
+            @* Formulario crear plan *@
+            <MudText Typo="Typo.body2" Class="mb-2">Define la lámina de trabajo:</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_reqNombreLamina" Label="Material / Lámina"
+                                  Variant="Variant.Outlined" Placeholder="Ej: MDF 18mm" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="decimal" @bind-Value="_reqLargo" Label="Largo"
+                                     Variant="Variant.Outlined" HideSpinButtons="true" Min="0" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="decimal" @bind-Value="_reqAncho" Label="Ancho"
+                                     Variant="Variant.Outlined" HideSpinButtons="true" Min="0" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="decimal" @bind-Value="_reqEspesor" Label="Espesor"
+                                     Variant="Variant.Outlined" HideSpinButtons="true" Min="0" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudSelect T="string" @bind-Value="_reqUnidad" Label="Unidad" Variant="Variant.Outlined">
+                        <MudSelectItem Value=@("mm")>mm</MudSelectItem>
+                        <MudSelectItem Value=@("cm")>cm</MudSelectItem>
+                        <MudSelectItem Value=@("in")>in</MudSelectItem>
+                        <MudSelectItem Value=@("m")>m</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="decimal" @bind-Value="_reqAnchoSierra" Label="Kerf (sierra)"
+                                     Variant="Variant.Outlined" HideSpinButtons="true" Min="0"
+                                     HelperText="Ancho corte mm" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="int" @bind-Value="_reqNumLaminas" Label="# Láminas"
+                                     Variant="Variant.Outlined" HideSpinButtons="true" Min="1" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_reqNotas" Label="Notas (opcional)"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="2" Class="d-flex align-end">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Outlined.ContentCut"
+                               OnClick="CrearPlanAsync" Disabled="_guardando" FullWidth="true">
+                        Crear plan
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        }
+        else
+        {
+            @* Plan activo: estadísticas + piezas *@
+            <div class="d-flex align-center mb-2" style="gap:0.75rem; flex-wrap:wrap;">
+                <MudChip T="string" Color="Color.Default" Size="Size.Small">
+                    @_plan.NombreLamina @_plan.LargoLamina×@_plan.AnchoLamina×@_plan.EspesorLamina @_plan.UnidadMedida
+                </MudChip>
+                <MudChip T="string" Color="Color.Default" Size="Size.Small">
+                    @_plan.NumeroLaminas lámina(s) · kerf @_plan.AnchoSierra mm
+                </MudChip>
+            </div>
+
+            @if (_stats is not null)
+            {
+                <MudGrid Class="mb-3">
+                    <MudItem xs="6" sm="3">
+                        <div class="nexo-calc-chip">
+                            <span class="nexo-calc-chip__label">Área lámina</span>
+                            <span class="nexo-calc-chip__value">@_stats.AreaLaminaM2.ToString("N4") m²</span>
+                        </div>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <div class="nexo-calc-chip">
+                            <span class="nexo-calc-chip__label">Área piezas</span>
+                            <span class="nexo-calc-chip__value">@_stats.AreaPiezasM2.ToString("N4") m²</span>
+                        </div>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <div class="nexo-calc-chip @(_stats.PorcentajeAprovechamiento >= 70 ? "" : "nexo-calc-chip--muted")">
+                            <span class="nexo-calc-chip__label">Aprovechamiento</span>
+                            <span class="nexo-calc-chip__value">@_stats.PorcentajeAprovechamiento.ToString("N1") %</span>
+                        </div>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <div class="nexo-calc-chip">
+                            <span class="nexo-calc-chip__label">Pies tabla total</span>
+                            <span class="nexo-calc-chip__value">@_stats.PiesTablaPiezas.ToString("N2") pt</span>
+                        </div>
+                    </MudItem>
+                </MudGrid>
+            }
+
+            @* Agregar pieza al plan *@
+            <MudText Typo="Typo.caption" Class="mb-1">Agregar pieza al plan:</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="_pNombre" Label="Nombre pieza"
+                                  Variant="Variant.Outlined" Placeholder="Ej: Puerta" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="decimal" @bind-Value="_pLargo" Label="Largo"
+                                     Variant="Variant.Outlined" HideSpinButtons="true" Min="0" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="decimal" @bind-Value="_pAncho" Label="Ancho"
+                                     Variant="Variant.Outlined" HideSpinButtons="true" Min="0" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="int" @bind-Value="_pCantidad" Label="Cant."
+                                     Variant="Variant.Outlined" HideSpinButtons="true" Min="1" />
+                </MudItem>
+                <MudItem xs="6" sm="2" Class="d-flex align-end">
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                               StartIcon="@Icons.Material.Outlined.Add"
+                               OnClick="AgregarPiezaAsync" Disabled="_guardando" FullWidth="true">
+                        Agregar
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <MudDivider Class="my-2" />
+
+            @if (_piezas.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Style="color:var(--n-text-3);">Sin piezas en el plan.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_piezas" Dense="true" Hover="true" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>Pieza</MudTh>
+                        <MudTh>Largo</MudTh>
+                        <MudTh>Ancho</MudTh>
+                        <MudTh>Cant.</MudTh>
+                        <MudTh>Área (m²)</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.NombrePieza</MudTd>
+                        <MudTd>@context.Largo.ToString("N1") @_plan.UnidadMedida</MudTd>
+                        <MudTd>@context.Ancho.ToString("N1") @_plan.UnidadMedida</MudTd>
+                        <MudTd>@context.Cantidad</MudTd>
+                        <MudTd>@((CalcAreaM2(context.Largo, context.Ancho, _plan.UnidadMedida) * context.Cantidad).ToString("N4"))</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline"
+                                           Size="Size.Small" Color="Color.Error"
+                                           OnClick="() => EliminarPiezaAsync(context.PlanCortePiezaID)" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            <div Class="d-flex justify-end mt-2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                           StartIcon="@Icons.Material.Outlined.Delete"
+                           OnClick="EliminarPlanAsync">
+                    Eliminar plan
+                </MudButton>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Close()">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int OrdenProduccionID { get; set; }
+    [Parameter] public string CodigoOP { get; set; } = "";
+
+    private PlanCorteConPiezas? _plan;
+    private EstadisticasPlanCorte? _stats;
+    private List<PlanCortePiezaItem> _piezas = new();
+    private bool _guardando;
+
+    // form crear plan
+    private string  _reqNombreLamina  = "";
+    private decimal _reqLargo, _reqAncho, _reqEspesor;
+    private string  _reqUnidad        = "mm";
+    private decimal _reqAnchoSierra   = 3;
+    private int     _reqNumLaminas    = 1;
+    private string? _reqNotas;
+
+    // form agregar pieza
+    private string  _pNombre    = "";
+    private decimal _pLargo, _pAncho;
+    private int     _pCantidad  = 1;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var lista = await ApiClient.GetAsync<List<PlanCorteItem>>(
+                $"api/produccion/ordenes/{OrdenProduccionID}/plan-corte") ?? new();
+            if (lista.Count > 0)
+            {
+                _plan = await ApiClient.GetAsync<PlanCorteConPiezas>(
+                    $"api/produccion/plan-corte/{lista[0].PlanCorteID}");
+                _piezas = _plan?.Piezas ?? new();
+                _stats  = _plan?.Estadisticas;
+            }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task CrearPlanAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_reqNombreLamina) || _reqLargo <= 0 || _reqAncho <= 0 || _reqEspesor <= 0)
+        {
+            Snackbar.Add("Completa nombre y dimensiones de la lámina.", Severity.Warning);
+            return;
+        }
+        _guardando = true;
+        try
+        {
+            var req = new CrearPlanCorteRequest(null, _reqNombreLamina, _reqLargo, _reqAncho, _reqEspesor,
+                                               _reqUnidad, _reqAnchoSierra, _reqNumLaminas, _reqNotas);
+            await ApiClient.PostAsync<CrearPlanCorteRequest, object?>(
+                $"api/produccion/ordenes/{OrdenProduccionID}/plan-corte", req);
+            await CargarAsync();
+            Snackbar.Add("Plan de corte creado.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private async Task AgregarPiezaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_pNombre) || _pLargo <= 0 || _pAncho <= 0)
+        {
+            Snackbar.Add("Completa nombre, largo y ancho.", Severity.Warning);
+            return;
+        }
+        if (_plan is null) return;
+        _guardando = true;
+        try
+        {
+            var req = new CrearPlanCortePiezaRequest(_pNombre.Trim(), _pLargo, _pAncho, _pCantidad, null);
+            await ApiClient.PostAsync<CrearPlanCortePiezaRequest, object?>(
+                $"api/produccion/plan-corte/{_plan.PlanCorteID}/piezas", req);
+            _pNombre = ""; _pLargo = 0; _pAncho = 0; _pCantidad = 1;
+            await CargarAsync();
+            Snackbar.Add("Pieza agregada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private async Task EliminarPiezaAsync(int piezaId)
+    {
+        try
+        {
+            await ApiClient.DeleteAsync($"api/produccion/plan-corte/piezas/{piezaId}");
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarPlanAsync()
+    {
+        if (_plan is null) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/produccion/plan-corte/{_plan.PlanCorteID}");
+            _plan = null; _piezas = new(); _stats = null;
+            Snackbar.Add("Plan eliminado.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private static decimal CalcAreaM2(decimal largo, decimal ancho, string unidad)
+    {
+        decimal factor = unidad == "mm" ? 1_000_000m
+                       : unidad == "cm" ? 10_000m
+                       : unidad == "in" ? 1_550.003m
+                       : 1m;
+        return largo * ancho / factor;
+    }
+}

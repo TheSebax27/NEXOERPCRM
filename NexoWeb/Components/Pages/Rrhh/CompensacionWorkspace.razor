@@ -1,0 +1,31 @@
+@page "/rrhh/compensacion"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>Compensación — NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Compensación</h1>
+        </div>
+    </div>
+</div>
+
+<MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true"
+         Class="nexo-bi-tabs mb-2"
+         ActivePanelIndex="_tabIndex" ActivePanelIndexChanged="OnTabChanged">
+    <MudTabPanel Text="Comisiones" Icon="@Icons.Material.Filled.AttachMoney">
+        <ComisionDashboard />
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")] public int TabQuery { get; set; }
+    private int _tabIndex;
+
+    protected override void OnParametersSet() => _tabIndex = TabQuery;
+
+    private void OnTabChanged(int idx) => _tabIndex = idx;
+}

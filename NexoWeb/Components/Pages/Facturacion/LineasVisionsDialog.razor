@@ -1,0 +1,63 @@
+@inject INexoApiClient ApiClient
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        @if (_cargando)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mb-2" />
+        }
+        else if (_lineas.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Sin líneas registradas para este documento.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_lineas" Dense="true" Hover="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Código</MudTh>
+                    <MudTh>Artículo</MudTh>
+                    <MudTh Style="text-align:right">Cantidad</MudTh>
+                    <MudTh Style="text-align:right">Precio</MudTh>
+                    <MudTh Style="text-align:right">Subtotal</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Style="font-size:0.8rem">@(context.CodigoArticulo ?? "-")</MudTd>
+                    <MudTd Style="font-size:0.82rem">@(context.NombreArticulo ?? "-")</MudTd>
+                    <MudTd Style="text-align:right">@context.Cantidad.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.PrecioUnitario.ToString("C0")</MudTd>
+                    <MudTd Style="text-align:right;font-weight:500">@context.Subtotal.ToString("C0")</MudTd>
+                </RowTemplate>
+                <FooterContent>
+                    <MudTd colspan="4" Style="text-align:right;font-weight:bold">Total:</MudTd>
+                    <MudTd Style="text-align:right;font-weight:bold">@_lineas.Sum(l => l.Subtotal).ToString("C0")</MudTd>
+                </FooterContent>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public int CentroCostoID { get; set; }
+    [Parameter] public string TipDoc { get; set; } = "";
+    [Parameter] public string NroDoc { get; set; } = "";
+
+    private List<VentaVisionsLineaItem> _lineas = new();
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var url = $"api/integracion/ventas-visions/lineas?centroCostoId={CentroCostoID}&tipDoc={Uri.EscapeDataString(TipDoc)}&nroDoc={Uri.EscapeDataString(NroDoc)}";
+            _lineas = await ApiClient.GetAsync<List<VentaVisionsLineaItem>>(url) ?? new();
+        }
+        catch { _lineas = new(); }
+        finally { _cargando = false; }
+    }
+}

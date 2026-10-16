@@ -1,0 +1,359 @@
+﻿@page "/inventario/bajas"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Registrar Baja — NEXO</PageTitle>
+
+<div class="inv-header">
+    <div class="inv-header__left">
+        <h1 class="inv-header__title">
+            <MudIcon Icon="@Icons.Material.Filled.RemoveCircleOutline" Class="inv-header__icon" />
+            Registrar Baja
+        </h1>
+        <p class="inv-header__sub">Descuenta stock por daño o pérdida (no por venta ni traspaso). Irreversible, queda en el Kardex.</p>
+    </div>
+</div>
+<div style="max-width:640px;margin:0 auto">
+<InfoAyuda Texto="Descuenta stock por daño, merma o pérdida (no por venta ni traspaso). La operación es irreversible y queda en el Kardex." />
+</div>
+
+
+<div class="inv-form-card">
+    @* ── Artículo ─────────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Artículo <span class="inv-req">*</span></label>
+        <ArticuloAutocomplete Value="_articuloSeleccionado"
+                              ValueChanged="OnArticuloCambiado"
+                              Label="Artículo" Required="true" />
+    </div>
+
+    @* ── Info artículo si está seleccionado ───────────────────────── *@
+    @if (_stockCargando)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+    }
+    @if (ArticuloSeleccionado is { } artInfo && !_stockCargando)
+    {
+        var stockMostrar = _stockEnBodegaSeleccionada;
+        <div class="inv-art-info">
+            <div class="inv-art-info__item">
+                <span class="inv-muted">Presentación</span>
+                <strong>
+                    @(artInfo.PresentacionCodigo ?? "—")
+                    @if (artInfo.PresentacionNombre is not null)
+                    { <span class="inv-muted"> — @artInfo.PresentacionNombre</span> }
+                </strong>
+            </div>
+            <div class="inv-art-info__item">
+                <span class="inv-muted">Stock @(_bodegaId.HasValue ? "en bodega" : "total")</span>
+                @if (artInfo.EsFraccionado && artInfo.Fracciones is > 0)
+                {
+                    var embNombre    = artInfo.PresentacionNombre ?? artInfo.PresentacionCodigo?.ToUpper() ?? "embalajes";
+                    var cajasTotales = Math.Floor(stockMostrar);
+                    var undSueltas   = Math.Round((stockMostrar - cajasTotales) * artInfo.Fracciones!.Value);
+                    <strong>@($"{cajasTotales:N0} {embNombre.ToLower()} + {undSueltas:N0} und")</strong>
+                }
+                else
+                {
+                    <strong>@stockMostrar.ToString("N2") @(artInfo.PresentacionCodigo ?? "")</strong>
+                }
+            </div>
+        </div>
+    }
+
+    @* ── Bodega (solo con stock del artículo) ─────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Bodega <span class="inv-req">*</span></label>
+        <AppSelect TValue="int?" @bind-Value="_bodegaId"
+                   Disabled="@(_articuloId is null)"
+                   Placeholder="@(_articuloId is not null && _bodegasConStock.Count == 0 ? "Sin stock en ninguna bodega" : "Selecciona la bodega")"
+                   Class="inv-form-field"
+                   Items="@(_bodegasConStock.Select(bodega => new AppSelectItem<int?>($"{bodega.Nombre} ({bodega.CentroCosto})", (int?)bodega.BodegaID)))" />
+    </div>
+
+    @* ── Cantidad ────────────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Cantidad perdida <span class="inv-req">*</span></label>
+
+        @if (ArticuloSeleccionado is { } artBaja && !_modoManual && artBaja.EsFraccionado)
+        {
+            @* Modo fraccionado — inputs separados *@
+            var labelEmb = artBaja.PresentacionNombre ?? artBaja.PresentacionCodigo?.ToUpper() ?? "Embalaje";
+            <div class="inv-cant-frac">
+                <MudNumericField @bind-Value="_cajas" @bind-Value:after="RecalcularDesdeCajas"
+                                 Label="@labelEmb" Min="0m" Format="N0" Variant="Variant.Outlined" />
+                <MudNumericField @bind-Value="_unidades" @bind-Value:after="RecalcularDesdeCajas"
+                                 Label="Unidades sueltas" Min="0m"
+                                 HelperText="@($"máx {artBaja.Fracciones!.Value - 1:N0} por {labelEmb.ToLower()}")"
+                                 Max="@(artBaja.Fracciones!.Value - 1)"
+                                 Format="N0" Variant="Variant.Outlined" />
+            </div>
+            <div class="inv-cant-total">
+                Total baja: <strong>@(_cantidadPerdida.ToString("N4"))</strong> @labelEmb =
+                <strong>@((_cantidadPerdida * artBaja.Fracciones!.Value).ToString("N0"))</strong> und
+            </div>
+            <button class="inv-modo-link" @onclick="@(() => _modoManual = true)">
+                Cambiar a valor manual →
+            </button>
+        }
+        else if (ArticuloSeleccionado is { } artBaja2 && !_modoManual)
+        {
+            @* Modo normal con presentación conocida *@
+            <div class="d-flex align-end" style="gap:.5rem;">
+                <MudNumericField @bind-Value="_cantidadPerdida" Label="Cantidad" Min="0.01m"
+                                 Format="N3" Variant="Variant.Outlined" Class="flex-1" />
+                @if (!string.IsNullOrWhiteSpace(artBaja2.PresentacionCodigo))
+                {
+                    <span class="inv-unidad-label">@artBaja2.PresentacionCodigo</span>
+                }
+            </div>
+            <button class="inv-modo-link" @onclick="@(() => _modoManual = true)">
+                Cambiar a valor manual →
+            </button>
+        }
+        else
+        {
+            @* Modo manual / sin artículo *@
+            <MudNumericField @bind-Value="_cantidadPerdida"
+                             Label="@(ArticuloSeleccionado is null ? "Cantidad" : "Cantidad (manual)")"
+                             Min="0.000001m" Format="N6" Variant="Variant.Outlined"
+                             HelperText="@(ArticuloSeleccionado is { } a ? $"Valor decimal en {a.PresentacionCodigo ?? "unidad base"}" : null)" />
+            @if (ArticuloSeleccionado is not null)
+            {
+                <button class="inv-modo-link" @onclick="VolveModoFriendly">
+                    ← Volver al modo normal
+                </button>
+            }
+        }
+
+        @if (_stockCargando)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-1" Style="max-width:300px" />
+        }
+        @if (_bodegaId.HasValue && _articuloId.HasValue)
+        {
+            var stockBodega = _stock.Where(s => s.ArticuloID == _articuloId && s.BodegaID == _bodegaId).Sum(s => s.CantidadActual);
+            if (_cantidadPerdida > stockBodega && stockBodega > 0)
+            {
+                <div class="inv-alerta-cant">
+                    ⚠ La cantidad supera el stock disponible en esta bodega (@stockBodega.ToString("N2")).
+                </div>
+            }
+        }
+    </div>
+
+    @* ── Motivo ───────────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Motivo <span class="inv-req">*</span></label>
+        <AppSelect TValue="int?" @bind-Value="_motivoId" Placeholder="Selecciona el motivo" Class="inv-form-field"
+                   Items="@(_motivos.Select(motivo => new AppSelectItem<int?>(motivo.Nombre, (int?)motivo.MotivoID)))" />
+    </div>
+
+    @* ── Observación ─────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Observación <span class="inv-req">*</span></label>
+        <MudTextField @bind-Value="_observacion" Lines="3" Variant="Variant.Outlined"
+                      HelperText="Mínimo 5 caracteres. Se guarda tal cual en el Kardex, sé explícito."
+                      Class="inv-form-field" />
+    </div>
+
+    @* ── Fecha ────────────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Fecha de la baja</label>
+        <div class="d-flex align-center" style="gap:0.75rem;flex-wrap:wrap;">
+            <MudButton Variant="@(_fechaBajaPersonalizada ? Variant.Outlined : Variant.Filled)"
+                       Color="Color.Default" Size="Size.Small"
+                       OnClick="@(() => { _fechaBajaPersonalizada = false; _fechaBaja = null; })">
+                Hoy
+            </MudButton>
+            <MudButton Variant="@(_fechaBajaPersonalizada ? Variant.Filled : Variant.Outlined)"
+                       Color="Color.Default" Size="Size.Small"
+                       OnClick="@(() => _fechaBajaPersonalizada = true)">
+                Fecha personalizada
+            </MudButton>
+            @if (_fechaBajaPersonalizada)
+            {
+                <MudDatePicker @bind-Date="_fechaBaja" Variant="Variant.Outlined"
+                               MaxDate="NexoWeb.Common.ColombiaClock.Today" Placeholder="Selecciona fecha"
+                               DateFormat="dd/MM/yyyy" Class="flex-1" />
+            }
+        </div>
+        @if (_fechaBajaPersonalizada && _fechaBaja.HasValue)
+        {
+            <span style="font-size:0.78rem;color:var(--mud-palette-warning-text);margin-top:0.25rem;display:block;">
+                La baja quedará registrada con fecha @_fechaBaja.Value.ToString("dd/MM/yyyy").
+            </span>
+        }
+    </div>
+
+    @* ── Alerta irreversible ──────────────────────────────────────── *@
+    <div class="inv-baja-alerta">
+        <MudIcon Icon="@Icons.Material.Filled.Warning" Style="color:rgb(244,67,54); font-size:1rem; margin-right:.35rem;" />
+        Esta operación es&nbsp;<strong>irreversible</strong>&nbsp;y descuenta el stock permanentemente.
+    </div>
+
+    @* ── Acción ───────────────────────────────────────────────────── *@
+    <div class="inv-form-actions">
+        <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="RegistrarAsync"
+                   Disabled="@(!FormularioValido || _guardando)"
+                   StartIcon="@Icons.Material.Filled.RemoveCircle" Size="Size.Large">
+            @(_guardando ? "Registrando…" : "Registrar Baja")
+        </MudButton>
+    </div>
+</div>
+
+@code {
+    private ArticuloItem?               _articuloSeleccionado;
+    private List<BodegaItem>            _bodegas   = new();
+    private List<StockConsolidadoItem>  _stock     = new();
+    private List<MotivoPerdidaItem>     _motivos   = new();
+
+    private int?    _articuloId => _articuloSeleccionado?.ArticuloID;
+    private int?    _bodegaId;
+    private int?    _motivoId;
+    private decimal _cantidadPerdida;
+    private string  _observacion = "";
+    private bool      _guardando;
+    private bool      _fechaBajaPersonalizada;
+    private DateTime? _fechaBaja;
+
+    // modo caja/fraccionado
+    private bool    _modoManual;
+    private decimal _cajas;
+    private decimal _unidades;
+
+    private ArticuloItem? ArticuloSeleccionado => _articuloSeleccionado;
+
+    // Stock del artículo filtrado por bodega seleccionada (suma de lotes).
+    // Si no hay bodega seleccionada muestra el total de todas las bodegas.
+    private decimal _stockEnBodegaSeleccionada =>
+        _articuloId.HasValue
+            ? _bodegaId.HasValue
+                ? _stock.Where(s => s.ArticuloID == _articuloId.Value && s.BodegaID == _bodegaId.Value).Sum(s => s.CantidadActual)
+                : _stock.Where(s => s.ArticuloID == _articuloId.Value).Sum(s => s.CantidadActual)
+            : 0m;
+
+    private List<BodegaItem> _bodegasConStock =>
+        _articuloId is null
+            ? new()
+            : _bodegas.Where(b => _stock.Any(s => s.ArticuloID == _articuloId.Value && s.BodegaID == b.BodegaID && s.CantidadActual > 0)).ToList();
+
+    private bool FormularioValido =>
+        _articuloSeleccionado is not null && _bodegaId.HasValue && _motivoId.HasValue &&
+        _cantidadPerdida > 0 && _observacion.Trim().Length >= 5;
+
+    private bool _stockCargando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var t2 = ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas");
+        var t4 = ApiClient.GetAsync<List<MotivoPerdidaItem>>("api/inventario/motivos-perdida");
+        await Task.WhenAll(t2, t4);
+        _bodegas = await t2 ?? new();
+        _motivos = await t4 ?? new();
+    }
+
+    private async Task OnArticuloCambiado(ArticuloItem? art)
+    {
+        _articuloSeleccionado = art;
+        _modoManual      = false;
+        _cajas           = 0;
+        _unidades        = 0;
+        _cantidadPerdida = 0;
+        _bodegaId        = null;
+        _stock           = new();
+
+        if (art is not null)
+        {
+            _stockCargando = true;
+            try
+            {
+                _stock = await ApiClient.GetAsync<List<StockConsolidadoItem>>(
+                    $"api/inventario/stock?articuloId={art.ArticuloID}") ?? new();
+            }
+            finally { _stockCargando = false; }
+
+            if (_bodegasConStock.Count == 1)
+                _bodegaId = _bodegasConStock[0].BodegaID;
+        }
+    }
+
+    private void RecalcularDesdeCajas()
+    {
+        var art = _articuloSeleccionado;
+        _cantidadPerdida = art?.Fracciones is > 0
+            ? _cajas + _unidades / art.Fracciones.Value
+            : _cajas;
+    }
+
+    private void VolveModoFriendly()
+    {
+        _modoManual = false;
+        var art = _articuloSeleccionado;
+        if (art?.EsFraccionado == true && art.Fracciones is > 0)
+        {
+            _cajas    = Math.Floor(_cantidadPerdida);
+            _unidades = Math.Round((_cantidadPerdida - _cajas) * art.Fracciones.Value);
+            RecalcularDesdeCajas();
+        }
+    }
+
+    private async Task RegistrarAsync()
+    {
+        var articuloNombre = ArticuloSeleccionado?.Nombre ?? "?";
+        var bodegaNombre   = _bodegas.FirstOrDefault(b => b.BodegaID == _bodegaId)?.Nombre ?? "?";
+        var motivoNombre   = _motivos.FirstOrDefault(m => m.MotivoID == _motivoId)?.Nombre ?? "?";
+        var pres           = ArticuloSeleccionado?.PresentacionCodigo ?? "und";
+
+        var art2 = ArticuloSeleccionado;
+        var embLabel = art2?.PresentacionNombre ?? art2?.PresentacionCodigo?.ToUpper() ?? "embalajes";
+        var cantDisplay = art2?.EsFraccionado == true && art2.Fracciones is > 0
+            ? $"{_cantidadPerdida:N4} {embLabel.ToLower()} ({_cantidadPerdida * art2.Fracciones!.Value:N0} und)"
+            : $"{_cantidadPerdida:N2} {pres}";
+
+        var consumoDiario = _stock.Where(s => s.ArticuloID == _articuloId).FirstOrDefault()?.ConsumoDiarioProm;
+        var alertaAnomalia = consumoDiario is > 0 && _cantidadPerdida > consumoDiario.Value * 7
+            ? $"\n\n⚠ ATENCIÓN: la cantidad supera 7 días de consumo promedio ({consumoDiario.Value * 7:N3} {pres}). Verifica antes de confirmar."
+            : "";
+
+        var confirmacion = await DialogService.ShowMessageBox(
+            "Confirmar Baja de Inventario",
+            $"Esta acción es IRREVERSIBLE y quedará registrada en el Kardex.\n\n" +
+            $"Artículo: {articuloNombre}\n" +
+            $"Bodega: {bodegaNombre}\n" +
+            $"Cantidad: {cantDisplay}\n" +
+            $"Motivo: {motivoNombre}" +
+            alertaAnomalia +
+            "\n\n¿Confirmar la baja?",
+            yesText: "Sí, registrar baja",
+            noText: "Cancelar");
+
+        if (confirmacion != true) return;
+
+        _guardando = true;
+        try
+        {
+            var fechaBajaEnvio = _fechaBajaPersonalizada && _fechaBaja.HasValue
+                ? (DateTime?)_fechaBaja.Value.ToUniversalTime()
+                : null;
+            var request = new RegistrarBajaRequest(
+                _articuloId!.Value, _bodegaId!.Value, null, _cantidadPerdida, _motivoId!.Value, _observacion.Trim(), fechaBajaEnvio);
+            var resultado = await ApiClient.PostAsync<RegistrarBajaRequest, RegistrarBajaResponse>(
+                "api/inventario/bajas", request);
+
+            Snackbar.Add($"Baja registrada. Código: {resultado!.CodigoBaja}", Severity.Success);
+            _cantidadPerdida = 0;
+            _cajas           = 0;
+            _unidades        = 0;
+            _modoManual      = false;
+            _observacion     = "";
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+}
+

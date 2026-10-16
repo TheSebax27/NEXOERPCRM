@@ -1,0 +1,309 @@
+/* ================================================================
+   Dashboard — Estilos de página
+   Tarjetas KPI blancas, encabezado, gráficos, estados vacíos
+   ================================================================ */
+
+
+/* ── Grid de tarjetas KPI ──────────────────────────────────── */
+.nexo-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 1100px) { .nexo-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .nexo-kpi-grid { grid-template-columns: 1fr; } }
+
+/* ── Tarjeta KPI ───────────────────────────────────────────── */
+.nexo-kpi {
+  position: relative;
+  background: #FFFFFF;
+  border: 1px solid #E8E9EF;
+  border-radius: 24px;
+  padding: 1.35rem 1.5rem 1.25rem;
+  box-shadow: var(--n-shadow-kpi);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  overflow: hidden;
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+.nexo-kpi:hover {
+  transform: translateY(-6px);
+  border-color: rgba(138,92,255,.30);
+  box-shadow: 0 18px 50px rgba(98,70,255,.15), inset 0 1px 0 rgba(255,255,255,.95);
+}
+.nexo-kpi::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
+}
+
+.nexo-kpi__icon {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+  flex-shrink: 0;
+}
+
+.nexo-kpi__value {
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--n-text-1);
+  margin-bottom: 0.15rem;
+}
+
+.nexo-kpi__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--n-text-2);
+  letter-spacing: 0.01em;
+}
+
+.nexo-kpi__sub {
+  font-size: 0.72rem;
+  color: var(--n-text-3);
+  margin-top: 0.2rem;
+}
+
+/* Variantes de color */
+.nexo-kpi--blue   .nexo-kpi__icon { background: rgba(124,92,255,0.10); color: #7C5CFF; }
+.nexo-kpi--blue   .nexo-kpi__value { color: #7C5CFF; }
+
+.nexo-kpi--green  .nexo-kpi__icon { background: rgba(16,185,129,0.10); color: #10B981; }
+.nexo-kpi--green  .nexo-kpi__value { color: #10B981; }
+
+.nexo-kpi--amber  .nexo-kpi__icon { background: rgba(245,158,11,0.10); color: #F59E0B; }
+.nexo-kpi--amber  .nexo-kpi__value { color: #F59E0B; }
+
+.nexo-kpi--red    .nexo-kpi__icon { background: rgba(239,68,68,0.10); color: #EF4444; }
+.nexo-kpi--red    .nexo-kpi__value { color: #EF4444; }
+
+.nexo-kpi--indigo .nexo-kpi__icon { background: rgba(99,102,241,0.10); color: #6366F1; }
+.nexo-kpi--indigo .nexo-kpi__value { color: #6366F1; }
+
+.nexo-kpi--teal   .nexo-kpi__icon { background: rgba(20,184,166,0.10); color: #14B8A6; }
+.nexo-kpi--teal   .nexo-kpi__value { color: #14B8A6; }
+
+/* ── Cabecera de gráfico ───────────────────────────────────── */
+.nexo-chart-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--n-border);
+}
+
+.nexo-chart-header__icon {
+  color: var(--n-text-3) !important;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.nexo-chart-header__title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--n-text-1);
+  line-height: 1.3;
+}
+
+.nexo-chart-header__sub {
+  font-size: 0.72rem;
+  color: var(--n-text-3);
+  margin-top: 0.1rem;
+}
+
+/* ── Tarjetas de gráfico -- todas el mismo tamaño (agosto 2026) ──
+   Antes cada MudPaper crecia segun su contenido (una tabla con 20 filas
+   quedaba mucho mas alta que un grafico vacio), asi que la grilla se veia
+   despareja. Ahora la tarjeta tiene una altura fija y el contenido que no
+   cabe (tablas largas) scrollea adentro, sin estirar la tarjeta. *@
+.nexo-chart-card {
+  height: 560px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 24px;
+}
+.nexo-chart-card__header {
+  flex-shrink: 0;
+}
+.nexo-chart-card__body {
+  flex: 1;
+  min-height: 0; /* imprescindible para que un hijo flex realmente scrollee en vez de estirarse */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Estado vacío ──────────────────────────────────────────── */
+.nexo-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+}
+
+.nexo-empty-state__icon { font-size: 2.25rem !important; color: var(--n-border-2) !important; }
+.nexo-empty-state__icon--success { color: #10B981 !important; }
+.nexo-empty-state__text { font-size: 0.875rem; color: var(--n-text-3); margin: 0; }
+
+/* ── Gráfico de Variación de Producción (estilo IPI) ─────────
+   Barras verdes/rojas centradas en una línea de cero: verde
+   cuando lo real supera o iguala el plan, rojo cuando queda por
+   debajo — igual que el índice de referencia (INE).
+   ────────────────────────────────────────────────────────────── */
+.nexo-variacion-chart {
+  width: 100%;
+}
+
+.nexo-variacion-chart__svg {
+  width: 100%;
+  height: 240px;
+  display: block;
+  overflow: visible;
+}
+
+.nexo-variacion-chart__zero {
+  stroke: var(--n-border-2);
+  stroke-width: 1.5;
+}
+
+.nexo-variacion-chart__bar {
+  transition: opacity 0.15s ease;
+}
+.nexo-variacion-chart__bar:hover {
+  opacity: 0.78;
+}
+
+.nexo-variacion-chart__label {
+  font-size: 13px;
+  font-weight: 700;
+  fill: var(--n-text-1);
+  font-family: 'Mango Dream', 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+}
+
+.nexo-variacion-chart__axis {
+  display: flex;
+  width: 100%;
+  margin-top: 0.35rem;
+}
+.nexo-variacion-chart__axis span {
+  flex: 1 1 0;
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--n-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nexo-variacion-chart__legend {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+  font-size: 0.76rem;
+  color: var(--n-text-2);
+  flex-wrap: wrap;
+}
+.nexo-variacion-chart__legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-left: 0.75rem;
+}
+.nexo-variacion-chart__legend-dot:first-child { margin-left: 0; }
+.nexo-variacion-chart__legend-dot--up   { background: #10B981; }
+.nexo-variacion-chart__legend-dot--down { background: #EF4444; }
+
+/* ── Variante rose (cartera) ───────────────────────────────── */
+.nexo-kpi--rose .nexo-kpi__icon  { background: rgba(244,63,94,0.10); color: #F43F5E; }
+.nexo-kpi--rose .nexo-kpi__value { color: #F43F5E; }
+
+/* ── Separador de sección ──────────────────────────────────── */
+.nexo-section {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.75rem 0 0.85rem;
+}
+.nexo-section__dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--n-purple);
+  flex-shrink: 0;
+}
+.nexo-section__label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--n-text-3);
+}
+.nexo-section__line {
+  flex: 1;
+  height: 1px;
+  background: var(--mud-palette-lines-default, #EEEEF5);
+}
+
+/* ── Tabla de clientes fríos con paginación ─────────────────── */
+.nexo-frios-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--n-text-3);
+}
+
+/* ── Card de cartera ────────────────────────────────────────── */
+.nexo-cartera-total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #F43F5E;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.5rem;
+}
+.nexo-cartera-total__label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--n-text-3);
+}
+
+/* ── Workspace BI tabs ─────────────────────────────────────── */
+.nexo-bi-tabs .mud-tabs-tabbar {
+  border-bottom: 2px solid var(--mud-palette-lines-default, #EEEEF5);
+  margin-bottom: 0;
+}
+.nexo-bi-tabs .mud-tab {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  min-width: 100px;
+}
+.nexo-bi-tabs .mud-tab-active {
+  color: #7C5CFF !important;
+}
+.nexo-bi-tabs .mud-tab-slider {
+  background: #7C5CFF !important;
+}
+
+/* ── KPI variante rojo ─────────────────────────────────────── */
+.nexo-kpi--red   .nexo-kpi__icon  { background: rgba(239,68,68,0.10); color: #EF4444; }
+.nexo-kpi--red   .nexo-kpi__value { color: #EF4444; }

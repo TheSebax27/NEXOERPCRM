@@ -1,0 +1,204 @@
+@* Components/Pages/Settings/Ayuda.razor *@
+@page "/settings/ayuda"
+@attribute [Authorize]
+
+<PageTitle>Ayuda - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Cuenta</p>
+            <h1 class="nexo-page-hero__title">Ayuda y Flujo de Trabajo</h1>
+        </div>
+    </div>
+</div>
+
+<MudPaper Class="pa-5 mb-4">
+    <div class="nexo-chart-header mb-4">
+        <MudIcon Icon="@Icons.Material.Outlined.AccountTree" Size="Size.Small" Class="nexo-chart-header__icon" />
+        <div>
+            <div class="nexo-chart-header__title">Flujo de trabajo principal</div>
+            <div class="nexo-chart-header__sub">Ciclo completo de operación en NEXO ERP</div>
+        </div>
+    </div>
+
+    <div style="overflow-x: auto;">
+        <svg viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg" style="width:100%; min-width:640px; font-family: inherit;">
+            <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill="var(--n-text-3,#6B6B8A)" />
+                </marker>
+                <style>
+                    .nf-box { rx:8; ry:8; fill:var(--n-card,#FAFBFD); stroke:var(--n-border,#E8E9EF); stroke-width:1.5; }
+                    .nf-box-primary { fill:#7C5CFF22; stroke:#7C5CFF; }
+                    .nf-box-green  { fill:#10B98122; stroke:#10B981; }
+                    .nf-box-blue   { fill:#0EA5E922; stroke:#0EA5E9; }
+                    .nf-box-amber  { fill:#F59E0B22; stroke:#F59E0B; }
+                    .nf-box-red    { fill:#EF444422; stroke:#EF4444; }
+                    .nf-title      { font-size:11px; font-weight:700; fill:var(--n-text,#1A1C2E); text-anchor:middle; }
+                    .nf-sub        { font-size:9.5px; fill:var(--n-text-2,#6B6B8A); text-anchor:middle; }
+                    .nf-label      { font-size:12px; font-weight:700; fill:var(--n-text,#1A1C2E); }
+                    .nf-arrow      { stroke:var(--n-text-3,#6B6B8A); stroke-width:1.5; fill:none; marker-end:url(#arrow); }
+                    .nf-section    { font-size:10px; font-weight:600; fill:#7C5CFF; }
+                </style>
+            </defs>
+
+            @* ── MÓDULO CRM ── *@
+            <text x="20" y="30" class="nf-section">CRM</text>
+            <rect x="20" y="38" width="110" height="50" class="nf-box nf-box-primary" />
+            <text x="75" y="57" class="nf-title">Lead</text>
+            <text x="75" y="70" class="nf-sub">Nuevo prospecto</text>
+            <text x="75" y="81" class="nf-sub">capturado</text>
+
+            <line x1="130" y1="63" x2="158" y2="63" class="nf-arrow" />
+
+            <rect x="158" y="38" width="110" height="50" class="nf-box nf-box-primary" />
+            <text x="213" y="57" class="nf-title">Calificado</text>
+            <text x="213" y="70" class="nf-sub">NUEVO → CONTACTADO</text>
+            <text x="213" y="81" class="nf-sub">→ CALIFICADO</text>
+
+            <line x1="268" y1="63" x2="296" y2="63" class="nf-arrow" />
+
+            <rect x="296" y="38" width="110" height="50" class="nf-box nf-box-green" />
+            <text x="351" y="57" class="nf-title">Cliente</text>
+            <text x="351" y="70" class="nf-sub">Convertido desde Lead</text>
+            <text x="351" y="81" class="nf-sub">o creado directo</text>
+
+            @* ── MÓDULO COMPRAS → INVENTARIO ── *@
+            <text x="20" y="135" class="nf-section">COMPRAS → INVENTARIO</text>
+            <rect x="20" y="143" width="110" height="50" class="nf-box nf-box-blue" />
+            <text x="75" y="162" class="nf-title">Pedido</text>
+            <text x="75" y="175" class="nf-sub">Se crea al proveedor</text>
+            <text x="75" y="186" class="nf-sub">con artículos y cant.</text>
+
+            <line x1="130" y1="168" x2="158" y2="168" class="nf-arrow" />
+
+            <rect x="158" y="143" width="110" height="50" class="nf-box nf-box-blue" />
+            <text x="213" y="162" class="nf-title">Recepción</text>
+            <text x="213" y="175" class="nf-sub">Parcial o total</text>
+            <text x="213" y="186" class="nf-sub">ingresa a bodega</text>
+
+            <line x1="268" y1="168" x2="296" y2="168" class="nf-arrow" />
+
+            <rect x="296" y="143" width="110" height="50" class="nf-box nf-box-blue" />
+            <text x="351" y="162" class="nf-title">Stock + Kardex</text>
+            <text x="351" y="175" class="nf-sub">Lote asignado FEFO</text>
+            <text x="351" y="186" class="nf-sub">movimiento registrado</text>
+
+            @* ── MÓDULO PRODUCCIÓN ── *@
+            <text x="20" y="240" class="nf-section">PRODUCCIÓN</text>
+            <rect x="20" y="248" width="110" height="50" class="nf-box nf-box-amber" />
+            <text x="75" y="267" class="nf-title">Orden de Producción</text>
+            <text x="75" y="280" class="nf-sub">Se planifica con</text>
+            <text x="75" y="291" class="nf-sub">receta BOM</text>
+
+            <line x1="130" y1="273" x2="158" y2="273" class="nf-arrow" />
+
+            <rect x="158" y="248" width="110" height="50" class="nf-box nf-box-amber" />
+            <text x="213" y="267" class="nf-title">Liberada / Iniciada</text>
+            <text x="213" y="280" class="nf-sub">Descuenta MP</text>
+            <text x="213" y="291" class="nf-sub">del inventario</text>
+
+            <line x1="268" y1="273" x2="296" y2="273" class="nf-arrow" />
+
+            <rect x="296" y="248" width="110" height="50" class="nf-box nf-box-green" />
+            <text x="351" y="267" class="nf-title">Cerrada</text>
+            <text x="351" y="280" class="nf-sub">PT entra a bodega</text>
+            <text x="351" y="291" class="nf-sub">Kardex ENTRADA_PT</text>
+
+            @* ── MÓDULO LOGÍSTICA → FACTURACIÓN ── *@
+            <text x="20" y="345" class="nf-section">LOGÍSTICA → FACTURACIÓN</text>
+            <rect x="20" y="353" width="110" height="50" class="nf-box nf-box-red" />
+            <text x="75" y="372" class="nf-title">Despacho</text>
+            <text x="75" y="385" class="nf-sub">Sale PT a cliente</text>
+            <text x="75" y="396" class="nf-sub">descuenta stock</text>
+
+            <line x1="130" y1="378" x2="158" y2="378" class="nf-arrow" />
+
+            <rect x="158" y="353" width="110" height="50" class="nf-box nf-box-red" />
+            <text x="213" y="372" class="nf-title">Cotización</text>
+            <text x="213" y="385" class="nf-sub">Propuesta formal</text>
+            <text x="213" y="396" class="nf-sub">al cliente (CRM)</text>
+
+            <line x1="268" y1="378" x2="296" y2="378" class="nf-arrow" />
+
+            <rect x="296" y="353" width="110" height="50" class="nf-box nf-box-red" />
+            <text x="351" y="372" class="nf-title">Factura</text>
+            <text x="351" y="385" class="nf-sub">Registro de cobro</text>
+            <text x="351" y="396" class="nf-sub">con seguimiento de pago</text>
+
+            @* ── COLUMNA DERECHA: SOPORTE ── *@
+            <text x="470" y="30" class="nf-section">SOPORTE OPERATIVO</text>
+
+            <rect x="470" y="38" width="130" height="50" class="nf-box" />
+            <text x="535" y="57" class="nf-title">Traspasos</text>
+            <text x="535" y="70" class="nf-sub">Mueve stock entre</text>
+            <text x="535" y="81" class="nf-sub">bodegas (FEFO)</text>
+
+            <rect x="470" y="108" width="130" height="50" class="nf-box" />
+            <text x="535" y="127" class="nf-title">Ajuste de Inventario</text>
+            <text x="535" y="140" class="nf-sub">Corrección por</text>
+            <text x="535" y="151" class="nf-sub">conteo físico</text>
+
+            <rect x="470" y="178" width="130" height="50" class="nf-box" />
+            <text x="535" y="197" class="nf-title">Planificación</text>
+            <text x="535" y="210" class="nf-sub">Demanda proyectada</text>
+            <text x="535" y="221" class="nf-sub">y metas de venta</text>
+
+            <rect x="470" y="248" width="130" height="50" class="nf-box" />
+            <text x="535" y="267" class="nf-title">RRHH</text>
+            <text x="535" y="280" class="nf-sub">Empleados, cargos</text>
+            <text x="535" y="291" class="nf-sub">ausencias, organigrama</text>
+
+            <rect x="470" y="318" width="130" height="50" class="nf-box" />
+            <text x="535" y="337" class="nf-title">Proyectos</text>
+            <text x="535" y="350" class="nf-sub">Tareas, hitos,</text>
+            <text x="535" y="361" class="nf-sub">costos y documentos</text>
+
+            @* ── BI ── *@
+            <rect x="470" y="388" width="130" height="50" class="nf-box nf-box-primary" />
+            <text x="535" y="407" class="nf-title">Business Intelligence</text>
+            <text x="535" y="420" class="nf-sub">KPIs, gráficos,</text>
+            <text x="535" y="431" class="nf-sub">alertas y exportaciones</text>
+
+            @* ── VISIONS SYNC ── *@
+            <text x="650" y="30" class="nf-section">INTEGRACIÓN</text>
+            <rect x="650" y="38" width="230" height="80" class="nf-box" style="stroke-dasharray:5,3;" />
+            <text x="765" y="60" class="nf-title">Visions ERP (externo)</text>
+            <text x="765" y="75" class="nf-sub">NexoSyncAgent sincroniza</text>
+            <text x="765" y="88" class="nf-sub">ventas → stock y artículos</text>
+            <text x="765" y="101" class="nf-sub">(un agente por sucursal)</text>
+
+            @* Flechas de conexión entre módulos *@
+            @* Producción → alimenta stock, que alimenta Logística *@
+            <line x1="351" y1="298" x2="351" y2="353" class="nf-arrow" />
+            @* Stock/Compras → Producción (insumos) *@
+            <line x1="351" y1="193" x2="351" y2="248" class="nf-arrow" />
+            @* CRM → Logística (cliente para despacho) *@
+            <line x1="296" y1="88" x2="75" y2="353" class="nf-arrow" style="stroke-dasharray:4,3;" />
+        </svg>
+    </div>
+</MudPaper>
+
+<MudPaper Class="pa-5" Style="max-width: 800px;">
+    <div class="nexo-chart-header mb-4">
+        <MudIcon Icon="@Icons.Material.Outlined.SupportAgent" Size="Size.Small" Class="nexo-chart-header__icon" />
+        <div>
+            <div class="nexo-chart-header__title">¿Necesitas ayuda?</div>
+            <div class="nexo-chart-header__sub">Escríbenos y te colaboramos</div>
+        </div>
+    </div>
+
+    <div class="d-flex" style="gap: 0.75rem; flex-wrap: wrap;">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Email"
+                   Href="mailto:visionscomercial@gmail.com">
+            Escribir correo
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Style="background:#25D366; color:#fff;" StartIcon="@Icons.Material.Filled.Chat"
+                   Href="https://api.whatsapp.com/send/?phone=573015324933&text=Hola%2C+quiero+informaci%C3%B3n+sobre+NexoERP&type=phone_number&app_absent=0"
+                   Target="_blank">
+            WhatsApp
+        </MudButton>
+    </div>
+</MudPaper>

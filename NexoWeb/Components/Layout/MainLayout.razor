@@ -1,0 +1,505 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject NexoWeb.Common.Auth.AuthStateService AuthState
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+@inject NavigationManager Navegacion
+@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@using NexoWeb.Common.Dtos
+
+@* El toggle de tema oscuro (Settings) solo debe afectar el contenido de las
+   paginas -- Top Bar y Sidebar ya son oscuros de por si y no cambian. Se
+   envuelve TODO (incluidos MudDialogProvider/MudPopoverProvider, que
+   renderizan fuera de MudLayout) en este div con la clase condicional, y
+   el CSS de app.css solo agrega reglas para .mud-main-content/.mud-dialog/
+   .mud-picker dentro de ella -- nunca para .nexo-topbar/.nexo-sidebar,
+   asi que aunque tecnicamente esten "adentro" no se ven afectados.
+   Usa id (no solo class) porque el CSS scoped de cada pagina (*.razor.css)
+   compila a la MISMA especificidad que ".nexo-tema-oscuro .algo" (clase+
+   atributo vs 2 clases) y carga DESPUES de app.css -- en un empate gana el
+   que carga ultimo, o sea el scoped, y el tema oscuro pierde. Un selector
+   con id (#nexo-app-root.nexo-tema-oscuro ...) tiene mas especificidad que
+   cualquier combinacion de clases/atributos y gana siempre, sin importar
+   el orden de carga. *@
+<div id="nexo-app-root" class="@(Preferencias.TemaOscuro ? "nexo-tema-oscuro" : "")">
+    <MudThemeProvider Theme="@NexoTheme.Theme" IsDarkMode="@Preferencias.TemaOscuro" />
+    <MudPopoverProvider />
+    <MudDialogProvider CloseOnEscapeKey="true" />
+    <MudSnackbarProvider />
+    <AntiestresModal />
+
+    <MudLayout>
+
+    @* ══ TOP BAR ═══════════════════════════════════════════════ *@
+    <MudAppBar Elevation="0" Class="nexo-topbar">
+
+        @* Botón menú (mobile) *@
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       Edge="Edge.Start"
+                       OnClick="@(() => _menuAbierto = !_menuAbierto)"
+                       Class="nexo-topbar__menu-btn" />
+
+        @* Título de la página actual *@
+        <span class="nexo-topbar__title">@_tituloPagina</span>
+
+        <MudSpacer />
+
+        @* Barra de búsqueda global -- sugiere articulos, ordenes, clientes,
+           proveedores, etc. a medida que se escribe, y navega a la pantalla
+           correspondiente al hacer click en una sugerencia. *@
+        <div class="nexo-topbar__search">
+            <MudIcon Icon="@Icons.Material.Outlined.Search" Class="nexo-topbar__search-icon" />
+            <input type="text"
+                   value="@_terminoBusqueda"
+                   @oninput="OnBusquedaInputAsync"
+                   @onfocus="() => _mostrarResultados = _terminoBusqueda.Trim().Length >= 2"
+                   @onblur="OcultarResultadosConDelayAsync"
+                   placeholder="Buscar articulos, ordenes, clientes..."
+                   class="nexo-topbar__search-input"
+                   autocomplete="off"
+                   aria-label="Buscar"
+                   role="combobox"
+                   aria-expanded="@(_mostrarResultados ? "true" : "false")"
+                   aria-haspopup="listbox" />
+
+            @if (_mostrarResultados)
+            {
+                <div class="nexo-topbar__search-results">
+                    @if (_buscando)
+                    {
+                        <div class="nexo-topbar__search-status">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> Buscando...
+                        </div>
+                    }
+                    else if (_resultadosBusqueda.Count == 0)
+                    {
+                        <div class="nexo-topbar__search-status">Sin resultados para "@_terminoBusqueda"</div>
+                    }
+                    else
+                    {
+                        @foreach (var grupo in _resultadosBusqueda.GroupBy(r => r.Categoria))
+                        {
+                            <div class="nexo-topbar__search-group">@grupo.Key</div>
+                            @foreach (var resultado in grupo)
+                            {
+                                <div class="nexo-topbar__search-item" @onmousedown="() => IrAResultado(resultado)" @onmousedown:preventDefault="true">
+                                    <div class="nexo-topbar__search-item-title">@resultado.Titulo</div>
+                                    <div class="nexo-topbar__search-item-sub">@resultado.Subtitulo</div>
+                                </div>
+                            }
+                        }
+                    }
+                </div>
+            }
+        </div>
+
+        <MudSpacer />
+
+        @if (AuthState.EstaLogueado)
+        {
+            @* Notificaciones -- resumen real (sin stock / bajo stock / produccion
+               en proceso), se refresca solo cada 2 minutos para no ser invasivo.
+               El overlay (nexo-notif-overlay) vive FUERA del AppBar en MudLayout:
+               el backdrop-filter del AppBar haría que position:fixed;inset:0 aquí
+               solo cubriera el AppBar (68px) y no la pantalla completa. *@
+            <div class="nexo-topbar__notif" style="position:relative; z-index:var(--nexo-z-notif-container);">
+                <div style="position:relative; display:inline-flex;">
+                    <MudBadge Content="@(_notificaciones.Total > 0 ? (object)_notificaciones.Total : null)"
+                              Color="Color.Error" Overlap="true" Bordered="true"
+                              Visible="@(_notificaciones.Total > 0)">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Notifications"
+                                       Color="Color.Inherit"
+                                       Class="nexo-topbar__notif-btn"
+                                       OnClick="@(() => _notifAbierta = !_notifAbierta)" />
+                    </MudBadge>
+                </div>
+                @if (_notifAbierta)
+                {
+                    <div class="nexo-topbar__notif-panel"
+                         style="position:fixed; top:76px; right:8px; z-index:var(--nexo-z-notif-panel); width:min(320px,calc(100vw - 16px));"
+                         @onclick:stopPropagation="true">
+                        <div class="nexo-topbar__notif-panel-title">Notificaciones</div>
+                        @if (_notificaciones.Items.Count == 0)
+                        {
+                            <div style="padding:12px 16px;">
+                                <span class="nexo-topbar__notif-empty">Sin novedades por ahora ✓</span>
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var item in _notificaciones.Items)
+                            {
+                                <div class="nexo-topbar__notif-item"
+                                     style="cursor:pointer; padding:10px 16px;"
+                                     @onclick="@(() => { _notifAbierta = false; Navegacion.NavigateTo(item.Link); })"
+                                     @onclick:stopPropagation="true">
+                                    <MudIcon Icon="@IconoSegunSeveridad(item.Severidad)"
+                                             Color="@ColorSegunSeveridad(item.Severidad)"
+                                             Size="Size.Small" Class="nexo-topbar__notif-item-icon" />
+                                    <div>
+                                        <div class="nexo-topbar__notif-item-msg">@item.Mensaje</div>
+                                        <div class="nexo-topbar__notif-item-detalle">@item.Detalle</div>
+                                    </div>
+                                </div>
+                                @if (item.Categoria is "BajoStock" or "SinStock")
+                                {
+                                    <div class="nexo-topbar__notif-item"
+                                         style="cursor:pointer; padding:8px 16px 8px 28px; opacity:0.85;"
+                                         @onclick="@(() => { _notifAbierta = false; Navegacion.NavigateTo("/compras/ordenes"); })"
+                                         @onclick:stopPropagation="true">
+                                        <MudIcon Icon="@Icons.Material.Filled.AddShoppingCart"
+                                                 Color="Color.Warning" Size="Size.Small"
+                                                 Class="nexo-topbar__notif-item-icon" />
+                                        <div>
+                                            <div class="nexo-topbar__notif-item-msg" style="font-size:0.78rem;">
+                                                Crear orden de compra →
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        }
+                    </div>
+                }
+            </div>
+
+            @* Avatar + nombre + rol: el onclick cierra notificaciones antes de
+               que MudMenu abra. z-index via variable para quedar sobre el overlay. *@
+            <div style="position:relative; z-index:var(--nexo-z-avatar); display:inline-flex; align-items:center;"
+                 @onclick="() => _notifAbierta = false">
+                <PerfilMenu />
+            </div>
+        }
+
+    </MudAppBar>
+
+    @* Overlay full-viewport para cerrar notificaciones al hacer click fuera.
+       Vive aquí (FUERA del AppBar) porque el backdrop-filter del AppBar crearía
+       un nuevo containing-block para position:fixed, haciendo que inset:0 cubriera
+       solo el AppBar (68px) en vez de la pantalla completa. *@
+    @if (_notifAbierta)
+    {
+        <div class="nexo-notif-overlay" @onclick="() => _notifAbierta = false"></div>
+    }
+
+    @* ══ SIDEBAR ════════════════════════════════════════════════ *@
+    @* Persistent: empuja el contenido en lugar de sobreponerlo y nunca
+       se cierra solo al navegar. El toggle se controla únicamente con
+       _menuAbierto desde el botón hamburguesa del TopBar y el botón
+       de cierre dentro del header del sidebar. *@
+    <MudDrawer @bind-Open="_menuAbierto"
+               Elevation="0"
+               Variant="DrawerVariant.Responsive"
+               Class="nexo-sidebar">
+
+        <div class="nexo-sidebar__logo">
+            <img src="@(ConfiguracionEmpresa.LogoDataUri ?? "/images/LogoV.png")" alt="@ConfiguracionEmpresa.NombreEmpresa" class="nexo-sidebar__logo-img" />
+            <span class="nexo-sidebar__logo-text">@ConfiguracionEmpresa.NombreEmpresa</span>
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft"
+                           Size="Size.Small"
+                           Class="nexo-sidebar__close-btn"
+                           OnClick="@(() => _menuAbierto = false)"
+                           title="Cerrar menú" />
+        </div>
+
+        @* Navegación principal *@
+        <div class="nexo-sidebar__nav">
+            <NavMenu />
+        </div>
+
+        @* Footer: Settings + Sign Out *@
+        <div class="nexo-sidebar__footer">
+            <div class="nexo-sidebar__footer-divider"></div>
+
+            <div class="nexo-sidebar__footer-item"
+                 @onclick="@(() => Navegacion.NavigateTo("/settings"))"
+                 role="button"
+                 tabindex="0">
+                <MudIcon Icon="@Icons.Material.Outlined.Settings"
+                         Class="nexo-sidebar__footer-icon" />
+                <span>Settings</span>
+            </div>
+
+            <div class="nexo-sidebar__footer-item nexo-sidebar__footer-item--logout"
+                 @onclick="CerrarSesionAsync"
+                 role="button"
+                 tabindex="0">
+                <MudIcon Icon="@Icons.Material.Outlined.Logout"
+                         Class="nexo-sidebar__footer-icon" />
+                <span>Sign Out</span>
+            </div>
+        </div>
+
+        @* Blobs decorativos animados *@
+        <div class="nexo-sidebar__blob" aria-hidden="true"></div>
+        <div class="nexo-sidebar__blob-2" aria-hidden="true"></div>
+
+    </MudDrawer>
+
+    @* ══ CONTENIDO PRINCIPAL ════════════════════════════════════ *@
+    <MudMainContent Class="nexo-main-content">
+        <ErrorBoundary @ref="_errorBoundary">
+            <ChildContent>
+                @Body
+            </ChildContent>
+            <ErrorContent>
+                <MudAlert Severity="Severity.Error" Class="mb-4">
+                    Ocurrió un error inesperado al cargar esta página.
+                </MudAlert>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           OnClick="@(() => _errorBoundary?.Recover())">
+                    Reintentar
+                </MudButton>
+            </ErrorContent>
+        </ErrorBoundary>
+    </MudMainContent>
+
+    </MudLayout>
+
+    <ChatBot />
+</div>
+
+@code {
+    private bool _menuAbierto = true;
+    private bool _notifAbierta = false;
+    private ErrorBoundary? _errorBoundary;
+    private string _tituloPagina = "Dashboard";
+
+    private ResumenNotificaciones _notificaciones = new(0, new());
+    private System.Timers.Timer? _timerNotificaciones;
+    private System.Timers.Timer? _timerEmailAlert;
+    private System.Timers.Timer? _timerRenovarToken;
+    private int _ultimoEmailsHoy = -1;
+
+    // Busqueda global de la barra superior
+    private string _terminoBusqueda = "";
+    private List<ResultadoBusqueda> _resultadosBusqueda = new();
+    private bool _buscando;
+    private bool _mostrarResultados;
+    private int _busquedaId;
+
+    protected override void OnInitialized()
+    {
+        Navegacion.LocationChanged += OnLocationChanged;
+        Preferencias.OnCambio += OnPreferenciasCambiaronAsync;
+        ConfiguracionEmpresa.OnCambio += OnPreferenciasCambiaronAsync;
+        _tituloPagina = ObtenerTituloPagina();
+
+        if (AuthState.EstaLogueado)
+        {
+            // Cada 2 minutos: "casi en tiempo real" sin recargar la API cada
+            // pocos segundos ni ser una fuente de distraccion constante.
+            _timerNotificaciones = new System.Timers.Timer(120_000);
+            _timerNotificaciones.AutoReset = false;
+            _timerNotificaciones.Elapsed += async (_, _) => { await CargarNotificacionesAsync(); _timerNotificaciones?.Start(); };
+            _timerNotificaciones.Start();
+
+            // Cada 30 minutos: alerta si se está acercando al límite diario de Gmail (500/día).
+            _timerEmailAlert = new System.Timers.Timer(1_800_000);
+            _timerEmailAlert.AutoReset = false;
+            _timerEmailAlert.Elapsed += async (_, _) => { await VerificarContadorEmailAsync(); _timerEmailAlert?.Start(); };
+            _timerEmailAlert.Start();
+
+            // Cada 45 minutos: renueva el JWT si MantenerSesionActiva está activo.
+            _timerRenovarToken = new System.Timers.Timer(2_700_000);
+            _timerRenovarToken.AutoReset = false;
+            _timerRenovarToken.Elapsed += async (_, _) => { await RenovarTokenSiActivoAsync(); _timerRenovarToken?.Start(); };
+            _timerRenovarToken.Start();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState.EstaLogueado)
+        {
+            await Preferencias.CargarAsync();
+            await ConfiguracionEmpresa.CargarAsync();
+            await CargarNotificacionesAsync();
+        }
+    }
+
+    private void OnPreferenciasCambiaronAsync() => InvokeAsync(StateHasChanged);
+
+    private async Task VerificarContadorEmailAsync()
+    {
+        try
+        {
+            var c = await ApiClient.GetAsync<EmailContadorItem>("api/email/contador");
+            if (c is null || c.EmailsHoy == _ultimoEmailsHoy) return;
+            _ultimoEmailsHoy = c.EmailsHoy;
+
+            await InvokeAsync(() =>
+            {
+                if (c.EmailsHoy >= c.LimiteGmail)
+                    Snackbar.Add($"⛔ Límite Gmail alcanzado: {c.EmailsHoy}/{c.LimiteGmail} emails hoy. Los envíos adicionales pueden bloquear la cuenta.", Severity.Error, o => { o.VisibleStateDuration = 10000; });
+                else if (c.EmailsHoy >= (int)(c.LimiteGmail * 0.9))
+                    Snackbar.Add($"⚠️ Límite Gmail casi alcanzado: {c.EmailsHoy}/{c.LimiteGmail} emails enviados hoy.", Severity.Warning, o => { o.VisibleStateDuration = 8000; });
+                else if (c.EmailsHoy >= (int)(c.LimiteGmail * 0.7))
+                    Snackbar.Add($"📧 Aviso: ya van {c.EmailsHoy}/{c.LimiteGmail} emails enviados hoy por Gmail.", Severity.Info, o => { o.VisibleStateDuration = 6000; });
+                StateHasChanged();
+            });
+        }
+        catch { }
+    }
+
+    private async Task RenovarTokenSiActivoAsync()
+    {
+        if (!AuthState.EstaLogueado || !Preferencias.MantenerSesionActiva) return;
+        try
+        {
+            var resp = await ApiClient.PostAsync<object, RenovarResponse>("api/auth/renovar", (object)null!);
+            if (resp is not null)
+                await AuthState.ActualizarTokenAsync(resp.AccessToken, resp.ExpiraEn);
+        }
+        catch { }
+    }
+
+    private async Task CargarNotificacionesAsync()
+    {
+        try
+        {
+            var resumen = await ApiClient.GetAsync<ResumenNotificaciones>("api/notificaciones/resumen");
+            _notificaciones = resumen ?? new(0, new());
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { }
+    }
+
+    private static string IconoSegunSeveridad(string severidad) => severidad switch
+    {
+        "error" => Icons.Material.Filled.ErrorOutline,
+        "warning" => Icons.Material.Filled.WarningAmber,
+        _ => Icons.Material.Filled.Info
+    };
+
+    private static Color ColorSegunSeveridad(string severidad) => severidad switch
+    {
+        "error" => Color.Error,
+        "warning" => Color.Warning,
+        _ => Color.Info
+    };
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _tituloPagina = ObtenerTituloPagina();
+        InvokeAsync(async () =>
+        {
+            // Elimina overlays huérfanos (dialogs que crashearon sin llamar Close).
+            try { await JS.InvokeVoidAsync("nexoCleanupOrphanedOverlays"); } catch { }
+            if (AuthState.EstaLogueado && !ConfiguracionEmpresa.Cargado)
+                await ConfiguracionEmpresa.CargarAsync();
+            StateHasChanged();
+        });
+    }
+
+    private string ObtenerTituloPagina()
+    {
+        try
+        {
+            var path = new Uri(Navegacion.Uri).AbsolutePath.TrimEnd('/');
+            return path switch
+            {
+                "" or "/" => "Dashboard",
+                "/produccion/ordenes"       => "Órdenes de Producción",
+                "/produccion/recetas"           => "Recetas (BOM)",
+                "/produccion/control-consumos" => "Control de Consumos",
+                "/produccion/sobrantes"        => "Sobrantes de Material",
+                "/inventario/stock"         => "Consulta de Stock",
+                "/inventario/kardex"        => "Kardex",
+                "/inventario/bajas"         => "Registrar Baja",
+                "/inventario/mermas"        => "Análisis de Mermas",
+                "/inventario/traspasos"     => "Traspasos",
+                "/facturacion"              => "Salidas",
+                "/compras/ordenes"          => "Entradas",
+                "/catalogo/articulos"       => "Artículos",
+                "/catalogo/centros-costo"   => "Centros de Costo",
+                "/catalogo/bodegas"         => "Bodegas",
+                "/catalogo/clientes"        => "Clientes",
+                "/catalogo/proveedores"     => "Proveedores",
+                "/admin/usuarios"           => "Usuarios",
+                "/admin/audit-log"          => "Audit Log",
+                _                          => "NEXO ERP"
+            };
+        }
+        catch { return "NEXO ERP"; }
+    }
+
+
+    private async Task OnBusquedaInputAsync(ChangeEventArgs e)
+    {
+        _terminoBusqueda = e.Value?.ToString() ?? "";
+        _mostrarResultados = true;
+        var idActual = ++_busquedaId;
+
+        if (_terminoBusqueda.Trim().Length < 2)
+        {
+            _resultadosBusqueda = new();
+            _buscando = false;
+            return;
+        }
+
+        _buscando = true;
+        StateHasChanged();
+
+        // Debounce simple: espera a que el usuario deje de escribir antes de
+        // llamar la API. Si llega una tecla nueva (idActual != _busquedaId),
+        // esta respuesta ya quedo obsoleta y se descarta.
+        await Task.Delay(350);
+        if (idActual != _busquedaId) return;
+
+        try
+        {
+            _resultadosBusqueda = await ApiClient.GetAsync<List<ResultadoBusqueda>>(
+                $"api/busqueda?q={Uri.EscapeDataString(_terminoBusqueda)}") ?? new();
+        }
+        catch
+        {
+            _resultadosBusqueda = new();
+        }
+
+        if (idActual != _busquedaId) return;
+        _buscando = false;
+        StateHasChanged();
+    }
+
+    private void IrAResultado(ResultadoBusqueda resultado)
+    {
+        _mostrarResultados = false;
+        _terminoBusqueda = "";
+        _resultadosBusqueda = new();
+        Navegacion.NavigateTo(resultado.Link);
+    }
+
+    private async Task OcultarResultadosConDelayAsync()
+    {
+        // Delay para que el @onmousedown del item de resultado (si el click
+        // fue sobre uno) alcance a dispararse antes de que el dropdown se oculte.
+        await Task.Delay(150);
+        _mostrarResultados = false;
+        StateHasChanged();
+    }
+
+    private async Task CerrarSesionAsync()
+    {
+        await AuthState.CerrarSesionAsync();
+        Preferencias.Reiniciar();
+        Navegacion.NavigateTo("/login", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        Navegacion.LocationChanged -= OnLocationChanged;
+        Preferencias.OnCambio -= OnPreferenciasCambiaronAsync;
+        ConfiguracionEmpresa.OnCambio -= OnPreferenciasCambiaronAsync;
+        _timerNotificaciones?.Stop();
+        _timerNotificaciones?.Dispose();
+        _timerEmailAlert?.Stop();
+        _timerEmailAlert?.Dispose();
+        _timerRenovarToken?.Stop();
+        _timerRenovarToken?.Dispose();
+    }
+}

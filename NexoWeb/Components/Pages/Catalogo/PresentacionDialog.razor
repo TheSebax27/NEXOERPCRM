@@ -1,0 +1,59 @@
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_codigo" Label="Codigo" Required="true"
+                      RequiredError="El codigo es obligatorio" Class="mb-3"
+                      Disabled="@(!EsNuevo)" />
+        <MudTextField @bind-Value="_nombre" Label="Descripcion" Required="true"
+                      RequiredError="La descripcion es obligatoria" Class="mb-3" />
+        <MudNumericField T="decimal?" @bind-Value="_fracciones" Label="Fracciones (unidades por presentacion)"
+                         Min="0m" Format="N0" Class="mb-2"
+                         Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Inventory2" />
+        <MudText Typo="Typo.caption" Class="mb-3 d-block" Style="color: var(--n-text-3, #9B9BB4);">
+            Cuantas unidades trae esta presentacion (ej: 12 para una caja de 12 unidades). Dejar en 0 si no aplica.
+        </MudText>
+        <AppSelect TValue="string?" @bind-Value="_tipo" Label="Tipo de presentacion" Class="mb-3"
+                   Placeholder="Unidades (predeterminado)"
+                   Items="@(new AppSelectItem<string?>[]{ new("Unidades",(string?)null), new("Peso (kg, gr...)","PESO"), new("Volumen (L, ml...)","VOLUMEN") })" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Guardar">
+            @(EsNuevo ? "Crear" : "Guardar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public PresentacionItem? Presentacion { get; set; }
+
+    public record Result(string Codigo, string Nombre, decimal? Fracciones, string? Tipo);
+
+    private bool EsNuevo => Presentacion is null;
+
+    private string _codigo = string.Empty;
+    private string _nombre = string.Empty;
+    private decimal? _fracciones;
+    private string? _tipo;
+
+    protected override void OnInitialized()
+    {
+        if (Presentacion is not null)
+        {
+            _codigo     = Presentacion.Codigo;
+            _nombre     = Presentacion.Presentacion;
+            _fracciones = Presentacion.Fracciones;
+            _tipo       = Presentacion.Tipo;
+        }
+    }
+
+    private void Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(_codigo) || string.IsNullOrWhiteSpace(_nombre)) return;
+        MudDialog.Close(DialogResult.Ok(new Result(_codigo.Trim().ToUpper(), _nombre.Trim(), _fracciones, _tipo)));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

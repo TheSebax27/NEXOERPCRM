@@ -1,0 +1,195 @@
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Components.Pages.Catalogo
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_codigo" Label="Código de la orden" Class="mb-3" />
+
+        @* ── Proveedor: búsqueda por NIT ── *@
+        <MudTextField Value="@_nitBusqueda"
+                      ValueChanged="@((string v) => { _nitBusqueda = v; OnNitBusquedaCambiado(); })"
+                      Label="NIT del proveedor"
+                      Variant="Variant.Outlined"
+                      Adornment="Adornment.End"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      DebounceInterval="350"
+                      OnDebounceIntervalElapsed="OnNitBusquedaCambiado"
+                      Immediate="true"
+                      Class="mb-2" />
+
+        @if (_proveedorEncontrado is not null)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3">
+                <strong>@_proveedorEncontrado.RazonSocial</strong>
+            </MudAlert>
+        }
+        else if (_nitNoEncontrado)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-1">
+                No se encontró proveedor con NIT <strong>@_nitBusqueda</strong>.
+            </MudAlert>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                       OnClick="AbrirCreacionProveedorAsync"
+                       Class="mb-3">
+                Crear proveedor
+            </MudButton>
+        }
+        else
+        {
+            <div class="mb-3"></div>
+        }
+
+        <AppSelect TValue="int?" @bind-Value="_centroCostoId" Label="Centro de costo (opcional)" Class="mb-3"
+                   Items="@(_centrosCosto.Select(cc => new AppSelectItem<int?>(cc.Nombre, (int?)cc.CentroCostoID)))" />
+
+        <AppSelect TValue="int?" @bind-Value="_bodegaDestinoId" Label="Bodega Destino" Placeholder="Seleccionar..." Class="mb-4"
+                   Items="@(_bodegas.Select(bodega => new AppSelectItem<int?>($"{bodega.Nombre} ({bodega.CentroCosto})", (int?)bodega.BodegaID)))" />
+
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Articulos</MudText>
+
+        @foreach (var linea in _lineas)
+        {
+            <MudGrid Class="mb-2" AlignItems="Center.Center">
+                <MudItem xs="5">
+                    <ArticuloAutocomplete Value="linea.ArticuloSeleccionado"
+                                          ValueChanged="@((ArticuloItem? v) => OnArticuloCambiado(linea, v))"
+                                          Label="Articulo" />
+                </MudItem>
+                <MudItem xs="3">
+                    <MudNumericField @bind-Value="linea.Cantidad" Label="Cantidad" Min="0.01m" Format="N2" Dense="true" />
+                </MudItem>
+                <MudItem xs="3">
+                    <MudMoneyField @bind-Value="linea.CostoUnitario" Label="Costo Unit." />
+                </MudItem>
+                <MudItem xs="1">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   OnClick="@(() => _lineas.Remove(linea))" />
+                </MudItem>
+                @if (PistaEmbalaje(linea) is string pistaEmbalaje)
+                {
+                    <MudItem xs="12" Class="pt-0">
+                        <MudText Typo="Typo.caption" Style="color: var(--n-text-3, #9B9BB4);">@pistaEmbalaje</MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+
+        <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AgregarLinea" Class="mt-2">
+            Agregar articulo
+        </MudButton>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirmar" Disabled="!FormularioValido">
+            Crear Pedido
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public List<ProveedorItem> _proveedores { get; set; } = new();
+    [Parameter] public List<BodegaItem> _bodegas { get; set; } = new();
+    [Parameter] public List<CentroCostoItem> _centrosCosto { get; set; } = new();
+
+    private string _codigo = "";
+    private string _nitBusqueda = "";
+    private ProveedorItem? _proveedorEncontrado;
+    private bool _nitNoEncontrado;
+    private int? _centroCostoId;
+    private int? _bodegaDestinoId;
+    private List<LineaFormulario> _lineas = new();
+
+    private class LineaFormulario
+    {
+        public ArticuloItem? ArticuloSeleccionado { get; set; }
+        public int ArticuloID => ArticuloSeleccionado?.ArticuloID ?? 0;
+        public decimal Cantidad { get; set; }
+        public decimal CostoUnitario { get; set; }
+    }
+
+    private bool FormularioValido =>
+        !string.IsNullOrWhiteSpace(_codigo) && _proveedorEncontrado is not null && _bodegaDestinoId > 0 &&
+        _lineas.Count > 0 && _lineas.All(l => l.ArticuloID > 0 && l.Cantidad > 0 && l.CostoUnitario > 0);
+
+    [Parameter] public int? ArticuloPreseleccionadoID { get; set; }
+    [Parameter] public List<OCLineSugeridaItem> LineasSugeridas { get; set; } = new();
+
+    protected override void OnInitialized()
+    {
+        if (LineasSugeridas.Count > 0)
+        {
+            foreach (var s in LineasSugeridas)
+            {
+                var art = new ArticuloItem(s.ArticuloID, s.SKU, s.Articulo, null, s.TipoArticulo,
+                    s.CostoPromedio, s.StockMinimo, 0, true, 0, null, null, false, null, null);
+                _lineas.Add(new LineaFormulario { ArticuloSeleccionado = art, Cantidad = s.CantidadSugerida, CostoUnitario = s.CostoPromedio });
+            }
+        }
+        else
+        {
+            AgregarLinea();
+        }
+    }
+
+    private void OnNitBusquedaCambiado()
+    {
+        if (string.IsNullOrWhiteSpace(_nitBusqueda))
+        {
+            _proveedorEncontrado = null;
+            _nitNoEncontrado = false;
+            return;
+        }
+        var nit = _nitBusqueda.Trim();
+        _proveedorEncontrado = _proveedores.FirstOrDefault(p =>
+            p.NIT.Equals(nit, StringComparison.OrdinalIgnoreCase));
+        _nitNoEncontrado = _proveedorEncontrado is null;
+    }
+
+    private async Task AbrirCreacionProveedorAsync()
+    {
+        var parametros = new DialogParameters<ProveedorDialog>
+        {
+            { x => x.Proveedor, (ProveedorItem?)null },
+            { x => x.NitInicial, _nitBusqueda.Trim() }
+        };
+        var dialogo = await DialogService.ShowAsync<ProveedorDialog>("Nuevo Proveedor", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+
+        _proveedores = await ApiClient.GetAsync<List<ProveedorItem>>("api/catalogo/proveedores") ?? _proveedores;
+        OnNitBusquedaCambiado();
+    }
+
+    private void AgregarLinea() => _lineas.Add(new LineaFormulario());
+
+    private void OnArticuloCambiado(LineaFormulario linea, ArticuloItem? articulo)
+    {
+        linea.ArticuloSeleccionado = articulo;
+    }
+
+    private string? PistaEmbalaje(LineaFormulario linea)
+    {
+        var articulo = linea.ArticuloSeleccionado;
+        if (articulo is null || articulo.UnidadesPorEmbalaje is not > 0 || linea.Cantidad <= 0)
+            return null;
+
+        var totalUnidades = linea.Cantidad * articulo.UnidadesPorEmbalaje.Value;
+        return $"{linea.Cantidad:N2} cajas × {articulo.UnidadesPorEmbalaje:N0} und/caja = {totalUnidades:N0} unidades totales";
+    }
+
+    private void Confirmar()
+    {
+        var request = new CrearOrdenCompraRequest(
+            _codigo, _proveedorEncontrado!.ProveedorID, _bodegaDestinoId ?? 0,
+            _lineas.Select(l => new DetalleOrdenCompraRequest(l.ArticuloID, l.Cantidad, l.CostoUnitario)).ToList(),
+            _centroCostoId);
+
+        MudDialog.Close(DialogResult.Ok(request));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

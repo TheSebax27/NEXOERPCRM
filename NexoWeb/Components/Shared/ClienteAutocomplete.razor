@@ -1,0 +1,158 @@
+@inject INexoApiClient ApiClient
+@inject IJSRuntime JS
+@using NexoWeb.Common.Dtos
+
+<div class="app-select-wrap @Class" style="@Style" @ref="_wrapRef">
+    @if (!string.IsNullOrEmpty(Label))
+    {
+        <label class="app-select-lbl">@Label</label>
+    }
+    <div class="app-sel-combo @(_open ? "app-sel--open" : "") @(Disabled ? "app-sel--disabled" : "")">
+        <input class="app-sel-combo-input"
+               type="text"
+               placeholder="NIT o nombre del cliente…"
+               value="@(_open ? _search : CurrentLabel ?? "")"
+               @oninput="OnInput"
+               @onfocus="OnFocus"
+               disabled="@Disabled"
+               autocomplete="off"
+               spellcheck="false" />
+        @if (Value is not null && !_open)
+        {
+            <span class="app-sel-arrow" @onclick="Limpiar" @onclick:stopPropagation="true"
+                  title="Limpiar" style="font-size:.8rem; color:#9B9BB4;">✕</span>
+        }
+        else
+        {
+            <span class="app-sel-arrow" @onclick="ToggleArrow" @onclick:stopPropagation="true">▾</span>
+        }
+    </div>
+    @if (_open)
+    {
+        <div class="app-sel-backdrop" @onclick="Cerrar"></div>
+        <div class="app-sel-list" @ref="_listRef">
+            @if (_buscando)
+            {
+                <div class="app-sel-item app-sel-item--ph" style="pointer-events:none">Buscando…</div>
+            }
+            else if (!_resultados.Any())
+            {
+                <div class="app-sel-item app-sel-item--ph" style="pointer-events:none">
+                    @(string.IsNullOrWhiteSpace(_search) ? "Escribe para buscar…" : "Sin resultados")
+                </div>
+            }
+            else
+            {
+                @foreach (var item in _resultados)
+                {
+                    bool sel = item.ClienteID == Value?.ClienteID;
+                    <div class="app-sel-item @(sel ? "app-sel-item--active" : "")"
+                         @onclick="() => Seleccionar(item)">
+                        @if (!string.IsNullOrWhiteSpace(item.NIT))
+                        {
+                            <span style="font-weight:600; font-size:.78rem; color:#7C5CFF;">@item.NIT</span>
+                            <span style="margin-left:6px;">@item.Nombre</span>
+                        }
+                        else
+                        {
+                            <span>@item.Nombre</span>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public ClienteItem? Value { get; set; }
+    [Parameter] public EventCallback<ClienteItem?> ValueChanged { get; set; }
+    [Parameter] public string Label { get; set; } = "Cliente";
+    [Parameter] public bool Required { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Style { get; set; }
+
+    private ElementReference _wrapRef;
+    private ElementReference _listRef;
+    private bool _open;
+    private bool _buscando;
+    private bool _positionPending;
+    private string _search = "";
+    private List<ClienteItem> _resultados = new();
+    private CancellationTokenSource? _cts;
+
+    private string? CurrentLabel =>
+        Value is null ? null
+        : string.IsNullOrWhiteSpace(Value.NIT) ? Value.Nombre
+        : $"{Value.NIT} — {Value.Nombre}";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_open && _positionPending)
+        {
+            _positionPending = false;
+            try { await JS.InvokeVoidAsync("nexoAppSelect.positionList", _wrapRef, _listRef); }
+            catch { }
+        }
+    }
+
+    private async Task OnFocus()
+    {
+        if (Disabled) return;
+        _search = "";
+        _open = true;
+        _positionPending = true;
+        await BuscarAsync("");
+    }
+
+    private void Cerrar() { _search = ""; _open = false; }
+
+    private async Task ToggleArrow()
+    {
+        if (Disabled) return;
+        if (_open) Cerrar();
+        else { _search = ""; _open = true; _positionPending = true; await BuscarAsync(""); }
+    }
+
+    private async Task Limpiar()
+    {
+        _search = ""; _open = false;
+        await ValueChanged.InvokeAsync(null);
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? "";
+        _open = true;
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        await Task.Delay(200, token).ContinueWith(async t =>
+        {
+            if (!t.IsCanceled) await InvokeAsync(() => BuscarAsync(_search));
+        }, TaskScheduler.Default);
+    }
+
+    private async Task BuscarAsync(string texto)
+    {
+        _buscando = true;
+        StateHasChanged();
+        try
+        {
+            var url = string.IsNullOrWhiteSpace(texto)
+                ? "api/crm/clientes/paginados?pagina=1&tamano=15"
+                : $"api/crm/clientes/paginados?texto={Uri.EscapeDataString(texto)}&pagina=1&tamano=15";
+            var resp = await ApiClient.GetAsync<ClientesPaginadosResponse>(url);
+            _resultados = resp?.Items?.ToList() ?? new();
+        }
+        catch { _resultados = new(); }
+        finally { _buscando = false; StateHasChanged(); }
+    }
+
+    private async Task Seleccionar(ClienteItem item)
+    {
+        _search = ""; _open = false;
+        await ValueChanged.InvokeAsync(item);
+    }
+}

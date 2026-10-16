@@ -1,0 +1,50 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.subtitle2" Class="mb-1">@Despacho.NumeroGuia</MudText>
+        <MudText Typo="Typo.body2" Class="mb-3" Style="color: var(--n-text-3, #9B9BB4);">
+            @Despacho.Cliente · @Despacho.CentroCosto · @Despacho.FechaDespacho.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+        </MudText>
+
+        @if (_cargando)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else
+        {
+            <MudTable Items="_detalle" Dense="true" Hover="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>SKU</MudTh>
+                    <MudTh>Articulo</MudTh>
+                    <MudTh Style="text-align:right">Cantidad</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="SKU">@context.SkuArticulo</MudTd>
+                    <MudTd DataLabel="Articulo">@context.NombreArticulo</MudTd>
+                    <MudTd DataLabel="Cantidad" Style="text-align:right">@context.Cantidad.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public DespachoItem Despacho { get; set; } = default!;
+
+    private List<DespachoDetalleItem> _detalle = new();
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _detalle = await ApiClient.GetAsync<List<DespachoDetalleItem>>($"api/logistica/despachos/{Despacho.DespachoID}/detalle") ?? new();
+        _cargando = false;
+    }
+
+    private void Cerrar() => MudDialog.Close();
+}

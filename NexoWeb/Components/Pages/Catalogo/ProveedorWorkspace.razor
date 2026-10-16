@@ -1,0 +1,278 @@
+@page "/catalogo/proveedores/{ProveedorId:int}"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@using NexoWeb.Common.Dtos
+
+<PageTitle>@(_proveedor?.RazonSocial ?? "Proveedor") - NEXO</PageTitle>
+
+<MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack"
+           OnClick="@(() => Navigation.NavigateTo("/catalogo/proveedores"))" Class="mb-2">
+    Proveedores
+</MudButton>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudo cargar el proveedor: @_errorCarga</MudAlert>
+}
+else if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_proveedor is null)
+{
+    <MudAlert Severity="Severity.Warning">No se encontró este proveedor.</MudAlert>
+}
+else
+{
+    @* ── Banner dual-rol ──────────────────────────────────────────────── *@
+    @if (_dualRol is not null)
+    {
+        @if (_dualRol.EsCliente && _dualRol.ClienteID is not null && _clienteExternalId is not null)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3"
+                      Icon="@Icons.Material.Filled.SyncAlt">
+                Este proveedor también está registrado como
+                <strong>Cliente</strong>.
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                           OnClick="@(() => Navigation.NavigateTo($"/crm/clientes/{_clienteExternalId}"))">
+                    Ver workspace de cliente →
+                </MudButton>
+            </MudAlert>
+        }
+        else if (!_dualRol.EsCliente)
+        {
+            <MudAlert Severity="Severity.Normal" Dense="true" Class="mb-3"
+                      Icon="@Icons.Material.Filled.PersonAdd">
+                Este proveedor no está registrado como cliente.
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                           OnClick="RegistrarComoClienteAsync" Disabled="_procesandoDualRol">
+                    @(_procesandoDualRol ? "Procesando..." : "Registrar como Cliente")
+                </MudButton>
+            </MudAlert>
+        }
+    }
+
+    @* ── Header ───────────────────────────────────────────────────────── *@
+    <MudPaper Class="pa-4 mb-4">
+        <div class="d-flex align-center flex-wrap mb-3" style="gap:0.75rem">
+            <div style="width:44px;height:44px;border-radius:50%;background:var(--mud-palette-secondary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.15rem;flex-shrink:0">
+                @(_proveedor.RazonSocial.Length > 0 ? _proveedor.RazonSocial[0].ToString().ToUpper() : "P")
+            </div>
+            <div style="flex:1;min-width:0">
+                <MudText Typo="Typo.h5" Style="line-height:1.2">@_proveedor.RazonSocial</MudText>
+                <MudText Typo="Typo.body2" Style="opacity:.6">NIT: @_proveedor.NIT</MudText>
+            </div>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="AbrirEdicionAsync">Editar</MudButton>
+        </div>
+        <MudChip T="string" Size="Size.Small" Color="@(_proveedor.Estado ? Color.Success : Color.Error)">
+            @(_proveedor.Estado ? "Activo" : "Inactivo")
+        </MudChip>
+        @if (!string.IsNullOrEmpty(_proveedor.Ciudad))
+        {
+            <MudChip T="string" Size="Size.Small">@_proveedor.Ciudad@(_proveedor.Departamento is not null ? $", {_proveedor.Departamento}" : "")</MudChip>
+        }
+        @if (!string.IsNullOrEmpty(_proveedor.TipoPersona))
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Default">@_proveedor.TipoPersona</MudChip>
+        }
+    </MudPaper>
+
+    @* ── Tabs ─────────────────────────────────────────────────────────── *@
+    <MudPaper Class="pa-0">
+        <MudTabs Class="nexo-bi-tabs">
+
+            @* ── Tab: Información ──────────────────────────────────────── *@
+            <MudTabPanel Text="Información">
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">Contacto</MudText>
+                        <MudText>@(_proveedor.Contacto ?? "—")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">Teléfono</MudText>
+                        <MudText>@(_proveedor.Telefono ?? "—")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">Email</MudText>
+                        <MudText>@(_proveedor.Email ?? "—")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">Dirección</MudText>
+                        <MudText>@(_proveedor.Direccion ?? "—")</MudText>
+                    </MudItem>
+                    @if (!string.IsNullOrEmpty(_proveedor.Departamento))
+                    {
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">Ciudad / Departamento</MudText>
+                            <MudText>@_proveedor.Ciudad — @_proveedor.Departamento</MudText>
+                        </MudItem>
+                    }
+                    @if (!string.IsNullOrEmpty(_proveedor.Pais))
+                    {
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">País</MudText>
+                            <MudText>@_proveedor.Pais (@_proveedor.CodigoPais)</MudText>
+                        </MudItem>
+                    }
+                    @if (!string.IsNullOrEmpty(_proveedor.TipoIdentificacion))
+                    {
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">Tipo de Identificación</MudText>
+                            <MudText>@_proveedor.TipoIdentificacion</MudText>
+                        </MudItem>
+                    }
+                    @if (_proveedor.DigitoVerificacion.HasValue)
+                    {
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">Dígito de Verificación</MudText>
+                            <MudText>@_proveedor.DigitoVerificacion</MudText>
+                        </MudItem>
+                    }
+                </MudGrid>
+            </MudTabPanel>
+
+            @* ── Tab: Compras ───────────────────────────────────────────── *@
+            <MudTabPanel Text="Compras" Icon="@Icons.Material.Filled.ShoppingCart">
+                @if (_cargandoCompras)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Secondary" />
+                }
+                else if (_compras.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">Sin órdenes de compra registradas para este proveedor.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_compras" Dense="true" Hover="true" Elevation="0"
+                              SortLabel="Ordenar por">
+                        <HeaderContent>
+                            <MudTh><MudTableSortLabel SortBy="new Func<OrdenCompraResumen, object>(x => x.Codigo)">Código</MudTableSortLabel></MudTh>
+                            <MudTh>Estado</MudTh>
+                            <MudTh><MudTableSortLabel SortBy="new Func<OrdenCompraResumen, object>(x => x.FechaEmision)">Fecha</MudTableSortLabel></MudTh>
+                            <MudTh>Total</MudTh>
+                            <MudTh>Acción</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Código">@context.Codigo</MudTd>
+                            <MudTd DataLabel="Estado">
+                                <MudChip T="string" Size="Size.Small" Color="@ColorEstado(context.EstadoOC)">
+                                    @context.EstadoOC
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Fecha">@context.FechaEmision.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Total">@context.Total.ToString("C0")</MudTd>
+                            <MudTd DataLabel="Acción">
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           OnClick="@(() => Navigation.NavigateTo("/compras/ordenes"))">
+                                    Ver
+                                </MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    <MudText Typo="Typo.caption" Class="mt-2 d-block" Style="color:var(--n-text-3)">
+                        Total en @(_compras.Count) órdenes:
+                        @_compras.Sum(c => c.Total).ToString("C0")
+                    </MudText>
+                }
+            </MudTabPanel>
+
+        </MudTabs>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int ProveedorId { get; set; }
+
+    private ProveedorItem? _proveedor;
+    private DualRolInfo? _dualRol;
+    private string? _clienteExternalId;
+    private List<OrdenCompraResumen> _compras = new();
+    private bool _cargando = true;
+    private bool _cargandoCompras;
+    private bool _procesandoDualRol;
+    private string? _errorCarga;
+
+    protected override async Task OnParametersSetAsync() => await CargarTodoAsync();
+
+    private async Task CargarTodoAsync()
+    {
+        _cargando = true;
+        _errorCarga = null;
+        try
+        {
+            _proveedor = await ApiClient.GetAsync<ProveedorItem>($"api/catalogo/proveedores/{ProveedorId}");
+            if (_proveedor is not null)
+            {
+                await Task.WhenAll(CargarDualRolAsync(), CargarComprasAsync());
+            }
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarDualRolAsync()
+    {
+        if (_proveedor?.NIT is null) return;
+        try
+        {
+            _dualRol = await ApiClient.GetAsync<DualRolInfo>(
+                $"api/catalogo/verificar-dual-rol?nit={Uri.EscapeDataString(_proveedor.NIT)}");
+            _clienteExternalId = _dualRol?.ClienteExternalId;
+        }
+        catch { /* dual-rol opcional */ }
+    }
+
+    private async Task CargarComprasAsync()
+    {
+        _cargandoCompras = true;
+        try
+        {
+            _compras = await ApiClient.GetAsync<List<OrdenCompraResumen>>(
+                $"api/compras/ordenes/por-proveedor/{ProveedorId}") ?? new();
+        }
+        catch { /* sin compras */ }
+        finally { _cargandoCompras = false; }
+    }
+
+    private async Task AbrirEdicionAsync()
+    {
+        var parametros = new DialogParameters<ProveedorDialog> { { x => x.Proveedor, _proveedor } };
+        var dialogo = await DialogService.ShowAsync<ProveedorDialog>("Editar Proveedor", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            var req = (ActualizarProveedorRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarProveedorRequest, object?>($"api/catalogo/proveedores/{ProveedorId}", req);
+            Snackbar.Add("Proveedor actualizado.", Severity.Success);
+            _proveedor = await ApiClient.GetAsync<ProveedorItem>($"api/catalogo/proveedores/{ProveedorId}");
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task RegistrarComoClienteAsync()
+    {
+        _procesandoDualRol = true;
+        try
+        {
+            var resp = await ApiClient.PostAsync<object?, dynamic>(
+                $"api/catalogo/proveedores/{ProveedorId}/agregar-como-cliente", null);
+            Snackbar.Add("Proveedor registrado como cliente correctamente.", Severity.Success);
+            await CargarDualRolAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _procesandoDualRol = false; }
+    }
+
+    private static Color ColorEstado(string estado) => estado switch
+    {
+        "RECIBIDO"  => Color.Success,
+        "PARCIAL"   => Color.Warning,
+        "PENDIENTE" => Color.Info,
+        "ANULADO"   => Color.Error,
+        _           => Color.Default
+    };
+}

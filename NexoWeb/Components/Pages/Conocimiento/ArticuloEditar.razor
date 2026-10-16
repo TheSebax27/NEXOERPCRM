@@ -1,0 +1,116 @@
+@page "/conocimiento/nuevo"
+@page "/conocimiento/{ArticuloID:int}/editar"
+@attribute [Authorize]
+@inject INexoApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_esNuevo ? "Nuevo Artículo" : "Editar Artículo") | NEXO ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+    <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack"
+               OnClick="@(() => Nav.NavigateTo(_esNuevo ? "/conocimiento" : $"/conocimiento/{ArticuloID}"))"
+               Size="Size.Small" Class="mb-3">
+        @(_esNuevo ? "Base de Conocimiento" : "Ver artículo")
+    </MudButton>
+    <MudText Typo="Typo.h5" Class="font-weight-bold mb-4">
+        @(_esNuevo ? "Nuevo artículo" : "Editar artículo")
+    </MudText>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_titulo" Label="Título *" Variant="Variant.Outlined"
+                          Counter="300" MaxLength="300" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_categoria" Label="Categoría *" Variant="Variant.Outlined"
+                          Placeholder="General, Bug, Procedimiento, FAQ..." />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_tags" Label="Tags (coma separados)" Variant="Variant.Outlined"
+                          Placeholder="inventario, facturación, login..." />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_contenido" Label="Contenido *" Variant="Variant.Outlined"
+                          Lines="16" Placeholder="Escribe el artículo aquí. Puedes usar saltos de línea." />
+        </MudItem>
+        @if (!_esNuevo)
+        {
+            <MudItem xs="12">
+                <MudSwitch @bind-Value="_activo" Label="Artículo activo (visible en búsqueda)" Color="Color.Success" />
+            </MudItem>
+        }
+    </MudGrid>
+
+    <div class="d-flex justify-end gap-2 mt-4">
+        <MudButton Variant="Variant.Text"
+                   OnClick="@(() => Nav.NavigateTo(_esNuevo ? "/conocimiento" : $"/conocimiento/{ArticuloID}"))">
+            Cancelar
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   OnClick="Guardar" Disabled="_guardando">
+            @if (_guardando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+            @(_esNuevo ? "Crear artículo" : "Guardar cambios")
+        </MudButton>
+    </div>
+</MudContainer>
+
+@code {
+    [Parameter] public int ArticuloID { get; set; }
+
+    private bool _esNuevo => ArticuloID == 0;
+    private bool _guardando;
+    private string _titulo = string.Empty;
+    private string _contenido = string.Empty;
+    private string _categoria = "General";
+    private string? _tags;
+    private bool _activo = true;
+
+    private record ArticuloItem(
+        int ArticuloID, string Titulo, string Contenido, string Categoria,
+        string? Tags, int AutorID, string? AutorNombre,
+        DateTime FechaCreacion, DateTime FechaActualizacion, bool Activo, int Vistas);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!_esNuevo)
+        {
+            var art = await Api.GetAsync<ArticuloItem>($"api/conocimiento/{ArticuloID}");
+            if (art is not null)
+            {
+                _titulo    = art.Titulo;
+                _contenido = art.Contenido;
+                _categoria = art.Categoria;
+                _tags      = art.Tags;
+                _activo    = art.Activo;
+            }
+        }
+    }
+
+    private async Task Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(_titulo) || string.IsNullOrWhiteSpace(_contenido))
+        {
+            Snackbar.Add("Título y contenido son requeridos.", Severity.Warning);
+            return;
+        }
+        _guardando = true;
+
+        if (_esNuevo)
+        {
+            await Api.PostAsync("api/conocimiento",
+                new { Titulo = _titulo, Contenido = _contenido, Categoria = _categoria, Tags = _tags });
+            Snackbar.Add("Artículo creado.", Severity.Success);
+            Nav.NavigateTo("/conocimiento");
+        }
+        else
+        {
+            await Api.PutAsync($"api/conocimiento/{ArticuloID}",
+                new { Titulo = _titulo, Contenido = _contenido, Categoria = _categoria, Tags = _tags, Activo = _activo });
+            Snackbar.Add("Artículo actualizado.", Severity.Success);
+            Nav.NavigateTo($"/conocimiento/{ArticuloID}");
+        }
+        _guardando = false;
+    }
+}

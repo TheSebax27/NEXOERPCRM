@@ -1,0 +1,74 @@
+@* Fila de actividad reutilizable en Actividades.razor *@
+@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+
+<div class="d-flex align-center mb-2"
+     style="gap:8px; padding:10px 12px; border-radius:8px; border:1px solid var(--mud-palette-divider);
+            background:@(Item.Completada ? "var(--mud-palette-background-grey)" : "var(--mud-palette-background)");">
+    <MudCheckBox T="bool" Value="@Item.Completada"
+                 ValueChanged="@(async v => await ToggleAsync(v))"
+                 Color="Color.Success" Dense="true" />
+    <div style="flex:1; min-width:0;">
+        <div style="font-size:0.875rem; font-weight:600;
+                    @(Item.Completada ? "text-decoration:line-through; color:var(--n-text-3);" : "")">
+            @IconoTipo(Item.Tipo) @Item.Titulo
+        </div>
+        <div style="font-size:0.75rem; color:var(--n-text-3); display:flex; gap:12px; flex-wrap:wrap; margin-top:2px;">
+            @if (Item.Oportunidad is not null)
+            {
+                <span>🎯 @Item.Oportunidad</span>
+            }
+            @if (Item.Cliente is not null)
+            {
+                <span>🏢 @Item.Cliente</span>
+            }
+            @if (Item.Responsable is not null)
+            {
+                <span>👤 @Item.Responsable</span>
+            }
+            @if (Item.FechaVencimiento.HasValue)
+            {
+                <span>📅 @Item.FechaVencimiento.Value.ToLocalTime().ToString("dd/MM/yyyy")</span>
+            }
+        </div>
+    </div>
+    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                   Color="Color.Default" Style="opacity:.5;"
+                   OnClick="EliminarAsync" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ActividadItem Item { get; set; } = default!;
+    [Parameter] public EventCallback OnCambio { get; set; }
+
+    private static string IconoTipo(string tipo) => tipo switch
+    {
+        "LLAMADA" => "📞",
+        "EMAIL"   => "📧",
+        "REUNION" => "🤝",
+        _         => "✅"
+    };
+
+    private async Task ToggleAsync(bool completada)
+    {
+        try
+        {
+            await ApiClient.PatchAsync<CompletarActividadRequest, object?>(
+                $"api/crm/actividades/{Item.ActividadID}/completar",
+                new CompletarActividadRequest(completada));
+            await OnCambio.InvokeAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarAsync()
+    {
+        try
+        {
+            await ApiClient.DeleteAsync($"api/crm/actividades/{Item.ActividadID}");
+            await OnCambio.InvokeAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

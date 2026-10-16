@@ -1,0 +1,217 @@
+/* ── Encabezado y layout: movidos a app.css como nexo-page-header / nexo-section / nexo-form-layout ── */
+
+/* ── Campos ───────────────────────────────────────────────────────── */
+.na-field-row {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.na-field-row--2 {
+    grid-template-columns: 1fr 1fr;
+}
+
+.na-field-hint {
+    font-size: 0.75rem;
+    color: var(--n-text-3);
+    margin: 0.25rem 0 1rem;
+    line-height: 1.4;
+}
+
+.na-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--n-text-2);
+    margin: 0;
+}
+
+/* ── Precios grid ─────────────────────────────────────────────────── */
+.na-precios-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.na-precio-col--costo {
+    border-right: 1px dashed var(--n-border);
+    padding-right: 1.5rem;
+}
+
+.na-precio-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--n-text-3);
+    margin-bottom: 0.65rem;
+}
+
+.na-util-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    background: var(--n-success-bg-2);
+    font-size: 0.75rem;
+    color: var(--n-success);
+}
+
+/* ── Embalaje ─────────────────────────────────────────────────────── */
+.na-embalaje-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.85rem;
+    border-radius: var(--n-radius-sm);
+    background: rgba(16,185,129,0.07);
+    border: 1px solid rgba(16,185,129,0.18);
+    font-size: 0.83rem;
+    color: var(--n-text-2);
+}
+
+/* ── Costo con impuesto ───────────────────────────────────────────── */
+.na-costo-impuesto-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 20px;
+    background: var(--n-info-bg);
+    border: 1px solid var(--n-info-border);
+    font-size: 0.75rem;
+    color: var(--n-info);
+}
+
+/* ── IVA vacío ────────────────────────────────────────────────────── */
+.na-iva-empty {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--n-bg);
+    border-radius: var(--n-radius-sm);
+    font-size: 0.8rem;
+    color: var(--n-text-3);
+    line-height: 1.5;
+}
+
+/* ── Imagen ───────────────────────────────────────────────────────── */
+.na-imagen-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.na-upload-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 180px;
+    border: 2px dashed var(--n-border-2);
+    border-radius: var(--n-radius);
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.na-upload-zone:hover {
+    border-color: var(--n-purple);
+    background: rgba(124,92,255,0.03);
+}
+
+.na-upload-zone__title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--n-text-1);
+    display: block;
+    margin-bottom: 0.2rem;
+}
+
+.na-upload-zone__sub {
+    font-size: 0.8rem;
+    color: var(--n-text-3);
+    display: block;
+}
+
+.na-upload-zone__hint {
+    font-size: 0.72rem;
+    color: var(--n-text-3);
+    display: block;
+    margin-top: 0.5rem;
+    opacity: .7;
+}
+
+.na-imagen-preview {
+    position: relative;
+    width: 100%;
+    max-width: 240px;
+}
+
+.na-imagen-preview__img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    border-radius: var(--n-radius);
+    border: 1px solid var(--n-border);
+}
+
+.na-imagen-preview__clear {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.35rem;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.55);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    transition: background .15s;
+}
+
+.na-imagen-preview__clear:hover { background: rgba(239,68,68,0.85); }
+
+.na-btn-cambiar-imagen {
+    display: inline-block;
+    padding: 0.4rem 1rem;
+    border-radius: var(--n-radius-sm);
+    border: 1px solid var(--n-border-2);
+    font-size: 0.8rem;
+    color: var(--n-text-2);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color .15s, color .15s;
+}
+
+.na-btn-cambiar-imagen:hover {
+    border-color: var(--n-purple);
+    color: var(--n-purple);
+}
+
+/* ── Acción y responsive: movidos a app.css — ver §Sistema de Secciones de Formulario ── */
+
+@media (max-width: 900px) {
+    .na-precios-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .na-precio-col--costo {
+        border-right: none;
+        border-bottom: 1px dashed var(--n-border);
+        padding-right: 0;
+        padding-bottom: 1rem;
+    }
+}
+
+@media (max-width: 600px) {
+    .na-precios-grid { grid-template-columns: 1fr; }
+    .na-field-row--2 { grid-template-columns: 1fr; }
+}

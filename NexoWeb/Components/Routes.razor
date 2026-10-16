@@ -1,0 +1,28 @@
+@inject NavigationManager Navegacion
+
+<InicializadorSesion>
+    <CascadingAuthenticationState>
+        <Router AppAssembly="typeof(Program).Assembly">
+            <Found Context="routeData">
+                <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                    <NotAuthorized>
+                        @if (context.User.Identity?.IsAuthenticated != true)
+                        {
+                            // No hay sesion iniciada -> mandamos al login
+                            Navegacion.NavigateTo("/login", forceLoad: true);
+                        }
+                        else
+                        {
+                            // Esta logueado, pero su rol no tiene permiso para esta pagina
+                            <p class="pa-4">No tienes permisos para acceder a esta seccion.</p>
+                        }
+                    </NotAuthorized>
+                </AuthorizeRouteView>
+            </Found>
+            <NotFound>
+                <PageTitle>No encontrado</PageTitle>
+                <p>La pagina que buscas no existe.</p>
+            </NotFound>
+        </Router>
+    </CascadingAuthenticationState>
+</InicializadorSesion>

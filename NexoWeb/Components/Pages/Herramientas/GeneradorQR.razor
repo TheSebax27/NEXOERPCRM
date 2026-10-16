@@ -1,0 +1,114 @@
+@page "/herramientas/qr"
+@attribute [Authorize]
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject IConfiguration Config
+
+<PageTitle>Generador de QR — NEXO</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-6">
+
+    <div class="d-flex align-center gap-3 mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.QrCode2" Style="font-size:2rem; color:var(--mud-palette-primary)" />
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Generador de QR</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Convierte cualquier texto o URL en un código QR.</MudText>
+        </div>
+    </div>
+
+    <MudPaper Elevation="0" Class="pa-5" Style="border:1px solid var(--mud-palette-lines-default); border-radius:16px;">
+
+        <MudTextField @bind-Value="_contenido"
+                      Label="Texto o URL"
+                      Placeholder="https://ejemplo.com  ·  o cualquier texto"
+                      Variant="Variant.Outlined"
+                      Lines="3"
+                      Immediate="true"
+                      Class="mb-4" />
+
+        <div class="d-flex align-center gap-3 mb-4" style="flex-wrap:wrap">
+            <MudSelect T="int" @bind-Value="_tamano" Label="Tamaño" Variant="Variant.Outlined"
+                       Style="max-width:160px">
+                <MudSelectItem Value="6">Pequeño</MudSelectItem>
+                <MudSelectItem Value="10">Mediano</MudSelectItem>
+                <MudSelectItem Value="15">Grande</MudSelectItem>
+                <MudSelectItem Value="20">Extra grande</MudSelectItem>
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.QrCode2"
+                       Disabled="@string.IsNullOrWhiteSpace(_contenido)"
+                       OnClick="Generar">
+                Generar QR
+            </MudButton>
+        </div>
+
+        @if (_urlImagen is not null)
+        {
+            <MudDivider Class="mb-4" />
+
+            <div class="d-flex flex-column align-center gap-3">
+
+                <div style="background:#fff; padding:12px; border-radius:12px; border:1px solid var(--mud-palette-lines-default);">
+                    <img src="@_urlImagen" alt="QR" style="display:block; width:220px; height:220px;" />
+                </div>
+
+                <div class="d-flex gap-2" style="flex-wrap:wrap; justify-content:center">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Download"
+                               OnClick="Descargar">
+                        Descargar PNG
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Link"
+                               OnClick="CopiarLinkImagen">
+                        Copiar link imagen
+                    </MudButton>
+                </div>
+
+                <MudPaper Elevation="0" Class="pa-3 mt-1" Style="background:var(--mud-palette-background-grey); border-radius:8px; width:100%;">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Link directo a la imagen (público):</MudText>
+                    <div style="font-size:.75rem; word-break:break-all; font-family:monospace;">@_urlPublica</div>
+                </MudPaper>
+            </div>
+        }
+
+    </MudPaper>
+
+</MudContainer>
+
+@code {
+    private string _contenido = "";
+    private int    _tamano    = 10;
+    private string? _urlImagen;
+    private string? _urlPublica;
+
+    private void Generar()
+    {
+        if (string.IsNullOrWhiteSpace(_contenido)) return;
+        var encoded  = Uri.EscapeDataString(_contenido);
+        var apiBase  = Config["NexoApi:BaseUrl"]!.TrimEnd('/');
+        _urlImagen  = $"{apiBase}/api/utils/qr-png?contenido={encoded}&px={_tamano}";
+        _urlPublica = _urlImagen;
+    }
+
+    private async Task Descargar()
+    {
+        if (_urlImagen is null) return;
+        await JS.InvokeVoidAsync("nexoDescargarBlob", _urlImagen);
+    }
+
+    private async Task CopiarLinkImagen()
+    {
+        if (_urlPublica is null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _urlPublica);
+            Snackbar.Add("Link copiado", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add($"Copia manualmente: {_urlPublica}", Severity.Info);
+        }
+    }
+}

@@ -1,0 +1,253 @@
+@page "/f/{Token}"
+@attribute [AllowAnonymous]
+@using System.Text.Json
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@using NexoWeb.Common.Dtos
+@inject IHttpClientFactory HttpFactory
+@inject IConfiguration Config
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@layout FormPublicoLayout
+
+<PageTitle>@(_formulario?.Titulo ?? "Formulario")</PageTitle>
+
+<div class="frm-pub-page">
+    @if (_cargando)
+    {
+        <div class="frm-pub-loading">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+        </div>
+    }
+    else if (_formulario is null)
+    {
+        <div class="frm-pub-card">
+            <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" Size="Size.Large" Class="mb-3" />
+            <MudText Typo="Typo.h6">Formulario no encontrado</MudText>
+            <MudText Color="Color.Secondary" Class="mt-1">El enlace no es válido o el formulario fue eliminado.</MudText>
+        </div>
+    }
+    else if (!_formulario.AceptaRespuestas)
+    {
+        <div class="frm-pub-card">
+            <MudIcon Icon="@Icons.Material.Filled.Lock" Color="Color.Warning" Size="Size.Large" Class="mb-3" />
+            <MudText Typo="Typo.h6">Formulario cerrado</MudText>
+            <MudText Color="Color.Secondary" Class="mt-1">Este formulario ya no acepta respuestas.</MudText>
+        </div>
+    }
+    else if (_enviado)
+    {
+        <div class="frm-pub-card frm-pub-card--exito">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" Class="mb-3" />
+            <MudText Typo="Typo.h6">¡Respuesta enviada!</MudText>
+            <MudText Color="Color.Secondary" Class="mt-1">
+                @(_formulario.MensajeExito ?? "Gracias por completar el formulario.")
+            </MudText>
+        </div>
+    }
+    else
+    {
+        <div class="frm-pub-card">
+            <div class="frm-pub-header">
+                <MudText Typo="Typo.h5" Class="font-weight-bold">@_formulario.Titulo</MudText>
+                @if (!string.IsNullOrWhiteSpace(_formulario.Descripcion))
+                {
+                    <MudText Color="Color.Secondary" Class="mt-1">@_formulario.Descripcion</MudText>
+                }
+            </div>
+
+            <MudDivider Class="my-4" />
+
+            <div class="frm-pub-campos">
+                @foreach (var campo in _formulario.Campos)
+                {
+                    <div class="frm-pub-campo">
+                        <MudText Typo="Typo.body1" Class="frm-pub-campo-label">
+                            @campo.Etiqueta
+                            @if (campo.Requerido)
+                            {
+                                <span class="frm-pub-req">*</span>
+                            }
+                        </MudText>
+
+                        @if (campo.Tipo == "TEXTO")
+                        {
+                            <MudTextField @bind-Value="_valores[campo.Etiqueta]"
+                                          Placeholder="@campo.Placeholder"
+                                          Variant="Variant.Outlined" Dense="true" />
+                        }
+                        else if (campo.Tipo == "PARRAFO")
+                        {
+                            <MudTextField @bind-Value="_valores[campo.Etiqueta]"
+                                          Placeholder="@campo.Placeholder"
+                                          Variant="Variant.Outlined" Lines="4" />
+                        }
+                        else if (campo.Tipo == "EMAIL")
+                        {
+                            <MudTextField @bind-Value="_valores[campo.Etiqueta]"
+                                          Placeholder="@(campo.Placeholder ?? "correo@ejemplo.com")"
+                                          InputType="InputType.Email" Variant="Variant.Outlined" Dense="true" />
+                        }
+                        else if (campo.Tipo == "TELEFONO")
+                        {
+                            <MudTextField @bind-Value="_valores[campo.Etiqueta]"
+                                          Placeholder="@(campo.Placeholder ?? "+57 300 0000000")"
+                                          InputType="InputType.Telephone" Variant="Variant.Outlined" Dense="true" />
+                        }
+                        else if (campo.Tipo == "NUMERO")
+                        {
+                            <MudTextField @bind-Value="_valores[campo.Etiqueta]"
+                                          Placeholder="@campo.Placeholder"
+                                          InputType="InputType.Number" Variant="Variant.Outlined" Dense="true" />
+                        }
+                        else if (campo.Tipo == "FECHA")
+                        {
+                            <MudTextField @bind-Value="_valores[campo.Etiqueta]"
+                                          InputType="InputType.Date" Variant="Variant.Outlined" Dense="true" />
+                        }
+                        else if (campo.Tipo == "SELECCION")
+                        {
+                            <AppSelect TValue="string" @bind-Value="_valores[campo.Etiqueta]"
+                                       Items="@(ParseOpciones(campo.Opciones).Select(op => new AppSelectItem<string>(op, op)))" />
+                        }
+                        else if (campo.Tipo == "MULTIPLE")
+                        {
+                            @foreach (var op in ParseOpciones(campo.Opciones))
+                            {
+                                <MudCheckBox Value="@EstaSeleccionado(campo.Etiqueta, op)"
+                                             ValueChanged="@((bool v) => ToggleMultiple(campo.Etiqueta, op, v))"
+                                             Label="@op" T="bool" />
+                            }
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (_errorValidacion is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mt-3">@_errorValidacion</MudAlert>
+            }
+
+            <div class="mt-4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           FullWidth="true" OnClick="Enviar" Disabled="_enviando">
+                    @if (_enviando)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Enviar respuesta
+                </MudButton>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Token { get; set; } = string.Empty;
+
+    private FormularioPublicoItem? _formulario;
+    private bool _cargando = true;
+    private bool _enviando;
+    private bool _enviado;
+    private string? _errorValidacion;
+
+    private Dictionary<string, string> _valores = new();
+    private Dictionary<string, HashSet<string>> _multipleValores = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cargando = true;
+        try
+        {
+            _formulario = await LlamarPublicoAsync();
+            if (_formulario is not null)
+            {
+                foreach (var c in _formulario.Campos)
+                {
+                    _valores[c.Etiqueta] = string.Empty;
+                    if (c.Tipo == "MULTIPLE") _multipleValores[c.Etiqueta] = new();
+                }
+            }
+        }
+        catch { }
+        finally { _cargando = false; }
+    }
+
+    private async Task<FormularioPublicoItem?> LlamarPublicoAsync()
+    {
+        // Usa cliente sin auth para que funcione tanto en pre-render como en fase interactiva.
+        // NavigationManager.BaseUri está disponible en ambas fases (a diferencia de IHttpContextAccessor).
+        var apiBase = Config["NexoApi:BaseUrl"]!;
+        var host = new Uri(Nav.BaseUri).Host;
+        var client = HttpFactory.CreateClient("img-proxy");
+        var req = new HttpRequestMessage(HttpMethod.Get, $"{apiBase}api/formularios/publico/{Token}");
+        if (!string.IsNullOrEmpty(host) && host != "localhost" && host != "127.0.0.1")
+            req.Headers.TryAddWithoutValidation("X-Nexo-Host", host);
+        var resp = await client.SendAsync(req);
+        if (!resp.IsSuccessStatusCode) return null;
+        var json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        return await resp.Content.ReadFromJsonAsync<FormularioPublicoItem>(json);
+    }
+
+    private static List<string> ParseOpciones(string? opciones)
+    {
+        if (string.IsNullOrWhiteSpace(opciones)) return [];
+        return opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                       .Select(o => o.Trim())
+                       .Where(o => o.Length > 0).ToList();
+    }
+
+    private bool EstaSeleccionado(string etiqueta, string opcion) =>
+        _multipleValores.TryGetValue(etiqueta, out var set) && set.Contains(opcion);
+
+    private void ToggleMultiple(string etiqueta, string opcion, bool checked_)
+    {
+        if (!_multipleValores.ContainsKey(etiqueta))
+            _multipleValores[etiqueta] = new();
+        if (checked_) _multipleValores[etiqueta].Add(opcion);
+        else _multipleValores[etiqueta].Remove(opcion);
+        _valores[etiqueta] = string.Join(", ", _multipleValores[etiqueta]);
+    }
+
+    private async Task Enviar()
+    {
+        if (_formulario is null) return;
+        _errorValidacion = null;
+
+        var faltantes = _formulario.Campos
+            .Where(c => c.Requerido && string.IsNullOrWhiteSpace(_valores.GetValueOrDefault(c.Etiqueta)))
+            .Select(c => c.Etiqueta).ToList();
+
+        if (faltantes.Any())
+        {
+            _errorValidacion = $"Campos requeridos faltantes: {string.Join(", ", faltantes)}";
+            return;
+        }
+
+        _enviando = true;
+        try
+        {
+            var datos = JsonSerializer.Serialize(_valores);
+            var payload = new EnviarRespuestaRequest(_formulario.FormularioID, datos);
+            var apiBase = Config["NexoApi:BaseUrl"]!;
+            var host = new Uri(Nav.BaseUri).Host;
+            var client = HttpFactory.CreateClient("img-proxy");
+            var httpReq = new HttpRequestMessage(HttpMethod.Post, $"{apiBase}api/formularios/respuestas");
+            if (!string.IsNullOrEmpty(host) && host != "localhost" && host != "127.0.0.1")
+                httpReq.Headers.TryAddWithoutValidation("X-Nexo-Host", host);
+            httpReq.Content = JsonContent.Create(payload);
+            var resp = await client.SendAsync(httpReq);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _errorValidacion = "No se pudo enviar la respuesta. Intenta de nuevo.";
+                return;
+            }
+            _enviado = true;
+        }
+        catch
+        {
+            _errorValidacion = "Error de red al enviar. Intenta de nuevo.";
+        }
+        finally { _enviando = false; }
+    }
+}

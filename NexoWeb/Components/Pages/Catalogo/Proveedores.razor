@@ -1,0 +1,160 @@
+﻿@page "/catalogo/proveedores"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject NavigationManager Navigation
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Proveedores - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Proveedores</MudText>
+    <div class="d-flex align-center" style="gap:8px">
+        <ExportButton Endpoint="api/catalogo/proveedores/exportar/excel"
+                      EndpointPdf="api/catalogo/proveedores/exportar/pdf"
+                      NombreArchivo="proveedores" />
+        <VistaToggle OnCambio="StateHasChanged" />
+    </div>
+</div>
+<InfoAyuda Texto="Registra los proveedores que usas al crear un Pedido. El NIT y los datos de contacto quedan disponibles para referencia rápida." />
+
+<div class="d-flex align-center justify-space-between mb-4" style="gap:12px">
+    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+               StartIcon="@Icons.Material.Filled.Add">
+        Nuevo Proveedor
+    </MudButton>
+    <MudTextField @bind-Value="_busqueda" Placeholder="Buscar por razón social, NIT, email..."
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                  Style="max-width:360px" />
+</div>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los proveedores: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_proveedores.Count == 0)
+{
+    <MudText>No hay proveedores registrados.</MudText>
+}
+else if (Preferencias.VistaListado == "tarjetas")
+{
+    <div class="nexo-card-grid">
+        @foreach (var proveedor in _proveedoresFiltrados)
+        {
+            <div class="nexo-item-card">
+                <div class="d-flex align-center justify-space-between">
+                    <div class="nexo-item-card__title">@proveedor.RazonSocial</div>
+                    <MudChip T="string" Color="@(proveedor.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                        @(proveedor.Estado ? "Activo" : "Inactivo")
+                    </MudChip>
+                </div>
+                <div class="nexo-item-card__sub">@proveedor.NIT</div>
+                <div class="nexo-item-card__row"><span>Contacto</span><strong>@(proveedor.Contacto ?? "-")</strong></div>
+                <div class="nexo-item-card__row"><span>Teléfono</span><strong>@(proveedor.Telefono ?? "-")</strong></div>
+                <div class="nexo-item-card__row"><span>Email</span><strong>@(proveedor.Email ?? "-")</strong></div>
+                <div class="nexo-item-card__actions">
+                    <MudButton Size="Size.Small" OnClick="@(() => Navigation.NavigateTo($"/catalogo/proveedores/{proveedor.ProveedorID}"))">Ver</MudButton>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <MudTable Items="_proveedoresFiltrados" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Razon Social</MudTh>
+            <MudTh>NIT</MudTh>
+            <MudTh>Contacto</MudTh>
+            <MudTh>Telefono</MudTh>
+            <MudTh>Email</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Accion</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Razon Social">@context.RazonSocial</MudTd>
+            <MudTd DataLabel="NIT">@context.NIT</MudTd>
+            <MudTd DataLabel="Contacto">@(context.Contacto ?? "-")</MudTd>
+            <MudTd DataLabel="Telefono">@(context.Telefono ?? "-")</MudTd>
+            <MudTd DataLabel="Email">@(context.Email ?? "-")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                    @(context.Estado ? "Activo" : "Inactivo")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Accion">
+                <MudButton Size="Size.Small" OnClick="@(() => Navigation.NavigateTo($"/catalogo/proveedores/{context.ProveedorID}"))">Ver</MudButton>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No hay proveedores registrados.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private List<ProveedorItem> _proveedores = new();
+    private string _busqueda = string.Empty;
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    private IEnumerable<ProveedorItem> _proveedoresFiltrados => string.IsNullOrWhiteSpace(_busqueda)
+        ? _proveedores
+        : _proveedores.Where(p =>
+            (p.RazonSocial?.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (p.NIT?.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (p.Email?.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (p.Contacto?.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        _errorCarga = null;
+        try
+        {
+            _proveedores = await ApiClient.GetAsync<List<ProveedorItem>>("api/catalogo/proveedores") ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<ProveedorDialog>("Nuevo Proveedor");
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            var request = (CrearProveedorRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearProveedorRequest, object?>("api/catalogo/proveedores", request);
+            Snackbar.Add("Proveedor creado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEdicionAsync(ProveedorItem proveedor)
+    {
+        var parametros = new DialogParameters<ProveedorDialog> { { x => x.Proveedor, proveedor } };
+        var dialogo = await DialogService.ShowAsync<ProveedorDialog>("Editar Proveedor", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            var request = (ActualizarProveedorRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarProveedorRequest, object?>($"api/catalogo/proveedores/{proveedor.ProveedorID}", request);
+            Snackbar.Add("Proveedor actualizado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

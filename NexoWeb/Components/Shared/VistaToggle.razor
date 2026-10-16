@@ -1,0 +1,31 @@
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+
+<div class="nexo-vista-toggle">
+    <button class="nexo-vista-toggle__btn @(Preferencias.VistaListado == "lista" ? "nexo-vista-toggle__btn--active" : "")"
+            title="Vista lista" @onclick="@(() => CambiarAsync("lista"))">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="3" y="5" width="18" height="2" rx="1"/>
+            <rect x="3" y="11" width="18" height="2" rx="1"/>
+            <rect x="3" y="17" width="18" height="2" rx="1"/>
+        </svg>
+    </button>
+    <button class="nexo-vista-toggle__btn @(Preferencias.VistaListado == "tarjetas" ? "nexo-vista-toggle__btn--active" : "")"
+            title="Vista tarjetas" @onclick="@(() => CambiarAsync("tarjetas"))">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="3" y="3" width="8" height="8" rx="2"/>
+            <rect x="13" y="3" width="8" height="8" rx="2"/>
+            <rect x="3" y="13" width="8" height="8" rx="2"/>
+            <rect x="13" y="13" width="8" height="8" rx="2"/>
+        </svg>
+    </button>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnCambio { get; set; }
+
+    async Task CambiarAsync(string vista)
+    {
+        await Preferencias.EstablecerVistaListadoAsync(vista);
+        await OnCambio.InvokeAsync();
+    }
+}

@@ -1,0 +1,406 @@
+﻿@page "/inventario/ajustes"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Ajuste de Inventario — NEXO</PageTitle>
+
+<div class="inv-header">
+    <div class="inv-header__left">
+        <h1 class="inv-header__title">
+            <MudIcon Icon="@Icons.Material.Filled.Balance" Class="inv-header__icon" />
+            Ajuste de Inventario
+        </h1>
+        <p class="inv-header__sub">Carga stock inicial o corrige la cantidad tras un conteo físico. Queda registrado en el Kardex.</p>
+    </div>
+    <div class="art-header__actions">
+        <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.FileDownload"
+                   Disabled="_descargandoPlantilla"
+                   OnClick="DescargarPlantillaAsync">
+            @(_descargandoPlantilla ? "Descargando…" : "Descargar estructura")
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Success"
+                   StartIcon="@Icons.Material.Filled.FileUpload"
+                   OnClick="@(() => { _mostrarPanelImport = true; })">
+            Importar Excel
+        </MudButton>
+    </div>
+</div>
+<div style="max-width:640px;margin:0 auto">
+<InfoAyuda Texto="Carga stock inicial o corrige existencias tras un conteo físico. Cada ajuste queda registrado en el Kardex con motivo y cantidad." />
+</div>
+
+@if (_mostrarPanelImport)
+{
+    <div class="inv-form-card" style="max-width:640px;margin:0 auto 1.5rem;">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;">
+            <MudIcon Icon="@Icons.Material.Filled.TableRows" Style="color:var(--mud-palette-primary)" />
+            <span style="font-weight:600;">Importar ajustes desde Excel</span>
+        </div>
+        <p style="font-size:.85rem;color:var(--mud-palette-text-secondary);margin-bottom:1rem;">
+            Selecciona la bodega a la que se subirá el stock de todas las filas del archivo.
+        </p>
+        <div class="inv-form-section">
+            <label class="inv-form-label">Bodega destino <span class="inv-req">*</span></label>
+            <AppSelect TValue="int?" @bind-Value="_bodegaImportId" Placeholder="Selecciona la bodega" Class="inv-form-field"
+                       Items="@(_bodegas.Select(b => new AppSelectItem<int?>($"{b.Nombre} ({b.CentroCosto})", (int?)b.BodegaID)))" />
+        </div>
+        @if (_archivoImport is not null)
+        {
+            <p style="font-size:.83rem;margin-bottom:.5rem;">
+                Archivo: <strong>@_archivoImport.Name</strong>
+            </p>
+        }
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+            <MudFileUpload T="IBrowserFile" FilesChanged="OnArchivoImportCambiado" Accept=".xlsx,.xls" MaximumFileCount="1">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                               StartIcon="@Icons.Material.Filled.AttachFile">
+                        @(_archivoImport is null ? "Seleccionar archivo" : "Cambiar archivo")
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+            <MudButton Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.CloudUpload"
+                       Disabled="@(_archivoImport is null || !_bodegaImportId.HasValue || _importando)"
+                       OnClick="EjecutarImportAsync">
+                @(_importando ? "Importando…" : "Subir e importar")
+            </MudButton>
+            <MudButton Variant="Variant.Text" Color="Color.Secondary"
+                       OnClick="@(() => { _mostrarPanelImport = false; _archivoImport = null; _bodegaImportId = null; })">
+                Cancelar
+            </MudButton>
+        </div>
+    </div>
+}
+
+
+<div class="inv-form-card">
+    @* ── Artículo ─────────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Artículo <span class="inv-req">*</span></label>
+        <ArticuloAutocomplete Value="_articuloSeleccionado"
+                              ValueChanged="OnArticuloCambiado"
+                              Label="Artículo" Required="true" />
+    </div>
+
+    @* ── Bodega ───────────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Bodega <span class="inv-req">*</span></label>
+        <AppSelect TValue="int?" @bind-Value="_bodegaId" Placeholder="Selecciona la bodega" Class="inv-form-field"
+                   Items="@(_bodegas.Select(bodega => new AppSelectItem<int?>($"{bodega.Nombre} ({bodega.CentroCosto})", (int?)bodega.BodegaID)))" />
+    </div>
+
+    @* ── Cantidad: adapta según tipo de presentación del artículo ── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Cantidad a agregar <span class="inv-req">*</span></label>
+
+        @if (ArticuloSeleccionado is { } art && !_modoManual && art.EsFraccionado)
+        {
+            @* Modo caja/fraccionado: inputs separados *@
+            var labelEmbalaje = art.PresentacionNombre ?? art.PresentacionCodigo?.ToUpper() ?? "Embalaje";
+            <div class="inv-cant-frac">
+                <MudNumericField @bind-Value="_cajas" @bind-Value:after="RecalcularDesdeCajas"
+                                 Label="@labelEmbalaje" Min="0m" Format="N0" Variant="Variant.Outlined" />
+                <MudNumericField @bind-Value="_unidades" @bind-Value:after="RecalcularDesdeCajas"
+                                 Label="Unidades sueltas" Min="0m"
+                                 HelperText="@($"máx {art.Fracciones!.Value - 1:N0} por {labelEmbalaje.ToLower()}")"
+                                 Max="@(art.Fracciones!.Value - 1)"
+                                 Format="N0" Variant="Variant.Outlined" />
+            </div>
+            <div class="inv-cant-total">
+                Total: <strong>@(_cantidad.ToString("N5"))</strong> @labelEmbalaje =
+                <strong>@((_cantidad * art.Fracciones!.Value).ToString("N0"))</strong> und
+            </div>
+            <button class="inv-modo-link" @onclick="@(() => _modoManual = true)">
+                Cambiar a valor manual →
+            </button>
+        }
+        else if (ArticuloSeleccionado is { } art2 && !_modoManual)
+        {
+            @* Modo normal con presentación conocida *@
+            <div class="d-flex align-end" style="gap:.5rem;">
+                <MudNumericField @bind-Value="_cantidad" Label="Cantidad" Min="0.001m"
+                                 Format="N3" Variant="Variant.Outlined" Class="flex-1" />
+                @if (!string.IsNullOrWhiteSpace(art2.PresentacionCodigo))
+                {
+                    <span class="inv-unidad-label">@art2.PresentacionCodigo</span>
+                }
+            </div>
+            <button class="inv-modo-link" @onclick="@(() => _modoManual = true)">
+                Cambiar a valor manual →
+            </button>
+        }
+        else
+        {
+            @* Modo manual (decimal libre) o sin artículo *@
+            <MudNumericField @bind-Value="_cantidad"
+                             Label="@(ArticuloSeleccionado is null ? "Cantidad" : "Cantidad (manual)")"
+                             Min="0.000001m" Format="N6" Variant="Variant.Outlined"
+                             HelperText="@(ArticuloSeleccionado is { } a ? $"Valor decimal en {a.PresentacionCodigo ?? "unidad base"}" : null)" />
+            @if (ArticuloSeleccionado is not null)
+            {
+                <button class="inv-modo-link" @onclick="VolveModoFriendly">
+                    ← Volver al modo normal
+                </button>
+            }
+        }
+    </div>
+
+    @* ── Costo unitario ───────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Costo unitario <span class="inv-req">*</span></label>
+        <MudMoneyField @bind-Value="_costoUnitario"
+                       HelperText="Se usa para recalcular el costo promedio del artículo."
+                       Class="inv-form-field" />
+    </div>
+
+    @* ── Fecha ────────────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Fecha del ajuste</label>
+        <div class="d-flex align-center" style="gap:0.75rem;flex-wrap:wrap;">
+            <MudButton Variant="@(_fechaPersonalizada ? Variant.Outlined : Variant.Filled)"
+                       Color="Color.Default" Size="Size.Small"
+                       OnClick="@(() => { _fechaPersonalizada = false; _fecha = null; })">
+                Hoy
+            </MudButton>
+            <MudButton Variant="@(_fechaPersonalizada ? Variant.Filled : Variant.Outlined)"
+                       Color="Color.Default" Size="Size.Small"
+                       OnClick="@(() => _fechaPersonalizada = true)">
+                Fecha personalizada
+            </MudButton>
+            @if (_fechaPersonalizada)
+            {
+                <MudDatePicker @bind-Date="_fecha" Variant="Variant.Outlined"
+                               PickerVariant="PickerVariant.Dialog"
+                               MaxDate="NexoWeb.Common.ColombiaClock.Today" Placeholder="Selecciona fecha"
+                               DateFormat="dd/MM/yyyy" Class="flex-1" />
+            }
+        </div>
+        @if (_fechaPersonalizada && _fecha.HasValue)
+        {
+            <span style="font-size:0.78rem;color:var(--mud-palette-warning-text);margin-top:0.25rem;display:block;">
+                El movimiento quedará registrado con fecha @_fecha.Value.ToString("dd/MM/yyyy").
+            </span>
+        }
+    </div>
+
+    @* ── Motivo ───────────────────────────────────────────────────── *@
+    <div class="inv-form-section">
+        <label class="inv-form-label">Motivo del ajuste <span class="inv-req">*</span></label>
+        <MudTextField @bind-Value="_motivo" Lines="3" Variant="Variant.Outlined"
+                      HelperText="Mínimo 5 caracteres. Ej: 'Carga inicial de stock al arrancar el sistema.'"
+                      Class="inv-form-field" />
+    </div>
+
+    @* ── Acción ───────────────────────────────────────────────────── *@
+    <div class="inv-form-actions" style="gap:0.75rem;flex-wrap:wrap;">
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Medium"
+                   StartIcon="@Icons.Material.Filled.Inventory"
+                   OnClick="@(() => _motivo = "Inventario Inicial")">
+            Inventario Inicial
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Medium"
+                   StartIcon="@Icons.Material.Filled.CalendarViewWeek"
+                   OnClick="@(() => _motivo = "Inventario Semanal")">
+            Inventario Semanal
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Medium"
+                   StartIcon="@Icons.Material.Filled.Tune"
+                   OnClick="@(() => _motivo = "Ajuste de Inventario")">
+            Ajuste
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RegistrarAsync"
+                   Disabled="@(!FormularioValido || _guardando)"
+                   StartIcon="@Icons.Material.Filled.AddCircle" Size="Size.Large">
+            @(_guardando ? "Registrando…" : "Registrar Ajuste")
+        </MudButton>
+    </div>
+</div>
+
+@code {
+    private ArticuloItem? _articuloSeleccionado;
+    private List<BodegaItem> _bodegas = new();
+
+    private int?      _bodegaId;
+    private decimal   _cantidad;
+    private decimal   _costoUnitario;
+    private string    _motivo    = "";
+    private bool      _guardando;
+    private bool      _modoManual;
+    private decimal   _cajas;
+    private decimal   _unidades;
+    private bool      _fechaPersonalizada;
+    private DateTime? _fecha;
+
+    private bool _importando;
+    private bool _descargandoPlantilla;
+    private bool _mostrarPanelImport;
+    private int?          _bodegaImportId;
+    private IBrowserFile? _archivoImport;
+
+    private ArticuloItem? ArticuloSeleccionado => _articuloSeleccionado;
+
+    private bool FormularioValido =>
+        _articuloSeleccionado is not null && _bodegaId.HasValue && _cantidad > 0 &&
+        _costoUnitario >= 0 && _motivo.Trim().Length >= 5;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _bodegas = await ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas") ?? new();
+        if (_bodegas.Count == 1) _bodegaId = _bodegas[0].BodegaID;
+    }
+
+    private void OnArticuloCambiado(ArticuloItem? art)
+    {
+        _articuloSeleccionado = art;
+        _modoManual = false;
+        _cajas = 0; _unidades = 0; _cantidad = 0;
+        _costoUnitario = art is null ? 0m : RedonearCosto(art.PPublico ?? 0m);
+    }
+
+    private static decimal RedonearCosto(decimal costo) =>
+        costo > 1000m ? Math.Round(costo, 0) : costo;
+
+    private void RecalcularDesdeCajas()
+    {
+        var art = ArticuloSeleccionado;
+        _cantidad = art?.Fracciones is > 0
+            ? _cajas + _unidades / art.Fracciones.Value
+            : _cajas;
+    }
+
+    private void VolveModoFriendly()
+    {
+        _modoManual = false;
+        var art = ArticuloSeleccionado;
+        // EsFraccionado (UnidadesPorEmbalaje > 0) en lugar de Unidad == "cja"
+        if (art?.EsFraccionado == true)
+        {
+            _cajas    = Math.Floor(_cantidad);
+            _unidades = Math.Round((_cantidad - _cajas) * art.Fracciones!.Value, 0);
+        }
+    }
+
+    private async Task RegistrarAsync()
+    {
+        var art         = ArticuloSeleccionado;
+        var bodegaNombre = _bodegas.FirstOrDefault(b => b.BodegaID == _bodegaId)?.Nombre ?? "?";
+        // EsFraccionado en lugar de Unidad == "cja"
+        var embRes = art?.PresentacionNombre ?? art?.PresentacionCodigo?.ToUpper() ?? "embalajes";
+        var resumenCantidad = art?.EsFraccionado == true
+            ? $"{_cantidad:N5} {embRes.ToLower()} ({_cantidad * art.Fracciones!.Value:N0} und)"
+            : $"{_cantidad:N3} {art?.PresentacionCodigo ?? "und"}";
+
+        var stockActual = await ApiClient.GetAsync<List<StockConsolidadoItem>>(
+            $"api/inventario/stock?sku={Uri.EscapeDataString(art?.Referencia ?? "")}");
+        var consumoDiario = stockActual?.FirstOrDefault()?.ConsumoDiarioProm;
+        var pres = art?.PresentacionCodigo ?? "und";
+        var alertaAnomalia = consumoDiario is > 0 && _cantidad > consumoDiario.Value * 30
+            ? $"\n\n⚠ ATENCIÓN: la cantidad supera 30 días de consumo promedio ({consumoDiario.Value * 30:N3} {pres}). Verifica si es correcto."
+            : "";
+
+        var confirmacion = await DialogService.ShowMessageBox(
+            "Confirmar Ajuste de Inventario",
+            $"Esta acción quedará registrada en el Kardex y no se puede deshacer directamente.\n\n" +
+            $"Artículo: {art?.Nombre ?? "?"}\n" +
+            $"Bodega: {bodegaNombre}\n" +
+            $"Cantidad a agregar: {resumenCantidad}\n" +
+            $"Costo unitario: {_costoUnitario:C2}" +
+            alertaAnomalia +
+            "\n\n¿Confirmar el ajuste?",
+            yesText: "Sí, registrar ajuste",
+            noText: "Cancelar");
+
+        if (confirmacion != true) return;
+
+        _guardando = true;
+        try
+        {
+            var fechaEnvio = _fechaPersonalizada && _fecha.HasValue
+                ? (DateTime?)_fecha.Value.ToUniversalTime()
+                : null;
+            var request = new AjustarInventarioRequest(
+                _articuloSeleccionado!.ArticuloID, _bodegaId!.Value, _cantidad, _costoUnitario, _motivo.Trim(), fechaEnvio);
+            var resultado = await ApiClient.PostAsync<AjustarInventarioRequest, AjustarInventarioResponse>(
+                "api/inventario/ajustes", request);
+
+            Snackbar.Add(
+                $"Ajuste registrado. Código: {resultado!.CodigoAjuste}. Nuevo saldo: {resultado.NuevoSaldo:N3}",
+                Severity.Success);
+
+            _cantidad = 0; _cajas = 0; _unidades = 0; _costoUnitario = 0; _motivo = ""; _modoManual = false;
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private void OnArchivoImportCambiado(IBrowserFile file)
+    {
+        _archivoImport = file;
+    }
+
+    private async Task DescargarPlantillaAsync()
+    {
+        _descargandoPlantilla = true;
+        StateHasChanged();
+        try
+        {
+            var bytes  = await ApiClient.GetBytesAsync("api/inventario/ajustes/plantilla");
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("nexoDescargarArchivo",
+                "plantilla_ajustes_inventario.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                base64);
+        }
+        catch { Snackbar.Add("No se pudo descargar la plantilla.", Severity.Error); }
+        finally { _descargandoPlantilla = false; StateHasChanged(); }
+    }
+
+    private async Task EjecutarImportAsync()
+    {
+        if (_archivoImport is null || !_bodegaImportId.HasValue) return;
+
+        var confirmado = await DialogService.ShowMessageBox(
+            "Confirmar importación",
+            $"Se registrarán ajustes de inventario para cada fila del archivo '{_archivoImport.Name}' " +
+            $"en la bodega seleccionada. Esta acción no se puede deshacer. ¿Continuar?",
+            yesText: "Sí, importar",
+            noText: "Cancelar");
+        if (confirmado != true) return;
+
+        _importando = true;
+        try
+        {
+            using var stream = _archivoImport.OpenReadStream(10_000_000);
+            using var ms     = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            using var content = new MultipartFormDataContent();
+            content.Add(new ByteArrayContent(ms.ToArray()), "archivo", _archivoImport.Name);
+
+            var result = await ApiClient.PostMultipartAsync<ImportarAjustesResult>(
+                $"api/inventario/ajustes/importar-excel?bodegaId={_bodegaImportId}", content);
+
+            if (result is null) { Snackbar.Add("No se obtuvo respuesta del servidor.", Severity.Warning); return; }
+
+            var sev = result.Errores > 0 ? Severity.Warning : Severity.Success;
+            Snackbar.Add($"Importados: {result.Procesados} · Errores: {result.Errores}", sev);
+            foreach (var m in result.Mensajes.Take(5))
+                Snackbar.Add(m, Severity.Error);
+
+            _mostrarPanelImport = false;
+            _archivoImport      = null;
+            _bodegaImportId     = null;
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        finally { _importando = false; }
+    }
+}
+

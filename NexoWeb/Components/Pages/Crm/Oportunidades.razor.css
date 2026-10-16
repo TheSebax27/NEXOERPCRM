@@ -1,0 +1,93 @@
+/* Embudo de ventas con drag-and-drop nativo de HTML5. */
+.nexo-embudo {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.nexo-embudo__columna {
+  background: var(--n-bg-2, #F4F5F9);
+  border-radius: 10px;
+  padding: 0.6rem;
+  min-height: 80px;
+}
+
+.nexo-embudo__columna-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--n-text-3, #9B9BB4);
+  padding: 0 0.15rem;
+}
+
+.nexo-embudo__contador {
+  background: rgba(124,92,255,0.15);
+  color: #7C5CFF;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.45rem;
+  font-weight: 700;
+}
+
+.nexo-embudo__columna-valor {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--n-text-2, #5B5B72);
+  padding: 0.1rem 0.15rem 0.5rem;
+}
+
+.nexo-embudo__columna--drop {
+  background: rgba(124,92,255,0.08);
+  outline: 2px dashed rgba(124,92,255,0.5);
+  outline-offset: -2px;
+}
+
+.nexo-embudo__tarjeta {
+  background: var(--n-bg-1, #FFFFFF);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.5rem;
+  cursor: grab;
+  transition: opacity .15s, box-shadow .15s;
+}
+
+.nexo-embudo__tarjeta--arrastrando {
+  opacity: 0.4;
+  box-shadow: none;
+  cursor: grabbing;
+}
+
+.nexo-embudo__tarjeta-titulo {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.nexo-embudo__tarjeta-meta {
+  font-size: 0.72rem;
+  color: var(--n-text-3, #9B9BB4);
+  line-height: 1.4;
+}
+
+.nexo-embudo__tarjeta-acciones {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 900px) {
+  .nexo-embudo {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 500px) {
+  .nexo-embudo {
+    grid-template-columns: 1fr;
+  }
+}

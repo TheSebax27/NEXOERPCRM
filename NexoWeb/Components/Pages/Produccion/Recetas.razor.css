@@ -1,0 +1,180 @@
+/* ── Tarjeta receta v2 ─────────────────────────────────────────────────── */
+.rec2-card {
+    background: var(--n-card);
+    border: 1px solid var(--n-border);
+    border-radius: 14px;
+    padding: 14px 14px 12px;
+    box-shadow: var(--n-shadow);
+    display: flex; flex-direction: column; gap: 0;
+    min-width: 0;
+    overflow: hidden;
+    transition: box-shadow .15s, border-color .15s;
+}
+.rec2-card:hover {
+    box-shadow: 0 4px 20px rgba(124,92,255,.14);
+    border-color: rgba(124,92,255,.4);
+}
+
+.rec2-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; min-width: 0; }
+.rec2-hat { width: 26px; height: 26px; color: var(--n-purple); flex-shrink: 0; }
+
+.rec2-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+    border-radius: 100px; padding: 4px 11px; flex-shrink: 0;
+}
+.rec2-badge--activa {
+    background: rgba(34,208,122,.1); border: 1px solid rgba(34,208,122,.3); color: #22d07a;
+}
+.rec2-badge--off {
+    background: rgba(224,49,75,.08); border: 1px solid rgba(224,49,75,.25); color: #e0314b;
+}
+.rec2-dot { width: 8px; height: 8px; border-radius: 50%; }
+.rec2-badge--activa .rec2-dot { background: #22d07a; box-shadow: 0 0 6px #22d07a; }
+.rec2-badge--off    .rec2-dot { background: #e0314b; }
+
+.rec2-title {
+    margin-top: 10px; font-size: 13px; line-height: 1.3;
+    font-weight: 700; color: var(--n-text-1);
+    overflow-wrap: break-word; word-break: break-word;
+}
+.rec2-sub {
+    margin-top: 3px; font-size: 12px; color: var(--n-text-2);
+    overflow-wrap: break-word; word-break: break-word;
+}
+
+.rec2-yield {
+    margin-top: 10px; display: flex; align-items: center; gap: 8px;
+    background: rgba(124,92,255,.06); border: 1px solid rgba(124,92,255,.12);
+    border-radius: 10px; padding: 8px 10px;
+}
+.rec2-yield svg    { width: 18px; height: 18px; flex-shrink: 0; color: var(--n-purple); }
+.rec2-yield small  { display: block; font-size: 10px; color: var(--n-text-3); text-transform: uppercase; letter-spacing: .05em; }
+.rec2-yield strong { display: block; margin-top: 1px; font-size: 13px; font-weight: 700; color: var(--n-text-1); }
+
+.rec2-grid { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+.rec2-tile {
+    border-radius: 10px; padding: 10px 10px 8px;
+    border: 1px solid var(--n-border);
+    background: transparent; cursor: pointer;
+    display: flex; flex-direction: column; gap: 4px;
+    color: var(--n-text-1); font: inherit;
+    transition: background .15s, border-color .15s;
+}
+.rec2-tile:hover { background: rgba(124,92,255,.07); border-color: rgba(124,92,255,.3); }
+.rec2-tile--red:hover { background: rgba(224,49,75,.07); border-color: rgba(224,49,75,.3); }
+.rec2-tile > svg { width: 18px; height: 18px; display: block; color: var(--n-purple); flex-shrink: 0; }
+.rec2-tile--red > svg { color: #e0314b; }
+.rec2-tile__label {
+    font-size: 11px; font-weight: 600; color: var(--n-text-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.2;
+}
+.rec2-tile__l    { display: flex; justify-content: flex-end; margin-top: auto; }
+.rec2-tile__l svg { width: 11px; height: 11px; color: var(--n-text-3); }
+
+.rec2-btn {
+    width: 100%; margin-top: 8px; border-radius: 8px; padding: 8px 10px;
+    font: inherit; font-size: 13px; font-weight: 700; letter-spacing: .3px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    cursor: pointer; text-transform: uppercase; text-decoration: none;
+    transition: filter .15s;
+}
+.rec2-btn:hover { filter: brightness(1.08); }
+.rec2-btn--blue {
+    border: none; color: #fff;
+    background: var(--n-purple);
+    box-shadow: 0 4px 14px rgba(124,92,255,.35);
+}
+.rec2-btn--off {
+    border: 1.5px solid rgba(224,49,75,.4);
+    color: #e0314b;
+    background: rgba(224,49,75,.06);
+}
+
+.rec2-x {
+    width: 16px; height: 16px; border-radius: 50%; background: #e0314b;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+/* Reutiliza clases prod-* definidas en ListaOrdenes.razor.css */
+
+.prod-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap;
+}
+.prod-header__left    { display: flex; flex-direction: column; gap: .25rem; }
+.prod-header__actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.prod-header__title   { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--n-text-1); }
+.prod-header__icon    { color: var(--n-purple); }
+.prod-header__sub     { margin: 0; font-size: .84rem; color: var(--n-text-3); }
+
+/* Filtros */
+.prod-filtros { display: flex; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+
+/* Skeleton */
+.prod-skeleton { display: flex; flex-direction: column; gap: .5rem; }
+.prod-skeleton__row {
+    height: 44px; border-radius: var(--n-radius);
+    background: linear-gradient(90deg, var(--n-border) 25%, rgba(124,92,255,.06) 50%, var(--n-border) 75%);
+    background-size: 200% 100%; animation: rec-shimmer 1.4s infinite;
+}
+@keyframes rec-shimmer { to { background-position: -200% 0; } }
+
+/* Vacío */
+.prod-vacio { text-align: center; padding: 3rem 1rem; color: var(--n-text-3); }
+
+/* Grid tarjetas */
+.prod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+
+@media (max-width: 480px) {
+    .prod-grid { grid-template-columns: 1fr; }
+    .rec2-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Tarjeta receta */
+.prod-receta-card {
+    background: var(--n-card); border: 1px solid var(--n-border);
+    border-radius: var(--n-radius); padding: .9rem;
+    box-shadow: var(--n-shadow); display: flex; flex-direction: column; gap: .55rem;
+    transition: box-shadow .15s, border-color .15s;
+}
+.prod-receta-card:hover { box-shadow: 0 4px 16px rgba(124,92,255,.12); border-color: var(--n-purple); }
+.prod-receta-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
+.prod-receta-card__producto { font-weight: 700; font-size: .9rem; color: var(--n-text-1); }
+.prod-receta-card__nombre { font-size: .82rem; color: var(--n-text-2); }
+.prod-receta-card__row { display: flex; justify-content: space-between; font-size: .82rem; color: var(--n-text-2); }
+.prod-receta-card__actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .2rem; }
+
+/* Estado badge */
+.prod-receta-estado {
+    font-size: .7rem; font-weight: 700; padding: 3px 8px;
+    border-radius: 100px; white-space: nowrap;
+}
+.prod-receta-estado--activa    { background: rgba(76,175,80,.15); color: rgb(40,120,44); }
+.prod-receta-estado--reemplazada{ background: rgba(0,0,0,.07); color: var(--n-text-3); }
+
+/* Versión */
+.prod-version {
+    font-size: .72rem; background: rgba(124,92,255,.1);
+    color: var(--n-purple); padding: 1px 5px; border-radius: 4px;
+    font-weight: 700; vertical-align: middle;
+}
+
+/* Tabla */
+.prod-table-wrap { overflow-x: auto; border-radius: var(--n-radius); border: 1px solid var(--n-border); box-shadow: var(--n-shadow); }
+.prod-table { width: 100%; border-collapse: collapse; font-size: .84rem; background: var(--n-card); }
+.prod-table thead { background: rgba(124,92,255,.07); }
+.prod-table th {
+    padding: .65rem .75rem; text-align: left; font-size: .72rem; font-weight: 600;
+    color: var(--n-text-3); text-transform: uppercase; letter-spacing: .04em;
+    white-space: nowrap; border-bottom: 1px solid var(--n-border);
+}
+.prod-table__num { text-align: right !important; }
+.prod-table__row { border-bottom: 1px solid var(--n-border); transition: background .1s; }
+.prod-table__row:hover { background: rgba(124,92,255,.04); }
+.prod-table td { padding: .5rem .75rem; color: var(--n-text-1); vertical-align: middle; }
+.prod-table__nombre { max-width: 220px; font-weight: 600; }
+.prod-acciones { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+.inv-muted { color: var(--n-text-3); }

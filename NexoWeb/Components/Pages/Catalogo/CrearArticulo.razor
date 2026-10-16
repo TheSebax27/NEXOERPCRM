@@ -1,0 +1,867 @@
+﻿@page "/catalogo/articulos/nuevo"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Nuevo Artículo — NEXO</PageTitle>
+
+@* ── Encabezado de página ──────────────────────────────────────────── *@
+<div class="nexo-page-header">
+    <nav class="nexo-page-header__breadcrumb">
+        <a class="nexo-page-header__crumb-link" href="/catalogo/articulos">Artículos</a>
+        <span class="nexo-page-header__crumb-sep">›</span>
+        <span class="nexo-page-header__crumb-cur">Nuevo artículo</span>
+    </nav>
+    <div class="nexo-page-header__body">
+        <div>
+            <h1 class="nexo-page-header__title">Crear nuevo artículo</h1>
+            <p class="nexo-page-header__sub">Completa la información para registrar un nuevo artículo en el sistema.</p>
+        </div>
+    </div>
+</div>
+
+@if (_cargando)
+{
+    <div class="d-flex justify-center align-center" style="min-height:300px;">
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+    </div>
+}
+else if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los datos: @_errorCarga</MudAlert>
+}
+else
+{
+    <MudForm @ref="_form" Model="@this">
+        <div class="nexo-form-layout">
+
+            @* ── Fila 1: Información básica + Clasificación ──────────────── *@
+            <div class="nexo-form-row-2">
+
+                @* Información básica *@
+                <div class="nexo-section">
+                    <div class="nexo-section__header">
+                        <div class="nexo-section__icon" style="background: rgba(124,92,255,0.10);">
+                            <MudIcon Icon="@Icons.Material.Filled.Inventory" Style="color:var(--n-purple); font-size:1.25rem;" />
+                        </div>
+                        <div>
+                            <div class="nexo-section__title">Información básica</div>
+                            <div class="nexo-section__sub">Datos principales del artículo</div>
+                        </div>
+                    </div>
+                    <div class="nexo-section__body">
+                        <div class="na-field-row na-field-row--2">
+                            <MudTextField @bind-Value="_sku" Label="Código del artículo (SKU)" Required="true"
+                                          RequiredError="El código es obligatorio"
+                                          Placeholder="Ej. ART-0001" Variant="Variant.Outlined" />
+                            <div>@* espacio *@</div>
+                        </div>
+                        <MudTextField @bind-Value="_nombre" Label="Nombre del artículo" Required="true"
+                                      RequiredError="El nombre es obligatorio"
+                                      Placeholder="Ej. Impresora Multifuncional Epson L3250"
+                                      Variant="Variant.Outlined" Class="mb-4" />
+                        <MudTextField @bind-Value="_descripcion" Label="Descripción" Lines="3"
+                                      Placeholder="Describe las características, usos o detalles importantes del artículo..."
+                                      Variant="Variant.Outlined" Class="mb-1" />
+                        <p class="na-field-hint">Información adicional que ayudará a identificar el artículo.</p>
+                    </div>
+                </div>
+
+                @* Clasificación *@
+                <div class="nexo-section">
+                    <div class="nexo-section__header">
+                        <div class="nexo-section__icon" style="background: rgba(16,185,129,0.10);">
+                            <MudIcon Icon="@Icons.Material.Filled.Sell" Style="color:#10B981; font-size:1.25rem;" />
+                        </div>
+                        <div>
+                            <div class="nexo-section__title">Clasificación</div>
+                            <div class="nexo-section__sub">Categoriza el artículo para mejor organización</div>
+                        </div>
+                    </div>
+                    <div class="nexo-section__body">
+                        <AppSelect TValue="int?" @bind-Value="_tipoArticuloId" Label="Tipo de artículo" Placeholder="Selecciona un tipo" Class="mb-4"
+                                   Items="@(_tiposArticulo.Select(tipo => new AppSelectItem<int?>(tipo.Nombre, (int?)tipo.TipoArticuloID)))" />
+                        <div class="d-flex align-center mb-4" style="gap:0.5rem;">
+                            <MudAutocomplete T="string?" @bind-Value="_marcaCodigo"
+                                             Label="Marca" Clearable="true"
+                                             Placeholder="Busca por código o nombre..."
+                                             Variant="Variant.Outlined" Style="flex:1;"
+                                             SearchFunc="BuscarMarca"
+                                             ToStringFunc="@(c => c is null ? "" : (_marcas.FirstOrDefault(m => m.Codigo == c) is { } m ? $"{m.Codigo} — {m.Nombre}" : c))"
+                                             ResetValueOnEmptyText="true" CoerceText="false" CoerceValue="false" />
+                            <MudTooltip Text="Nueva marca">
+                                <MudIconButton Icon="@Icons.Material.Filled.AddCircle" Color="Color.Primary"
+                                               OnClick="AbrirCrearMarcaAsync" />
+                            </MudTooltip>
+                        </div>
+                        <div class="na-field-row na-field-row--2">
+                            <AppSelect TValue="string?" Value="_grupoMayorCodigo" ValueChanged="OnGrupoMayorChanged"
+                                       Label="Grupo mayor" Placeholder="Sin grupo mayor"
+                                       Items="@(_gruposMayores.Select(gm => new AppSelectItem<string?>($"{gm.Codigo} — {gm.Nombre}", gm.Codigo)))" />
+                            <AppSelect TValue="string?" Value="_grupoMenorCodigo" ValueChanged="OnGrupoMenorChanged"
+                                       Label="Grupo menor"
+                                       Placeholder="@(string.IsNullOrEmpty(_grupoMayorCodigo) ? "Selecciona grupo mayor primero" : "Sin grupo menor")"
+                                       Disabled="@(string.IsNullOrEmpty(_grupoMayorCodigo))"
+                                       Items="@(GruposMenoresFiltrados.Select(gm => new AppSelectItem<string?>($"{gm.Codigo} — {gm.Nombre}", gm.Codigo)))" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ── Presentación + IVA ───────────────────────────────────────── *@
+            <div class="nexo-form-row-2">
+
+                @* Presentación y Embalaje *@
+                <div class="nexo-section">
+                    <div class="nexo-section__header">
+                        <div class="nexo-section__icon" style="background: rgba(245,158,11,0.10);">
+                            <MudIcon Icon="@Icons.Material.Filled.Inventory2" Style="color:#F59E0B; font-size:1.25rem;" />
+                        </div>
+                        <div>
+                            <div class="nexo-section__title">Presentación</div>
+                            <div class="nexo-section__sub">Define cómo se empaca o presenta el artículo</div>
+                        </div>
+                    </div>
+                    <div class="nexo-section__body">
+                        <div class="d-flex align-center mb-4" style="gap:0.5rem;">
+                            <AppSelect TValue="string?" Value="_presentacionCodigo" ValueChanged="OnPresentacionChanged"
+                                       Label="Presentación" Placeholder="Sin presentación"
+                                       Style="flex:1;"
+                                       Items="@(_presentaciones.Select(p => new AppSelectItem<string?>($"{p.Codigo} — {p.Presentacion}{(p.Fracciones is > 0 ? $" ({p.Fracciones!.Value.ToString("N0")} und)" : "")}", p.Codigo)))" />
+                            <MudTooltip Text="Nueva presentación">
+                                <MudIconButton Icon="@Icons.Material.Filled.AddCircle" Color="Color.Primary"
+                                               OnClick="AbrirCrearPresentacionAsync" />
+                            </MudTooltip>
+                        </div>
+                        @if (EsFraccionado)
+                        {
+                            <div class="na-embalaje-badge mb-3">
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Style="color:var(--n-success); font-size:1rem;" />
+                                <span>Presentación de <strong>@_fracciones!.Value.ToString("N0")</strong> unidades por paquete</span>
+                            </div>
+                            <div class="mb-3">
+                                <p class="na-label mb-2">¿Cómo se vende?</p>
+                                <MudRadioGroup T="string" @bind-Value="_fracciona">
+                                    <MudRadio T="string" Value="@("SI")" Color="Color.Primary">
+                                        En caja y en unidades sueltas
+                                    </MudRadio>
+                                    <MudRadio T="string" Value="@("NO")" Color="Color.Primary">
+                                        Solo en caja/paquete completo
+                                    </MudRadio>
+                                </MudRadioGroup>
+                            </div>
+                            @if (_ppPublico is > 0)
+                            {
+                                <div class="na-field-row na-field-row--2">
+                                    <MudNumericField T="decimal" @bind-Value="_margenUnidad"
+                                                     @bind-Value:after="RecalcPrecioUnidad"
+                                                     Label="% ganancia por unidad suelta" Min="0m" Format="N1"
+                                                     Variant="Variant.Outlined"
+                                                     Adornment="Adornment.End" AdornmentText="%" />
+                                    <MudNumericField T="decimal?" @bind-Value="_precioVentaUnidad"
+                                                     Label="Precio unidad suelta" Format="N0" Min="0m"
+                                                     Variant="Variant.Outlined"
+                                                     Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AttachMoney" />
+                                </div>
+                            }
+                        }
+                        @if (EsDePeso)
+                        {
+                            <MudNumericField T="decimal?" @bind-Value="_peso" Label="Peso (kg)" Format="N3" Min="0m"
+                                             Variant="Variant.Outlined"
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.MonitorWeight" />
+                        }
+                        @if (!EsFraccionado && !EsDePeso)
+                        {
+                            <p class="na-field-hint" style="margin-top:0;">Selecciona una presentación para ver las unidades por paquete.</p>
+                        }
+                    </div>
+                </div>
+
+                @* IVA *@
+                <div class="nexo-section">
+                    <div class="nexo-section__header">
+                        <div class="nexo-section__icon" style="background: rgba(14,165,233,0.10);">
+                            <MudIcon Icon="@Icons.Material.Filled.Receipt" Style="color:#0EA5E9; font-size:1.25rem;" />
+                        </div>
+                        <div>
+                            <div class="nexo-section__title">IVA e Impuestos</div>
+                            <div class="nexo-section__sub">Configuración fiscal del artículo</div>
+                        </div>
+                    </div>
+                    <div class="nexo-section__body">
+                        <AppSelect TValue="int?" Value="_ivaId" ValueChanged="OnIvaChanged"
+                                   Label="Impuesto 1 — IVA" Placeholder="Sin IVA" Class="mb-4"
+                                   Items="@(IvasPrimarios.Select(iva => new AppSelectItem<int?>($"{iva.Descripcion} ({iva.Iva}%)", (int?)iva.IvaID)))" />
+                        @if (_ivaId.HasValue && !IvaEsExcluidoOExento && !EsIcoSeleccionado)
+                        {
+                            <AppSelect TValue="string?" Value="_impuestoConsumoCode" ValueChanged="OnImpuestoConsumoChanged"
+                                       Label="Impuesto 2 — Consumo (opcional)" Placeholder="Ninguno" Class="mb-3"
+                                       Items="@(ImpuestosConsumo.Select(ic => new AppSelectItem<string?>($"{ic.Nombre} (0%)", ic.Codigo)))" />
+                            @if (_impuestoConsumoCode is not null)
+                            {
+                                <MudNumericField T="decimal?" @bind-Value="_impuestoPorcentaje"
+                                                 @bind-Value:after="OnImpuestoPorcentajeChanged"
+                                                 Label="Porcentaje del impuesto" Min="0m" Max="100m" Format="N2"
+                                                 Variant="Variant.Outlined" Class="mb-2"
+                                                 Adornment="Adornment.End" AdornmentText="%" />
+                                <p class="na-field-hint">Ingresa el porcentaje aplicable según la normativa vigente.</p>
+                            }
+                        }
+                        @if (!_ivaId.HasValue)
+                        {
+                            <div class="na-iva-empty">
+                                <MudIcon Icon="@Icons.Material.Outlined.Info" Style="font-size:1.1rem; color:var(--n-text-3);" />
+                                <span>Sin IVA configurado. La mayoría de artículos no gravados pueden omitir este campo.</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* ── Precios y Costos (full width) ────────────────────────────── *@
+            <div class="nexo-section">
+                <div class="nexo-section__header">
+                    <div class="nexo-section__icon" style="background: rgba(239,68,68,0.10);">
+                        <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Style="color:#EF4444; font-size:1.25rem;" />
+                    </div>
+                    <div>
+                        <div class="nexo-section__title">Precios y Costos</div>
+                        <div class="nexo-section__sub">Define el costo y los precios de venta por canal</div>
+                    </div>
+                </div>
+                <div class="nexo-section__body">
+                    <div class="na-precios-grid">
+                        @* Costo *@
+                        <div class="na-precio-col na-precio-col--costo">
+                            <div class="na-precio-label">Costo</div>
+                            <MudNumericField T="decimal?" @bind-Value="_costo" @bind-Value:after="OnCostoChanged"
+                                             Label="Costo de adquisición" Format="N0" Min="0m"
+                                             Variant="Variant.Outlined"
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.ShoppingCart" />
+                            <p class="na-field-hint">Costo de compra o producción por unidad (sin impuestos).</p>
+                            @if (TotalImpuestoPct > 0 && _costo is > 0)
+                            {
+                                <div class="na-costo-impuesto-badge mt-2">
+                                    <span>Con impuestos (@TotalImpuestoPct.ToString("N1")%): <strong>@CostoConImpuesto!.Value.ToString("N0")</strong></span>
+                                </div>
+                            }
+                        </div>
+
+                        @* Precio Público *@
+                        <div class="na-precio-col">
+                            <div class="na-precio-label">Precio Público</div>
+                            <MudNumericField T="decimal?" Value="_ppPublico" ValueChanged="OnPPPublicoChanged"
+                                             Label="Precio de venta sugerido" Format="N0" Min="0m"
+                                             Variant="Variant.Outlined"
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AttachMoney" Class="mb-2" />
+                            <MudNumericField T="decimal" Value="_porcPublico" ValueChanged="OnPorcPublicoChanged"
+                                             Label="% Utilidad" Format="N1" Min="0m" Max="9999m"
+                                             Variant="Variant.Outlined"
+                                             Adornment="Adornment.End" AdornmentText="%" />
+                            @if (_uPublico.HasValue)
+                            {
+                                <div class="na-util-badge mt-1">
+                                    <span>Utilidad: <strong>@_uPublico.Value.ToString("C0")</strong></span>
+                                </div>
+                            }
+                        </div>
+
+                        @* Precio Bodega *@
+                        <div class="na-precio-col">
+                            <div class="na-precio-label">Precio Bodega</div>
+                            <MudNumericField T="decimal?" Value="_pBodega" ValueChanged="OnPBodegaChanged"
+                                             Label="Precio por mayor" Format="N0" Min="0m"
+                                             Variant="Variant.Outlined"
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.LocalShipping" Class="mb-2" />
+                            <MudNumericField T="decimal" Value="_porcBodega" ValueChanged="OnPorcBodegaChanged"
+                                             Label="% Utilidad" Format="N1" Min="0m" Max="9999m"
+                                             Variant="Variant.Outlined"
+                                             Adornment="Adornment.End" AdornmentText="%" />
+                            @if (_uBodega.HasValue)
+                            {
+                                <div class="na-util-badge mt-1">
+                                    <span>Utilidad: <strong>@_uBodega.Value.ToString("C0")</strong></span>
+                                </div>
+                            }
+                        </div>
+
+                        @* Precio Crédito *@
+                        <div class="na-precio-col">
+                            <div class="na-precio-label">Precio Crédito</div>
+                            <MudNumericField T="decimal?" Value="_pCredito" ValueChanged="OnPCreditoChanged"
+                                             Label="Precio para crédito" Format="N0" Min="0m"
+                                             Variant="Variant.Outlined"
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.CreditCard" Class="mb-2" />
+                            <MudNumericField T="decimal" Value="_porcCredito" ValueChanged="OnPorcCreditoChanged"
+                                             Label="% Utilidad" Format="N1" Min="0m" Max="9999m"
+                                             Variant="Variant.Outlined"
+                                             Adornment="Adornment.End" AdornmentText="%" />
+                            @if (_uCredito.HasValue)
+                            {
+                                <div class="na-util-badge mt-1">
+                                    <span>Utilidad: <strong>@_uCredito.Value.ToString("C0")</strong></span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ── Stock + Imagen ────────────────────────────────────────────── *@
+            <div class="nexo-form-row-2">
+
+                @* Stock y Control *@
+                <div class="nexo-section">
+                    <div class="nexo-section__header">
+                        <div class="nexo-section__icon" style="background: rgba(124,92,255,0.10);">
+                            <MudIcon Icon="@Icons.Material.Filled.Warehouse" Style="color:var(--n-purple); font-size:1.25rem;" />
+                        </div>
+                        <div>
+                            <div class="nexo-section__title">Control de Inventario</div>
+                            <div class="nexo-section__sub">Umbrales y parámetros de stock</div>
+                        </div>
+                    </div>
+                    <div class="nexo-section__body">
+                        <div class="na-field-row na-field-row--2">
+                            <MudNumericField @bind-Value="_stockMinimo" Label="Stock mínimo" Min="0m"
+                                             Format="N2" Variant="Variant.Outlined"
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Warning" />
+                            <MudNumericField @bind-Value="_puntoReorden" Label="Punto de reorden" Min="0m"
+                                             Format="N2" Variant="Variant.Outlined"
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.TrendingDown" />
+                        </div>
+                        @if (!EsServicio)
+                        {
+                            <MudNumericField @bind-Value="_diasVidaUtil" Label="Vida útil (días hasta caducidad)"
+                                             Min="0" Variant="Variant.Outlined" Class="mb-1"
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.EventBusy" />
+                            @if (_diasVidaUtil is > 0)
+                            {
+                                <p class="na-field-hint">
+                                    Caducaría aproximadamente el @NexoWeb.Common.ColombiaClock.Today.AddDays(_diasVidaUtil.Value).ToString("dd/MM/yyyy").
+                                </p>
+                            }
+                        }
+                    </div>
+                </div>
+
+                @* Imagen *@
+                <div class="nexo-section">
+                    <div class="nexo-section__header">
+                        <div class="nexo-section__icon" style="background: rgba(124,92,255,0.10);">
+                            <MudIcon Icon="@Icons.Material.Filled.Image" Style="color:var(--n-purple); font-size:1.25rem;" />
+                        </div>
+                        <div>
+                            <div class="nexo-section__title">Imagen del artículo</div>
+                            <div class="nexo-section__sub">Agrega una imagen para identificarlo</div>
+                        </div>
+                    </div>
+                    <div class="nexo-section__body na-imagen-body">
+                        @if (_imagenPreviewUrl is not null)
+                        {
+                            <div class="na-imagen-preview">
+                                <img src="@_imagenPreviewUrl" alt="Preview" class="na-imagen-preview__img" />
+                                <button class="na-imagen-preview__clear" @onclick="LimpiarImagen">
+                                    <MudIcon Icon="@Icons.Material.Filled.Close" Style="font-size:1rem;" />
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <label for="nexo-nuevo-articulo-imagen" class="na-upload-zone">
+                                <MudIcon Icon="@Icons.Material.Outlined.CloudUpload"
+                                         Style="font-size:2.5rem; color:var(--n-purple); opacity:.7; display:block; margin-bottom:.5rem;" />
+                                <span class="na-upload-zone__title">Arrastra una imagen aquí</span>
+                                <span class="na-upload-zone__sub">o haz clic para seleccionar</span>
+                                <span class="na-upload-zone__hint">JPG, PNG o WebP · Máx. 1 MB</span>
+                            </label>
+                        }
+                        <InputFile id="nexo-nuevo-articulo-imagen" OnChange="OnImagenSeleccionadaAsync"
+                                   accept="image/png,image/jpeg,image/webp" style="display:none;" />
+                        @if (_imagenPreviewUrl is not null)
+                        {
+                            <label for="nexo-nuevo-articulo-imagen" class="na-btn-cambiar-imagen mt-3">
+                                Cambiar imagen
+                            </label>
+                        }
+                        @if (_imagenError is not null)
+                        {
+                            <p class="na-field-hint" style="color:var(--n-error); margin-top:.5rem;">@_imagenError</p>
+                        }
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        @* ── Adicionales ──────────────────────────────────────────────────────── *@
+        <div class="nexo-section mt-4 mb-2">
+            <div class="nexo-section__header">
+                <div class="nexo-section__icon">
+                    <MudIcon Icon="@Icons.Material.Filled.AddShoppingCart" Style="color:#F59E0B; font-size:1.25rem;" />
+                </div>
+                <div style="flex:1;">
+                    <div class="nexo-section__title">Acompañamientos</div>
+                    <div class="nexo-section__sub">Artículos opcionales o extras que se pueden agregar a este artículo</div>
+                </div>
+            </div>
+            <div class="nexo-section__body">
+                <MudSwitch T="bool" @bind-Value="_esAdicional"
+                           Label="Este artículo puede ser acompañamiento de otros"
+                           Color="Color.Primary" />
+                @if (_esAdicional)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2" Icon="@Icons.Material.Filled.Info">
+                        Guarda el artículo para configurar sus acompañamientos asignados.
+                    </MudAlert>
+                }
+            </div>
+        </div>
+
+        @* ── Dimensiones físicas (Sistema de Medidas) ────────────────────── *@
+        @if (ConfiguracionEmpresa.SistemaMedidas)
+        {
+            <div class="nexo-section mt-4 mb-2">
+                <div class="nexo-section__header">
+                    <div class="nexo-section__icon">
+                        <MudIcon Icon="@Icons.Material.Outlined.Straighten" Style="color:#6366F1; font-size:1.25rem;" />
+                    </div>
+                    <div style="flex:1;">
+                        <div class="nexo-section__title">Dimensiones físicas</div>
+                        <div class="nexo-section__sub">Largo, ancho, espesor y diámetro del material (se guardan junto con el artículo)</div>
+                    </div>
+                </div>
+                <div class="nexo-section__body">
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudNumericField T="decimal?" @bind-Value="_medLargo" Label="Largo"
+                                             Variant="Variant.Outlined" HideSpinButtons="true"
+                                             Adornment="Adornment.End" AdornmentText="@_medUnidad" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudNumericField T="decimal?" @bind-Value="_medAncho" Label="Ancho"
+                                             Variant="Variant.Outlined" HideSpinButtons="true"
+                                             Adornment="Adornment.End" AdornmentText="@_medUnidad" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudNumericField T="decimal?" @bind-Value="_medEspesor" Label="Espesor / Altura"
+                                             Variant="Variant.Outlined" HideSpinButtons="true"
+                                             Adornment="Adornment.End" AdornmentText="@_medUnidad" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudNumericField T="decimal?" @bind-Value="_medDiametro" Label="Diámetro (cilindros)"
+                                             Variant="Variant.Outlined" HideSpinButtons="true"
+                                             Adornment="Adornment.End" AdornmentText="@_medUnidad" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudSelect T="string" @bind-Value="_medUnidad" Label="Unidad" Variant="Variant.Outlined">
+                                <MudSelectItem Value=@("cm")>Centímetros (cm)</MudSelectItem>
+                                <MudSelectItem Value=@("mm")>Milímetros (mm)</MudSelectItem>
+                                <MudSelectItem Value=@("in")>Pulgadas (in)</MudSelectItem>
+                                <MudSelectItem Value=@("m")>Metros (m)</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="9">
+                            <MudTextField @bind-Value="_medNotas" Label="Notas de dimensiones" Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </div>
+            </div>
+        }
+
+    </MudForm>
+}
+
+@* ── Barra de acciones fija ───────────────────────────────────────────── *@
+<div class="nexo-action-bar">
+    <div class="nexo-action-bar__inner">
+        <MudButton Variant="Variant.Outlined" OnClick="Cancelar" StartIcon="@Icons.Material.Filled.Close"
+                   Style="border-color:var(--n-border-2); color:var(--n-text-2);">
+            Cancelar
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="GuardarAsync"
+                   StartIcon="@Icons.Material.Filled.Check" Disabled="_guardando">
+            @if (_guardando)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Guardar artículo
+        </MudButton>
+    </div>
+</div>
+
+@code {
+    // ── Listas de referencia (cargadas en OnInitializedAsync) ─────────────
+    private List<TipoArticuloItem>   _tiposArticulo  = new();
+    private List<MarcaItem>          _marcas         = new();
+    private List<GrupoMayorItem>     _gruposMayores  = new();
+    private List<GrupoMenorItem>     _gruposMenores  = new();
+    private List<PresentacionItem>   _presentaciones = new();
+    private List<IvaItem>            _ivas           = new();
+
+    private bool _cargando    = true;
+    private bool _guardando   = false;
+    private bool _esAdicional = false;
+
+    private MudForm _form = default!;
+
+    // ── Computed ──────────────────────────────────────────────────────────
+    private string? TipoNombre => _tiposArticulo.FirstOrDefault(t => _tipoArticuloId.HasValue && t.TipoArticuloID == _tipoArticuloId.Value)?.Nombre;
+    private bool EsServicio    => TipoNombre == "Servicio";
+    private bool EsFraccionado => _fracciones is > 0;
+    private bool EsDePeso      => _presentacionItem?.EsDePeso == true;
+
+    private IEnumerable<GrupoMenorItem> GruposMenoresFiltrados =>
+        string.IsNullOrEmpty(_grupoMayorCodigo)
+            ? Enumerable.Empty<GrupoMenorItem>()
+            : _gruposMenores.Where(g => g.GrupoMayor == _grupoMayorCodigo);
+
+    private IEnumerable<IvaItem> IvasPrimarios => _ivas.Where(i =>
+        (i.Iva == 0 || i.Iva == 5 || i.Iva == 16 || i.Iva == 19) &&
+        !ImpuestosConsumo.Any(ic => (i.Descripcion ?? "").StartsWith(ic.Codigo)));
+    private bool    IvaEsExcluidoOExento => _ivaId.HasValue && _ivaValor == 0;
+    private bool    EsIcoSeleccionado    => _ivaId.HasValue && _ivas.FirstOrDefault(i => i.IvaID == _ivaId)?.TipoImpuesto == "ICO";
+    private decimal TotalImpuestoPct     => (_ivaValor ?? 0) + (_impuestoConsumoCode is not null ? (_impuestoPorcentaje ?? 0) : 0);
+    private decimal? CostoConImpuesto    => _costo is > 0 ? _costo.Value * (1 + TotalImpuestoPct / 100) : _costo;
+
+    private static readonly (string Codigo, string Nombre)[] ImpuestosConsumo =
+    {
+        ("IBUA", "IBUA Bebidas"),
+        ("ICL",  "ICL Licores"),
+        ("ICUI", "ICUI Saludable"),
+        ("INPP", "INPP Plásticos"),
+    };
+
+    // ── Estado del formulario ─────────────────────────────────────────────
+    private string  _sku         = string.Empty;
+    private string  _nombre      = string.Empty;
+    private string? _descripcion;
+    private int?    _tipoArticuloId;
+    private decimal _stockMinimo;
+    private decimal _puntoReorden;
+    private int?    _diasVidaUtil;
+    // Presentación
+    private string?          _presentacionCodigo;
+    private PresentacionItem? _presentacionItem;
+    private decimal?          _fracciones;       // local — viene de Presentacion, no se envía en request
+    private string            _fracciona = "SI";
+    private decimal?          _precioVentaUnidad;
+    private decimal           _margenUnidad;
+    private decimal?          _peso;
+    // Precios
+    private decimal? _costo;
+    private decimal? _ppPublico;
+    private decimal? _pBodega;
+    private decimal? _pCredito;
+    private decimal? _uPublico;
+    private decimal? _uBodega;
+    private decimal? _uCredito;
+    private decimal  _porcPublico;
+    private decimal  _porcBodega;
+    private decimal  _porcCredito;
+    // Clasificación
+    private string? _marcaCodigo;
+    private string? _grupoMayorCodigo;
+    private string? _grupoMenorCodigo;
+    // IVA
+    private int?     _ivaId;
+    private string?  _ivaSiNo;
+    private short?   _ivaValor;
+    private string?  _ivaDescripcion;
+    private string?  _impuestoConsumoCode;
+    private decimal? _impuestoPorcentaje;
+    private short?   _iva2;
+    private string?  _ivaDescripcion2;
+    // Imagen
+    private string? _imagenBase64;
+    private string? _imagenContentType;
+    private string? _imagenPreviewUrl;
+    private string? _imagenError;
+
+    // Dimensiones físicas (Sistema de Medidas)
+    private decimal? _medLargo;
+    private decimal? _medAncho;
+    private decimal? _medEspesor;
+    private decimal? _medDiametro;
+    private string   _medUnidad = "cm";
+    private string?  _medNotas;
+
+    // ── Carga inicial ─────────────────────────────────────────────────────
+    private string? _errorCarga;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var t1 = ApiClient.GetAsync<List<TipoArticuloItem>>("api/catalogo/articulos/tipos");
+            var t2 = ApiClient.GetAsync<List<MarcaItem>>("api/catalogo/marcas");
+            var t3 = ApiClient.GetAsync<List<GrupoMayorItem>>("api/catalogo/grupos-mayores");
+            var t4 = ApiClient.GetAsync<List<GrupoMenorItem>>("api/catalogo/grupos-menores");
+            var t5 = ApiClient.GetAsync<List<PresentacionItem>>("api/catalogo/presentaciones");
+            var t6 = ApiClient.GetAsync<List<IvaItem>>("api/catalogo/ivas");
+            await Task.WhenAll(t1, t2, t3, t4, t5, t6);
+            _tiposArticulo  = t1.Result ?? new();
+            _marcas         = t2.Result ?? new();
+            _gruposMayores  = t3.Result ?? new();
+            _gruposMenores  = t4.Result ?? new();
+            _presentaciones = t5.Result ?? new();
+            _ivas           = t6.Result ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    // ── Presentación ─────────────────────────────────────────────────────
+    private void OnPresentacionChanged(string? codigo)
+    {
+        _presentacionCodigo = codigo;
+        _presentacionItem   = _presentaciones.FirstOrDefault(p => p.Codigo == codigo);
+        _fracciones         = _presentacionItem?.Fracciones is > 0 ? _presentacionItem.Fracciones : null;
+    }
+
+    private async Task AbrirCrearPresentacionAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<PresentacionDialog>("Nueva Presentación",
+            new DialogParameters<PresentacionDialog>(),
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var result = await dialogo.Result;
+        if (result is null || result.Canceled || result.Data is not PresentacionDialog.Result data) return;
+        var nueva = new PresentacionItem(data.Codigo, data.Nombre, data.Fracciones, data.Tipo);
+        _presentaciones = new List<PresentacionItem>(_presentaciones) { nueva };
+        OnPresentacionChanged(data.Codigo);
+        StateHasChanged();
+    }
+
+    // ── Marca ─────────────────────────────────────────────────────────────
+    private Task<IEnumerable<string?>> BuscarMarca(string? texto, CancellationToken ct)
+    {
+        IEnumerable<string?> resultados = string.IsNullOrWhiteSpace(texto)
+            ? _marcas.Take(20).Select(m => (string?)m.Codigo)
+            : _marcas
+                .Where(m => (m.Codigo?.Contains(texto, StringComparison.OrdinalIgnoreCase) == true)
+                         || (m.Nombre?.Contains(texto, StringComparison.OrdinalIgnoreCase) == true))
+                .Take(20)
+                .Select(m => (string?)m.Codigo);
+        return Task.FromResult(resultados);
+    }
+
+    private async Task AbrirCrearMarcaAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<MarcaDialog>("Nueva Marca",
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var result = await dialogo.Result;
+        if (result is null || result.Canceled || result.Data is not MarcaDialog.Result data) return;
+        _marcas = new List<MarcaItem>(_marcas) { new MarcaItem(data.Codigo, data.Nombre) };
+        _marcaCodigo = data.Codigo;
+        StateHasChanged();
+    }
+
+    // ── Precios y Utilidades (bidireccional, base = costo con impuestos) ──
+    private decimal CalcPorc(decimal? precio) =>
+        CostoConImpuesto is > 0 && precio is > 0
+            ? Math.Round((precio.Value - CostoConImpuesto.Value) / CostoConImpuesto.Value * 100, 2)
+            : 0;
+
+    private void OnCostoChanged()
+    {
+        _uPublico = _ppPublico.HasValue ? _ppPublico - CostoConImpuesto : null;
+        _uBodega  = _pBodega.HasValue  ? _pBodega  - CostoConImpuesto : null;
+        _uCredito = _pCredito.HasValue ? _pCredito - CostoConImpuesto : null;
+        _porcPublico = CalcPorc(_ppPublico);
+        _porcBodega  = CalcPorc(_pBodega);
+        _porcCredito = CalcPorc(_pCredito);
+    }
+
+    private void OnPPPublicoChanged(decimal? v) { _ppPublico = v; _uPublico = v - CostoConImpuesto; _porcPublico = CalcPorc(v); }
+    private void OnPorcPublicoChanged(decimal p)
+    {
+        _porcPublico = p;
+        if (CostoConImpuesto is > 0) _ppPublico = Math.Round(CostoConImpuesto.Value * (1 + p / 100), 0);
+        _uPublico = _ppPublico - CostoConImpuesto;
+    }
+
+    private void OnPBodegaChanged(decimal? v) { _pBodega = v; _uBodega = v - CostoConImpuesto; _porcBodega = CalcPorc(v); }
+    private void OnPorcBodegaChanged(decimal p)
+    {
+        _porcBodega = p;
+        if (CostoConImpuesto is > 0) _pBodega = Math.Round(CostoConImpuesto.Value * (1 + p / 100), 0);
+        _uBodega = _pBodega - CostoConImpuesto;
+    }
+
+    private void OnPCreditoChanged(decimal? v) { _pCredito = v; _uCredito = v - CostoConImpuesto; _porcCredito = CalcPorc(v); }
+    private void OnPorcCreditoChanged(decimal p)
+    {
+        _porcCredito = p;
+        if (CostoConImpuesto is > 0) _pCredito = Math.Round(CostoConImpuesto.Value * (1 + p / 100), 0);
+        _uCredito = _pCredito - CostoConImpuesto;
+    }
+
+    private void RecalcPrecioUnidad()
+    {
+        if (_fracciones is > 0 && _ppPublico is > 0)
+            _precioVentaUnidad = Math.Round(_ppPublico.Value / _fracciones.Value * (1 + _margenUnidad / 100), 0);
+    }
+
+    // ── IVA ──────────────────────────────────────────────────────────────
+    private void OnIvaChanged(int? id)
+    {
+        _ivaId = id;
+        if (id is null)
+        {
+            _ivaSiNo = null; _ivaValor = null; _ivaDescripcion = null;
+            _impuestoConsumoCode = null; _impuestoPorcentaje = null; _iva2 = null; _ivaDescripcion2 = null;
+            OnCostoChanged(); return;
+        }
+        var iva = _ivas.FirstOrDefault(i => i.IvaID == id);
+        if (iva is null) return;
+        _ivaValor = (short)iva.Iva; _ivaDescripcion = iva.Descripcion; _ivaSiNo = iva.Iva > 0 ? "SI" : "NO";
+        if (iva.Iva == 0) { _impuestoConsumoCode = null; _impuestoPorcentaje = null; _iva2 = null; _ivaDescripcion2 = null; }
+        OnCostoChanged();
+    }
+
+    private void OnImpuestoConsumoChanged(string? codigo)
+    {
+        _impuestoConsumoCode = codigo;
+        if (codigo is null) { _impuestoPorcentaje = null; _iva2 = null; _ivaDescripcion2 = null; }
+        OnCostoChanged();
+    }
+
+    private void OnImpuestoPorcentajeChanged()
+    {
+        _iva2 = (short?)(_impuestoPorcentaje ?? 0);
+        _ivaDescripcion2 = ImpuestosConsumo.FirstOrDefault(i => i.Codigo == _impuestoConsumoCode).Nombre;
+        OnCostoChanged();
+    }
+
+    // ── Clasificación ─────────────────────────────────────────────────────
+    private void OnGrupoMayorChanged(string? v)
+    {
+        _grupoMayorCodigo = v;
+        if (!GruposMenoresFiltrados.Any(g => g.Codigo == _grupoMenorCodigo)) _grupoMenorCodigo = null;
+    }
+
+    private void OnGrupoMenorChanged(string? v)
+    {
+        _grupoMenorCodigo = v;
+        if (v is not null)
+        {
+            var item = _gruposMenores.FirstOrDefault(g => g.Codigo == v);
+            if (item is not null) _grupoMayorCodigo = item.GrupoMayor;
+        }
+    }
+
+    // ── Guardar ───────────────────────────────────────────────────────────
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid) return;
+        if (_tipoArticuloId is null or 0) { Snackbar.Add("Selecciona un tipo de artículo.", Severity.Warning); return; }
+
+        _guardando = true;
+        try
+        {
+            var fraccionaAEnviar    = EsFraccionado ? _fracciona : "SI";
+            var precioUnidadAEnviar = EsFraccionado ? _precioVentaUnidad : null;
+            var pesoAEnviar         = EsDePeso ? _peso : null;
+            SyncImpuestoConsumo();
+
+            var request = new CrearArticuloRequest(
+                _sku, _nombre, _descripcion, _tipoArticuloId!.Value,
+                _stockMinimo, _puntoReorden, _diasVidaUtil,
+                fraccionaAEnviar, precioUnidadAEnviar,
+                _costo, _ppPublico, _pBodega, _pCredito, _uPublico, _uBodega, _uCredito,
+                _marcaCodigo, _grupoMenorCodigo, _presentacionCodigo,
+                pesoAEnviar, _ivaSiNo, _ivaValor, _ivaDescripcion, _iva2, _ivaDescripcion2);
+
+            var creado = await ApiClient.PostAsync<CrearArticuloRequest, CrearArticuloResponse>(
+                "api/catalogo/articulos", request);
+
+            if (_imagenBase64 is not null && creado is not null)
+            {
+                await ApiClient.PutAsync<ActualizarImagenRequest, object?>(
+                    $"api/catalogo/articulos/{creado.ArticuloId}/imagen",
+                    new ActualizarImagenRequest(_imagenBase64, _imagenContentType!));
+            }
+
+            if (_esAdicional && creado is not null)
+            {
+                try
+                {
+                    await ApiClient.PostAsync<MarcarEsAdicionalRequest>(
+                        $"api/catalogo/articulos/{creado.ArticuloId}/es-adicional",
+                        new MarcarEsAdicionalRequest(true));
+                }
+                catch { }
+            }
+
+            if (ConfiguracionEmpresa.SistemaMedidas && creado is not null
+                && (_medLargo > 0 || _medAncho > 0 || _medEspesor > 0 || _medDiametro > 0))
+            {
+                try
+                {
+                    await ApiClient.PutAsync<ActualizarMedidaRequest, object?>(
+                        $"api/produccion/medidas/{creado.ArticuloId}",
+                        new ActualizarMedidaRequest(_medLargo, _medAncho, _medEspesor, _medDiametro, _medUnidad, _medNotas));
+                }
+                catch { /* no bloquear creación si falla guardar dimensiones */ }
+            }
+
+            Snackbar.Add($"Artículo '{_nombre}' creado correctamente.", Severity.Success);
+            if (_esAdicional && creado is not null)
+                Nav.NavigateTo($"/catalogo/articulos/{creado.ArticuloId}/editar");
+            else
+                Nav.NavigateTo("/catalogo/articulos");
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    // ── Imagen ────────────────────────────────────────────────────────────
+    private async Task OnImagenSeleccionadaAsync(InputFileChangeEventArgs e)
+    {
+        _imagenError = null;
+        const long maxBytes = 1_000_000;
+        if (e.File.Size > maxBytes) { _imagenError = "La imagen supera 1 MB."; return; }
+        using var stream = e.File.OpenReadStream(maxBytes);
+        using var mem = new MemoryStream();
+        await stream.CopyToAsync(mem);
+        _imagenBase64      = Convert.ToBase64String(mem.ToArray());
+        _imagenContentType = e.File.ContentType;
+        _imagenPreviewUrl  = $"data:{_imagenContentType};base64,{_imagenBase64}";
+    }
+
+    private void LimpiarImagen()
+    {
+        _imagenBase64 = null; _imagenContentType = null; _imagenPreviewUrl = null; _imagenError = null;
+    }
+
+    private void SyncImpuestoConsumo()
+    {
+        if (_impuestoConsumoCode is not null)
+        {
+            _iva2 = (short?)(_impuestoPorcentaje ?? 0);
+            _ivaDescripcion2 = ImpuestosConsumo.FirstOrDefault(i => i.Codigo == _impuestoConsumoCode).Nombre;
+        }
+        else { _iva2 = null; _ivaDescripcion2 = null; }
+    }
+
+    // ── Cancelar ─────────────────────────────────────────────────────────
+    private void Cancelar() => Nav.NavigateTo("/catalogo/articulos");
+}

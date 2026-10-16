@@ -1,0 +1,245 @@
+﻿@page "/logistica/despachos"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Despachos - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Despachos</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Registra despachos de Producto Terminado a clientes, con su guía. Al crear un despacho se descuenta el stock (FEFO) de la bodega de origen automáticamente -- no se puede crear si no hay stock suficiente. 'Confirmar Entrega' cuando el cliente reciba la mercancía, o 'Anular' para revertir el stock si fue un error." />
+
+<div class="d-flex align-center flex-wrap mb-4" style="gap: 1rem;">
+    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+               StartIcon="@Icons.Material.Filled.LocalShipping"
+               Disabled="_creando">
+        Nuevo Despacho
+    </MudButton>
+    <AppSelect TValue="string" Value="_filtroEstado" ValueChanged="OnFiltroEstadoCambiadoAsync"
+               Label="Estado" Style="max-width: 200px;"
+               Items="@(new AppSelectItem<string>[]{ new("Despachado","DESPACHADO"), new("Entregado","ENTREGADO"), new("Anulado","ANULADO") })" />
+</div>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los despachos: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_despachos.Count == 0)
+{
+    <MudText>No hay despachos registrados.</MudText>
+}
+else if (Preferencias.VistaListado == "lista")
+{
+    <MudTable Items="_despachos" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Guia</MudTh>
+            <MudTh>Cliente</MudTh>
+            <MudTh>Centro de Costo</MudTh>
+            <MudTh>Fecha</MudTh>
+            <MudTh Style="text-align:right">Valor</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Accion</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Guia">@context.NumeroGuia</MudTd>
+            <MudTd DataLabel="Cliente">@context.Cliente</MudTd>
+            <MudTd DataLabel="Centro de Costo">@context.CentroCosto</MudTd>
+            <MudTd DataLabel="Fecha">@context.FechaDespacho.ToLocalTime().ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Valor" Style="text-align:right">@context.ValorTotal.ToString("C0")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Size="Size.Small" Color="@ColorEstado(context.Estado)">
+                    @context.Estado
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Accion">
+                <MudButton Size="Size.Small" OnClick="@(() => VerDetalleAsync(context))">Ver</MudButton>
+                @if (context.Estado == "DESPACHADO")
+                {
+                    <MudButton Size="Size.Small" Color="Color.Success" OnClick="@(() => ConfirmarEntregaAsync(context))">
+                        Confirmar Entrega
+                    </MudButton>
+                    <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => AbrirAnulacionAsync(context))">
+                        Anular
+                    </MudButton>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else
+{
+    <div class="nexo-cards-grid">
+        @foreach (var d in _despachos)
+        {
+            <div class="nexo-ec nexo-ec--logistica">
+                <div class="nexo-ec__header">
+                    <div class="nexo-ec__avatar" style="background:linear-gradient(135deg,#F97316,#EA580C)">
+                        <MudIcon Icon="@Icons.Material.Filled.LocalShipping" Size="Size.Small" Style="color:#fff" />
+                    </div>
+                    <div class="nexo-ec__title-block">
+                        <div class="nexo-ec__name">@(d.NumeroGuia ?? $"DES-{d.DespachoID}")</div>
+                        <div class="nexo-ec__sub">@d.Cliente</div>
+                    </div>
+                    <MudChip T="string" Size="Size.Small" Color="@ColorEstado(d.Estado)" Style="font-size:0.7rem">@d.Estado</MudChip>
+                </div>
+                <div class="nexo-ec__body">
+                    <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.Business" Size="Size.Small" /><span>@d.CentroCosto</span></div>
+                    <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.CalendarToday" Size="Size.Small" /><span>@d.FechaDespacho.ToLocalTime().ToString("dd/MM/yyyy")</span></div>
+                    <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.AttachMoney" Size="Size.Small" /><strong>@d.ValorTotal.ToString("C0")</strong></div>
+                </div>
+                <div class="nexo-ec__footer">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => VerDetalleAsync(d))">Ver</MudButton>
+                    @if (d.Estado == "DESPACHADO")
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Success" OnClick="@(() => ConfirmarEntregaAsync(d))">Entregar</MudButton>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<DespachoItem> _despachos = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private List<BodegaItem> _bodegas = new();
+    private bool _cargando = true;
+    private bool _creando;
+    private string? _errorCarga;
+    private string? _filtroEstado;
+
+    private Color ColorEstado(string estado) => estado switch
+    {
+        "ENTREGADO" => Color.Success,
+        "ANULADO" => Color.Error,
+        _ => Color.Info
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaDespachos = ApiClient.GetAsync<List<DespachoItem>>("api/logistica/despachos");
+            var tareaCentrosCosto = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=true");
+            var tareaBodegas = ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas");
+
+            await Task.WhenAll(tareaDespachos, tareaCentrosCosto, tareaBodegas);
+
+            _despachos = await tareaDespachos ?? new();
+            _centrosCosto = await tareaCentrosCosto ?? new();
+            _bodegas = await tareaBodegas ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task OnFiltroEstadoCambiadoAsync(string? nuevoValor)
+    {
+        _filtroEstado = nuevoValor;
+        await CargarDespachosAsync();
+    }
+
+    private async Task CargarDespachosAsync()
+    {
+        try
+        {
+            var ruta = "api/logistica/despachos" + (_filtroEstado is not null ? $"?estado={_filtroEstado}" : "");
+            _despachos = await ApiClient.GetAsync<List<DespachoItem>>(ruta) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<CrearDespachoDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.Bodegas, _bodegas }
+        };
+
+        var dialogo = await DialogService.ShowAsync<CrearDespachoDialog>("Nuevo Despacho", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        // _creando deshabilita el boton "Nuevo Despacho" mientras la llamada
+        // esta en vuelo -- evita crear dos despachos por doble clic accidental.
+        _creando = true;
+        try
+        {
+            var request = (CrearDespachoRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearDespachoRequest, object?>("api/logistica/despachos", request);
+            Snackbar.Add("Despacho creado correctamente. Se descontó el stock de la bodega de origen.", Severity.Success);
+            await CargarDespachosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _creando = false;
+        }
+    }
+
+    private async Task VerDetalleAsync(DespachoItem despacho)
+    {
+        var parametros = new DialogParameters<DetalleDespachoDialog> { { x => x.Despacho, despacho } };
+        await DialogService.ShowAsync<DetalleDespachoDialog>("Detalle del Despacho", parametros);
+    }
+
+    private async Task ConfirmarEntregaAsync(DespachoItem despacho)
+    {
+        try
+        {
+            await ApiClient.PostAsync($"api/logistica/despachos/{despacho.DespachoID}/confirmar-entrega");
+            Snackbar.Add("Entrega confirmada.", Severity.Success);
+            await CargarDespachosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirAnulacionAsync(DespachoItem despacho)
+    {
+        var parametros = new DialogParameters<AnularDespachoDialog> { { x => x.Despacho, despacho } };
+        var dialogo = await DialogService.ShowAsync<AnularDespachoDialog>("Anular Despacho", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (AnularDespachoRequest)resultado.Data!;
+            await ApiClient.PostAsync<AnularDespachoRequest, object?>($"api/logistica/despachos/{despacho.DespachoID}/anular", request);
+            Snackbar.Add("Despacho anulado. El stock fue devuelto a la bodega de origen.", Severity.Success);
+            await CargarDespachosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

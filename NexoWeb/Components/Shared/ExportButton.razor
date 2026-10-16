@@ -1,0 +1,64 @@
+﻿@using NexoWeb.Common.ApiClient
+@inject INexoApiClient ApiClient
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudMenu StartIcon="@(_descargando ? null : Icons.Material.Filled.FileDownload)"
+         Label="@(_descargando ? "Generando…" : "Exportar")"
+         Variant="Variant.Outlined" Color="Color.Default"
+         Disabled="_descargando" EndIcon="@Icons.Material.Filled.ArrowDropDown">
+    <MudMenuItem OnClick="@(() => DescargarAsync("excel"))" Icon="@Icons.Material.Filled.TableView">
+        Excel (.xlsx)
+    </MudMenuItem>
+    @if (!string.IsNullOrEmpty(EndpointPdf))
+    {
+        <MudMenuItem OnClick="@(() => DescargarAsync("pdf"))" Icon="@Icons.Material.Filled.PictureAsPdf">
+            PDF
+        </MudMenuItem>
+    }
+</MudMenu>
+
+@code {
+    [Parameter] public string Endpoint { get; set; } = "";
+    [Parameter] public string EndpointPdf { get; set; } = "";
+    [Parameter] public string NombreArchivo { get; set; } = "exportacion";
+
+    private bool _descargando;
+
+    async Task DescargarAsync(string formato)
+    {
+        if (_descargando) return;
+        _descargando = true;
+        StateHasChanged();
+        try
+        {
+            if (formato == "pdf")
+            {
+                var bytes = await ApiClient.GetBytesAsync(EndpointPdf);
+                var base64 = Convert.ToBase64String(bytes);
+                await JS.InvokeVoidAsync("nexoDescargarArchivo",
+                    $"{NombreArchivo}_{NexoWeb.Common.ColombiaClock.Now:yyyyMMdd}.pdf",
+                    "application/pdf",
+                    base64);
+            }
+            else
+            {
+                var bytes = await ApiClient.GetBytesAsync(Endpoint);
+                var base64 = Convert.ToBase64String(bytes);
+                await JS.InvokeVoidAsync("nexoDescargarArchivo",
+                    $"{NombreArchivo}_{NexoWeb.Common.ColombiaClock.Now:yyyyMMdd}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    base64);
+            }
+        }
+        catch
+        {
+            Snackbar.Add("No se pudo generar el archivo. Intente de nuevo.", Severity.Error);
+        }
+        finally
+        {
+            _descargando = false;
+            StateHasChanged();
+        }
+    }
+}

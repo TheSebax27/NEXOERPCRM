@@ -1,0 +1,55 @@
+﻿@using NexoWeb.Common.Dtos
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-3">Articulo: <b>@Articulo</b></MudText>
+        <MudText Class="mb-3">Pendiente por recibir: <b>@Pendiente.ToString("N2")</b></MudText>
+
+        <MudNumericField @bind-Value="_cantidadRecibida" Label="Cantidad recibida" Min="0.01m" Max="@Pendiente" Format="N2" Class="mb-1" />
+        @if (UnidadesPorEmbalaje is > 0 && _cantidadRecibida > 0)
+        {
+            var embRecibo = string.IsNullOrWhiteSpace(Unidad) ? "cajas" : Unidad.ToLower();
+            <MudText Typo="Typo.caption" Class="mb-3 d-block" Style="color: var(--n-text-3, #9B9BB4);">
+                @_cantidadRecibida.ToString("N2") @embRecibo × @UnidadesPorEmbalaje.Value.ToString("N0") und/@embRecibo
+                = @((_cantidadRecibida * UnidadesPorEmbalaje.Value).ToString("N0")) unidades totales
+            </MudText>
+        }
+        else
+        {
+            <div class="mb-3"></div>
+        }
+        <MudTextField @bind-Value="_numeroLote" Label="Numero de lote" Class="mb-3" />
+        @if (ConfiguracionEmpresa.ManejarVencimientos)
+        {
+            <MudDatePicker @bind-Date="_fechaVencimiento" Label="Fecha de vencimiento (opcional)" PickerVariant="PickerVariant.Dialog" DateFormat="dd/MM/yyyy" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirmar"
+                   Disabled="@(_cantidadRecibida <= 0 || string.IsNullOrWhiteSpace(_numeroLote))">
+            Recibir
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string Articulo { get; set; } = "";
+    [Parameter] public decimal Pendiente { get; set; }
+    [Parameter] public string? Unidad { get; set; }
+    [Parameter] public decimal? UnidadesPorEmbalaje { get; set; }
+
+    private decimal _cantidadRecibida;
+    private string _numeroLote = "";
+    private DateTime? _fechaVencimiento;
+
+    private void Confirmar()
+    {
+        var request = new RecibirLineaOrdenCompraRequest(_cantidadRecibida, _numeroLote, _fechaVencimiento);
+        MudDialog.Close(DialogResult.Ok(request));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

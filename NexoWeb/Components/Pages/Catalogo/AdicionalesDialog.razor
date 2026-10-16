@@ -1,0 +1,194 @@
+﻿@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog Style="min-width:min(700px,90vw); max-width:min(900px,95vw);">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.AddShoppingCart" Class="mr-2" Style="vertical-align:middle" />
+            Gestionar Acompañamientos
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_cargando)
+        {
+            <div class="d-flex justify-center pa-6">
+                <MudProgressCircular Indeterminate="true" />
+            </div>
+        }
+        else
+        {
+            <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:16px; align-items:start;">
+
+                @* â”€â”€ Panel izquierdo: disponibles â”€â”€ *@
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color:var(--mud-palette-text-secondary)">
+                        Disponibles (@_disponibles.Count)
+                    </MudText>
+                    <div style="border:1px solid var(--mud-palette-divider); border-radius:4px; height:320px; overflow-y:auto;">
+                        @if (_disponibles.Count == 0)
+                        {
+                            <div class="d-flex align-center justify-center" style="height:100%; color:var(--mud-palette-text-secondary);">
+                                <MudText Typo="Typo.body2">Sin artículos disponibles</MudText>
+                            </div>
+                        }
+                        else
+                        {
+                            <MudList T="ArticuloAdicionalItem" Dense="true" @bind-SelectedValue="_selDisponible">
+                                @foreach (var item in _disponibles)
+                                {
+                                    <MudListItem T="ArticuloAdicionalItem" Value="@item"
+                                                 Style="@(_selDisponible == item ? "background:var(--mud-palette-primary-lighten)" : "")">
+                                        <div>
+                                            <MudText Typo="Typo.body2">@item.Nombre</MudText>
+                                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary); font-family:monospace">@item.Referencia</MudText>
+                                        </div>
+                                    </MudListItem>
+                                }
+                            </MudList>
+                        }
+                    </div>
+                </div>
+
+                @* ── Botones transferencia ── *@
+                <div class="d-flex flex-column justify-center" style="gap:8px; margin-top:28px;">
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight"
+                                   Color="Color.Primary" Variant="Variant.Filled"
+                                   Size="Size.Small"
+                                   Disabled="@(_selDisponible is null || _moviendo)"
+                                   OnClick="AgregarSeleccionadoAsync"
+                                   Title="Agregar" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft"
+                                   Color="Color.Error" Variant="Variant.Filled"
+                                   Size="Size.Small"
+                                   Disabled="@(_selAsignado is null || _moviendo)"
+                                   OnClick="QuitarSeleccionadoAsync"
+                                   Title="Quitar" />
+                </div>
+
+                @* ── Panel derecho: asignados ── *@
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color:var(--mud-palette-text-secondary)">
+                        Asignados (@_asignados.Count)
+                    </MudText>
+                    <div style="border:1px solid var(--mud-palette-divider); border-radius:4px; height:320px; overflow-y:auto;">
+                        @if (_asignados.Count == 0)
+                        {
+                            <div class="d-flex align-center justify-center" style="height:100%; color:var(--mud-palette-text-secondary);">
+                                <MudText Typo="Typo.body2">Ningún acompañamiento asignado</MudText>
+                            </div>
+                        }
+                        else
+                        {
+                            <MudList T="ArticuloAdicionalItem" Dense="true" @bind-SelectedValue="_selAsignado">
+                                @foreach (var item in _asignados)
+                                {
+                                    <MudListItem T="ArticuloAdicionalItem" Value="@item"
+                                                 Style="@(_selAsignado == item ? "background:var(--mud-palette-error-lighten)" : "")">
+                                        <div>
+                                            <MudText Typo="Typo.body2">@item.Nombre</MudText>
+                                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary); font-family:monospace">@item.Referencia</MudText>
+                                        </div>
+                                    </MudListItem>
+                                }
+                            </MudList>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar" Variant="Variant.Outlined">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public int ArticuloID { get; set; }
+
+    private List<ArticuloAdicionalItem> _disponibles = new();
+    private List<ArticuloAdicionalItem> _asignados   = new();
+    private ArticuloAdicionalItem? _selDisponible;
+    private ArticuloAdicionalItem? _selAsignado;
+    private bool _cargando = true;
+    private bool _moviendo = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var tDisp = ApiClient.GetAsync<List<ArticuloAdicionalItem>>($"api/catalogo/articulos/{ArticuloID}/adicionales/disponibles");
+            var tAsig = ApiClient.GetAsync<List<ArticuloAdicionalItem>>($"api/catalogo/articulos/{ArticuloID}/adicionales");
+            await Task.WhenAll(tDisp, tAsig);
+            _disponibles = tDisp.Result ?? new();
+            _asignados   = tAsig.Result ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error cargando adicionales: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task AgregarSeleccionadoAsync()
+    {
+        if (_selDisponible is null) return;
+        _moviendo = true;
+        try
+        {
+            await ApiClient.PostAsync<AgregarAdicionalRequest>(
+                $"api/catalogo/articulos/{ArticuloID}/adicionales",
+                new AgregarAdicionalRequest(_selDisponible.AdicionalID));
+
+            _asignados.Add(_selDisponible);
+            _disponibles.Remove(_selDisponible);
+            _selDisponible = null;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al agregar: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _moviendo = false;
+        }
+    }
+
+    private async Task QuitarSeleccionadoAsync()
+    {
+        if (_selAsignado is null) return;
+        _moviendo = true;
+        try
+        {
+            await ApiClient.DeleteAsync(
+                $"api/catalogo/articulos/{ArticuloID}/adicionales/{_selAsignado.AdicionalID}");
+
+            _disponibles.Add(_selAsignado);
+            _asignados.Remove(_selAsignado);
+            _selAsignado = null;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al quitar: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _moviendo = false;
+        }
+    }
+
+    private void Cerrar() => MudDialog.Close(DialogResult.Ok(_asignados.Count));
+}
+

@@ -1,0 +1,140 @@
+﻿@page "/crm/campanas/{Id:int}/resultados"
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+@inject NavigationManager Nav
+@attribute [Authorize]
+
+<PageTitle>Resultados de campaña</PageTitle>
+
+@if (_campana is not null)
+{
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                       OnClick="@(() => Nav.NavigateTo($"/crm/campanas/{Id}"))" />
+        <MudText Typo="Typo.h5">@_campana.Nombre — Resultados</MudText>
+    </MudStack>
+
+    <!-- KPIs -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-4 text-center" Elevation="2">
+                <MudText Typo="Typo.h4" Color="Color.Primary">@_campana.TotalEnviados</MudText>
+                <MudText Typo="Typo.body2">Enviados</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-4 text-center" Elevation="2">
+                <MudText Typo="Typo.h4" Color="Color.Success">@_campana.TotalAbiertos</MudText>
+                <MudText Typo="Typo.body2">Abiertos</MudText>
+                @if (_campana.TotalEnviados > 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @(((double)_campana.TotalAbiertos / _campana.TotalEnviados * 100).ToString("F1"))%
+                    </MudText>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-4 text-center" Elevation="2">
+                <MudText Typo="Typo.h4" Color="Color.Info">@_campana.TotalClicks</MudText>
+                <MudText Typo="Typo.body2">Clicks</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-4 text-center" Elevation="2">
+                <MudText Typo="Typo.h4" Color="Color.Warning">@_campana.TotalDesuscriptos</MudText>
+                <MudText Typo="Typo.body2">Bajas</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+<!-- Tabla de destinatarios -->
+@if (_cargando)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" />
+}
+else
+{
+    <MudPaper Elevation="2">
+        <MudDataGrid T="EnvioDetalleItem" Items="_envios" Dense SortMode="SortMode.Multiple"
+                     Filterable FilterMode="DataGridFilterMode.Simple" QuickFilter="@_filtro">
+            <ToolBarContent>
+                <MudText Typo="Typo.subtitle1" Class="mr-4">Destinatarios</MudText>
+                <MudSpacer />
+                <MudTextField @bind-Value="_busqueda" Placeholder="Buscar..." Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search" Clearable
+                              Immediate Class="mr-2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </ToolBarContent>
+            <Columns>
+                <PropertyColumn Property="e => e.NombreCliente" Title="Nombre" />
+                <PropertyColumn Property="e => e.Email" Title="Email" />
+                <TemplateColumn Title="Enviado">
+                    <CellTemplate>
+                        <MudIcon Icon="@(context.Item.Enviado ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                 Color="@(context.Item.Enviado ? Color.Success : Color.Error)" Size="Size.Small" />
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Abierto">
+                    <CellTemplate>
+                        @if (context.Item.Abierto)
+                        {
+                            <MudStack Row AlignItems="AlignItems.Center">
+                                <MudIcon Icon="@Icons.Material.Filled.Email" Color="Color.Success" Size="Size.Small" />
+                                <MudText Typo="Typo.caption">@context.Item.FechaApertura?.ToLocalTime().ToString("dd/MM HH:mm")</MudText>
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudIcon Icon="@Icons.Material.Outlined.Email" Color="Color.Default" Size="Size.Small" />
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <PropertyColumn Property="e => e.Clicks" Title="Clicks" />
+                <TemplateColumn Title="Baja">
+                    <CellTemplate>
+                        @if (context.Item.Desuscripto)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">Baja</MudChip>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Error">
+                    <CellTemplate>
+                        @if (!string.IsNullOrWhiteSpace(context.Item.Error))
+                        {
+                            <MudTooltip Text="@context.Item.Error">
+                                <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error" Size="Size.Small" />
+                            </MudTooltip>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+            <PagerContent>
+                <MudDataGridPager T="EnvioDetalleItem" />
+            </PagerContent>
+        </MudDataGrid>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    bool _cargando = true;
+    CampanaDetalle? _campana;
+    List<EnvioDetalleItem> _envios = [];
+    string _busqueda = "";
+
+    Func<EnvioDetalleItem, bool> _filtro => e =>
+        string.IsNullOrWhiteSpace(_busqueda) ||
+        e.NombreCliente.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ||
+        e.Email.Contains(_busqueda, StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _campana = await Api.GetAsync<CampanaDetalle>($"api/marketing/campanas/{Id}");
+        _envios  = await Api.GetAsync<List<EnvioDetalleItem>>($"api/marketing/campanas/{Id}/envios") ?? [];
+        _cargando = false;
+    }
+}

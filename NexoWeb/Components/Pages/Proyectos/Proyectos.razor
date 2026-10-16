@@ -1,0 +1,310 @@
+﻿@page "/proyectos"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Proyectos - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Proyectos</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Gestión básica de proyectos: tareas con responsable y fecha límite, y costos imputados (mano de obra, materiales u otros) comparados contra el presupuesto." />
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los proyectos: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_proyectos.Count == 0)
+{
+    <NexoEmptyState
+        Icono="@Icons.Material.Outlined.AccountTree"
+        Titulo="Crea tu primer proyecto"
+        Descripcion="Organiza tareas, asigna responsables, registra costos y compara contra el presupuesto. Todo en un solo lugar."
+        BotonTexto="Nuevo proyecto"
+        BotonOnClick="AbrirCreacionAsync" />
+}
+else
+{
+    @* ── Barra de estado / filtro ── *@
+    <div class="py-kpi-bar mb-4">
+        @foreach (var (etiqueta, est, count) in _conteoEstados)
+        {
+            <button class="py-kpi-pill @(_filtroEstado == est ? "py-kpi-pill--active" : "")"
+                    @onclick="@(() => ToggleFiltro(est))">
+                <span class="py-kpi-pill__dot py-kpi-pill__dot--@est.ToLower()"></span>
+                <span>@etiqueta</span>
+                <span class="py-kpi-pill__badge">@count</span>
+            </button>
+        }
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+                   StartIcon="@Icons.Material.Filled.Add" Class="ml-auto" Size="Size.Small">
+            Nuevo Proyecto
+        </MudButton>
+    </div>
+
+    @* ── Grid de cards / lista ── *@
+    @if (Preferencias.VistaListado == "lista")
+    {
+    <MudTable Items="_proyectosFiltrados" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Cliente</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Prioridad</MudTh>
+            <MudTh Style="text-align:right">Presupuesto</MudTh>
+            <MudTh>Tareas</MudTh>
+            <MudTh>Vence</MudTh>
+            <MudTh>Acción</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+            <MudTd DataLabel="Cliente">@(context.Cliente ?? "—")</MudTd>
+            <MudTd DataLabel="Estado"><MudChip T="string" Size="Size.Small" Color="@ColorEstado(context.Estado)">@EstadoLabel(context.Estado)</MudChip></MudTd>
+            <MudTd DataLabel="Prioridad">@context.Prioridad</MudTd>
+            <MudTd DataLabel="Presupuesto" Style="text-align:right">@context.Presupuesto.ToString("C0")</MudTd>
+            <MudTd DataLabel="Tareas">@context.TareasCompletadas/@context.TotalTareas</MudTd>
+            <MudTd DataLabel="Vence">@(context.FechaFin?.ToString("dd/MM/yyyy") ?? "—")</MudTd>
+            <MudTd DataLabel="Acción">
+                <MudButton Size="Size.Small" OnClick="@(() => AbrirGestionAsync(context))">Gestionar</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => AbrirEdicionAsync(context))">Editar</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    }
+    else
+    {
+    <div class="nexo-card-grid">
+        @foreach (var p in _proyectosFiltrados)
+        {
+            var tareasPct    = p.TotalTareas > 0 ? (double)p.TareasCompletadas / p.TotalTareas * 100 : 0;
+                var sobrepresup  = p.CostoTotal > p.Presupuesto;
+                var diasRestantes = p.FechaFin.HasValue ? (int)(p.FechaFin.Value.Date - NexoWeb.Common.ColombiaClock.Today).TotalDays : (int?)null;
+                var salud        = Salud(p, diasRestantes);
+            <div class="nexo-item-card py-card">
+                @* Indicador de salud — borde top *@
+                <div class="py-card__health-bar py-card__health-bar--@salud.Color"></div>
+
+                <div class="d-flex align-center justify-space-between mb-1">
+                    <div class="nexo-item-card__title">@p.Nombre</div>
+                    <MudChip T="string" Size="Size.Small" Color="@ColorEstado(p.Estado)"
+                             Style="margin:0;height:22px;font-size:.72rem">@EstadoLabel(p.Estado)</MudChip>
+                </div>
+
+                <div class="nexo-item-card__sub mb-2">
+                    @(p.Cliente ?? "Sin cliente")
+                    @if (p.CentroCosto is not null) { <span> · @p.CentroCosto</span> }
+                    <span class="py-card__prioridad py-card__prioridad--@p.Prioridad.ToLower()">@p.Prioridad</span>
+                </div>
+
+                @* Barra de tareas *@
+                <div class="mb-2">
+                    <div class="d-flex justify-space-between mb-1" style="font-size:.75rem;color:var(--mud-palette-text-secondary)">
+                        <span>Tareas</span>
+                        <span>@p.TareasCompletadas / @p.TotalTareas</span>
+                    </div>
+                    <MudProgressLinear Value="@tareasPct" Color="@(tareasPct >= 100 ? Color.Success : Color.Primary)"
+                                       Rounded="true" Size="Size.Small" />
+                </div>
+
+                @if (p.TotalHitos > 0)
+                {
+                    <div class="nexo-item-card__row">
+                        <span>Hitos</span>
+                        <strong>@p.HitosCompletados / @p.TotalHitos</strong>
+                    </div>
+                }
+
+                @* Presupuesto vs costo *@
+                <div class="nexo-item-card__row">
+                    <span>Presupuesto</span>
+                    <strong>@p.Presupuesto.ToString("C0")</strong>
+                </div>
+                <div class="nexo-item-card__row">
+                    <span>Costo actual</span>
+                    <strong style="color:@(sobrepresup ? "var(--mud-palette-error)" : "inherit")">
+                        @p.CostoTotal.ToString("C0")
+                        @if (sobrepresup) { <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" /> }
+                    </strong>
+                </div>
+
+                @* Fecha / countdown *@
+                @if (diasRestantes.HasValue && p.Estado == "EN_CURSO")
+                {
+                    <div class="py-card__countdown @(diasRestantes < 0 ? "py-card__countdown--late" : diasRestantes <= 7 ? "py-card__countdown--soon" : "")">
+                        @if (diasRestantes < 0)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="Size.Small" />
+                            <span>Vencido hace @Math.Abs(diasRestantes.Value) días</span>
+                        }
+                        else if (diasRestantes == 0)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.AccessTime" Size="Size.Small" />
+                            <span>Vence hoy</span>
+                        }
+                        else
+                        {
+                            <MudIcon Icon="@Icons.Material.Outlined.CalendarToday" Size="Size.Small" />
+                            <span>Vence en @diasRestantes días</span>
+                        }
+                    </div>
+                }
+                else if (p.FechaFin.HasValue)
+                {
+                    <div style="font-size:.75rem;color:var(--mud-palette-text-secondary);margin-top:4px">
+                        @(p.Estado == "FINALIZADO" ? "Finalizó" : "Plazo:") @p.FechaFin.Value.ToString("dd/MM/yyyy")
+                    </div>
+                }
+
+                @* Chip de salud *@
+                <div class="py-card__health-chip py-card__health-chip--@salud.Color">
+                    @salud.Texto
+                </div>
+
+                <div class="nexo-item-card__actions">
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirGestionAsync(p))">Gestionar</MudButton>
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(p))">Editar</MudButton>
+                </div>
+            </div>
+        }
+    </div>
+    }
+
+    @if (!_proyectosFiltrados.Any())
+    {
+        <MudAlert Severity="Severity.Info">No hay proyectos con ese estado.</MudAlert>
+    }
+}
+
+@code {
+    private List<ProyectoItem> _proyectos  = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private List<EmpleadoItem> _empleados  = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+    private string? _filtroEstado;
+
+    private IEnumerable<ProyectoItem> _proyectosFiltrados =>
+        _filtroEstado is null ? _proyectos : _proyectos.Where(p => p.Estado == _filtroEstado);
+
+    private IEnumerable<(string Etiqueta, string Est, int Count)> _conteoEstados =>
+        new[]
+        {
+            ("En curso",      "EN_CURSO",      _proyectos.Count(p => p.Estado == "EN_CURSO")),
+            ("Planificado",   "PLANIFICADO",   _proyectos.Count(p => p.Estado == "PLANIFICADO")),
+            ("Finalizado",    "FINALIZADO",    _proyectos.Count(p => p.Estado == "FINALIZADO")),
+            ("Cancelado",     "CANCELADO",     _proyectos.Count(p => p.Estado == "CANCELADO")),
+        }.Where(x => x.Item3 > 0);
+
+    private void ToggleFiltro(string est) =>
+        _filtroEstado = _filtroEstado == est ? null : est;
+
+    private record SaludInfo(string Color, string Texto);
+
+    private SaludInfo Salud(ProyectoItem p, int? diasRestantes)
+    {
+        if (p.Estado == "CANCELADO") return new("neutral", "Cancelado");
+        if (p.Estado == "FINALIZADO") return new("ok", "Finalizado");
+        if (diasRestantes.HasValue && diasRestantes < 0) return new("risk", "Vencido");
+        if (p.CostoTotal > p.Presupuesto) return new("risk", "Sobre presupuesto");
+        if (p.TotalTareas > 0 && p.TareasCompletadas == p.TotalTareas) return new("ok", "Tareas listas");
+        if (diasRestantes.HasValue && diasRestantes <= 7) return new("warn", "Vence pronto");
+        return new("ok", "En buen estado");
+    }
+
+    private Color ColorEstado(string estado) => estado switch
+    {
+        "FINALIZADO"  => Color.Success,
+        "EN_CURSO"    => Color.Info,
+        "CANCELADO"   => Color.Error,
+        _             => Color.Default
+    };
+
+    private string EstadoLabel(string estado) => estado switch
+    {
+        "EN_CURSO"    => "En curso",
+        "PLANIFICADO" => "Planificado",
+        "FINALIZADO"  => "Finalizado",
+        "CANCELADO"   => "Cancelado",
+        _             => estado
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var t1 = ApiClient.GetAsync<List<ProyectoItem>>("api/proyectos");
+            var t3 = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=true");
+            var t4 = ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true");
+            await Task.WhenAll(t1, t3, t4);
+            _proyectos    = await t1 ?? new();
+            _centrosCosto = await t3 ?? new();
+            _empleados    = await t4 ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarProyectosAsync()
+    {
+        try { _proyectos = await ApiClient.GetAsync<List<ProyectoItem>>("api/proyectos") ?? new(); }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var p = new DialogParameters<ProyectoDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto }
+        };
+        var d = await DialogService.ShowAsync<ProyectoDialog>("Nuevo Proyecto", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearProyectoRequest, object?>("api/proyectos", (CrearProyectoRequest)r.Data!);
+            Snackbar.Add("Proyecto creado correctamente.", Severity.Success);
+            await CargarProyectosAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEdicionAsync(ProyectoItem proyecto)
+    {
+        var p = new DialogParameters<ProyectoDialog>
+        {
+            { x => x.Proyecto, proyecto },
+            { x => x.CentrosCosto, _centrosCosto }
+        };
+        var d = await DialogService.ShowAsync<ProyectoDialog>("Editar Proyecto", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarProyectoRequest, object?>($"api/proyectos/{proyecto.ProyectoID}", (ActualizarProyectoRequest)r.Data!);
+            Snackbar.Add("Proyecto actualizado correctamente.", Severity.Success);
+            await CargarProyectosAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirGestionAsync(ProyectoItem proyecto)
+    {
+        var p = new DialogParameters<GestionProyectoDialog>
+        {
+            { x => x.Proyecto, proyecto },
+            { x => x.Empleados, _empleados }
+        };
+        var d = await DialogService.ShowAsync<GestionProyectoDialog>("Gestionar Proyecto", p,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        await d.Result;
+        await CargarProyectosAsync();
+    }
+}

@@ -1,0 +1,364 @@
+﻿@page "/inventario/kardex"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.Helpers
+
+<PageTitle>Kardex de Artículos — NEXO</PageTitle>
+
+<div class="inv-header">
+    <div class="inv-header__left">
+        <h1 class="inv-header__title">
+            <MudIcon Icon="@Icons.Material.Filled.ListAlt" Class="inv-header__icon" />
+            Kardex de Artículos
+        </h1>
+        <p class="inv-header__sub">Historial de movimientos: entradas, salidas, ajustes y traspasos con saldo tras cada operación.</p>
+    </div>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Historial completo de movimientos por artículo y bodega: entradas, salidas, ajustes y traspasos con saldo tras cada operación." />
+
+
+@* ── Filtros ──────────────────────────────────────────────────────────── *@
+<div class="kx-filtros">
+    <ArticuloAutocomplete Value="_articuloSeleccionado"
+                          ValueChanged="@(a => _articuloSeleccionado = a)"
+                          Label="Artículo" />
+    <AppSelect TValue="int?" @bind-Value="_bodegaId" Label="Bodega" Style="flex:1; min-width:150px;"
+               Items="@(_bodegas.Select(b => new AppSelectItem<int?>(b.Nombre, (int?)b.BodegaID)))" />
+    <MudDatePicker @bind-Date="_desde" Label="Desde" DateFormat="dd/MM/yyyy"
+                   PickerVariant="PickerVariant.Dialog" Variant="Variant.Outlined"
+                   Style="flex:1; min-width:140px;" />
+    <MudDatePicker @bind-Date="_hasta" Label="Hasta" DateFormat="dd/MM/yyyy"
+                   PickerVariant="PickerVariant.Dialog" Variant="Variant.Outlined"
+                   Style="flex:1; min-width:140px;" />
+    <AppSelect TValue="string" @bind-Value="_filtroCategoria" Label="Tipo" Style="flex:1; min-width:130px;"
+               Items="@(new AppSelectItem<string>[]{ new("Entradas","Entrada"), new("Salidas","Salida"), new("Producción","Producción"), new("Ajustes","Ajuste"), new("Bajas / Pérdidas","Baja"), new("Traspasos","Traspaso") })" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ConsultarAsync"
+               Disabled="_cargando" StartIcon="@Icons.Material.Filled.Search"
+               Style="flex-shrink:0; align-self:flex-end; height:56px; padding: 0 1.5rem;">
+        @(_cargando ? "Consultando..." : "Consultar")
+    </MudButton>
+</div>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_errorCarga</MudAlert>
+}
+
+@if (_cargando)
+{
+    <div class="inv-skeleton">
+        @for (int i = 0; i < 6; i++) { <div class="inv-skeleton__row"></div> }
+    </div>
+}
+else if (_movimientos.Count > 0)
+{
+    var mostrados = MovimientosFiltrados.ToList();
+    <div class="kx-resumen">
+        <span class="kx-resumen__count">@mostrados.Count movimiento@(mostrados.Count != 1 ? "s" : "")</span>
+        <span class="kx-resumen__sep">·</span>
+        @if (!string.IsNullOrEmpty(_filtroCategoria))
+        {
+            <span class="kx-resumen__tipo">Tipo: @_filtroCategoria</span>
+            <span class="kx-resumen__sep">·</span>
+        }
+        <span class="kx-resumen__valor">
+            Valor neto:
+            <strong>@mostrados.Sum(m => m.EsEntrada ? m.ValorMovimiento : -m.ValorMovimiento).ToString("C0")</strong>
+        </span>
+        <span class="kx-resumen__note">(máx. 500 por consulta)</span>
+    </div>
+
+    @if (Preferencias.VistaListado == "tarjetas")
+    {
+        <div class="inv-grid">
+            @{
+                var cardPagina = mostrados.Skip((_kardexCardPagina - 1) * _porPagina).Take(_porPagina).ToList();
+                var cardTotalPags = (int)Math.Ceiling(mostrados.Count / (double)_porPagina);
+            }
+            @foreach (var mov in cardPagina)
+            {
+                <div class="kx-card">
+                    <div class="kx-card__head">
+                        <div>
+                            <div class="kx-card__articulo">@mov.Articulo</div>
+                            <div class="kx-card__sub">
+                                <span class="inv-sku">@mov.SKU</span>
+                                · @mov.Bodega · @mov.Fecha.ToString("dd/MM/yy HH:mm")
+                            </div>
+                        </div>
+                        @ChipTipo(mov)
+                    </div>
+                    <div class="kx-card__rows">
+                        <div class="kx-card__row">
+                            <span>Cantidad</span>
+                            <strong class="@(mov.EsEntrada ? "inv-valor--verde" : "inv-valor--rojo")">
+                                @FormatearCantidad(mov)
+                            </strong>
+                        </div>
+                        <div class="kx-card__row">
+                            <span>Costo unit.</span>
+                            <span>@mov.CostoUnitario.ToString("C2")</span>
+                        </div>
+                        <div class="kx-card__row">
+                            <span>Valor</span>
+                            <strong>@mov.ValorMovimiento.ToString("C0")</strong>
+                        </div>
+                        <div class="kx-card__row">
+                            <span>Saldo tras mov.</span>
+                            <strong>@FormatearCantidad(mov.CantidadSaldo, mov.Unidad, mov.UnidadesPorEmbalaje)</strong>
+                        </div>
+                    </div>
+                    @if (mov.ObservacionDetallada is not null)
+                    {
+                        <div class="kx-card__obs">@mov.ObservacionDetallada</div>
+                    }
+                    @if (ConfiguracionEmpresa.ManejarVencimientos && mov.NumeroLote is not null)
+                    {
+                        var diasVenc = mov.FechaVencimiento.HasValue
+                            ? (mov.FechaVencimiento.Value.Date - NexoWeb.Common.ColombiaClock.Today).Days
+                            : (int?)null;
+                        var colorLote = diasVenc < 0 ? "color:var(--mud-palette-error)"
+                            : diasVenc <= ConfiguracionEmpresa.DiasAlertaVencimiento ? "color:var(--mud-palette-warning-darken)"
+                            : "color:var(--n-text-2)";
+                        <div class="kx-card__obs" style="@colorLote; font-size:.76rem;">
+                            Lote: @mov.NumeroLote
+                            @if (mov.FechaVencimiento.HasValue)
+                            {
+                                @($" · Vence: {mov.FechaVencimiento.Value:dd/MM/yyyy}")
+                                if (diasVenc < 0) { @(" ⚠ Vencido") }
+                                else if (diasVenc <= ConfiguracionEmpresa.DiasAlertaVencimiento) { @(" ⚡ Próximo") }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        @if (cardTotalPags > 1)
+        {
+            <div class="kx-pager">
+                <button class="kx-pager__btn" disabled="@(_kardexCardPagina <= 1)" @onclick="@(() => _kardexCardPagina--)">‹ Ant.</button>
+                <span class="kx-pager__info">Página @_kardexCardPagina de @cardTotalPags</span>
+                <button class="kx-pager__btn" disabled="@(_kardexCardPagina >= cardTotalPags)" @onclick="@(() => _kardexCardPagina++)">Sig. ›</button>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="inv-table-wrap">
+            <table class="inv-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>SKU / Artículo</th>
+                        <th>Bodega</th>
+                        <th>Tipo</th>
+                        <th class="inv-table__num">Cantidad</th>
+                        <th class="inv-table__num">Costo unit.</th>
+                        <th class="inv-table__num">Valor</th>
+                        <th class="inv-table__num">Saldo</th>
+                        @if (ConfiguracionEmpresa.ManejarVencimientos)
+                        {
+                            <th>Lote / Vence</th>
+                        }
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @{
+                        var pagina = mostrados.Skip((_paginaActual - 1) * _porPagina).Take(_porPagina).ToList();
+                        var totalPaginas = (int)Math.Ceiling(mostrados.Count / (double)_porPagina);
+                    }
+                    @foreach (var mov in pagina)
+                    {
+                        <tr class="inv-table__row">
+                            <td class="inv-muted" style="white-space:nowrap; font-size:0.78rem;">@mov.Fecha.ToString("dd/MM/yy HH:mm")</td>
+                            <td>
+                                <span class="inv-sku">@mov.SKU</span>
+                                <div style="font-size:0.82rem; margin-top:2px;">@mov.Articulo</div>
+                            </td>
+                            <td class="inv-muted">@mov.Bodega</td>
+                            <td>@ChipTipo(mov)</td>
+                            <td class="inv-table__num">
+                                <strong class="@(mov.EsEntrada ? "inv-valor--verde" : "inv-valor--rojo")">
+                                    @FormatearCantidad(mov)
+                                </strong>
+                            </td>
+                            <td class="inv-table__num inv-muted">@mov.CostoUnitario.ToString("C2")</td>
+                            <td class="inv-table__num">
+                                <strong class="@(mov.EsEntrada ? "inv-valor--verde" : "inv-valor--rojo")">
+                                    @(mov.EsEntrada ? "+" : "-")@mov.ValorMovimiento.ToString("C0")
+                                </strong>
+                            </td>
+                            <td class="inv-table__num">@FormatearCantidad(mov.CantidadSaldo, mov.Unidad, mov.UnidadesPorEmbalaje)</td>
+                            @if (ConfiguracionEmpresa.ManejarVencimientos)
+                            {
+                                var diasVencT = mov.FechaVencimiento.HasValue
+                                    ? (mov.FechaVencimiento.Value.Date - NexoWeb.Common.ColombiaClock.Today).Days
+                                    : (int?)null;
+                                var colorLoteT = diasVencT < 0 ? "color:var(--mud-palette-error)"
+                                    : diasVencT <= ConfiguracionEmpresa.DiasAlertaVencimiento ? "color:var(--mud-palette-warning-darken)"
+                                    : "";
+                                <td style="font-size:0.78rem; @colorLoteT">
+                                    @if (mov.NumeroLote is not null)
+                                    {
+                                        @mov.NumeroLote
+                                        if (mov.FechaVencimiento.HasValue)
+                                        {
+                                            <div class="inv-muted">@mov.FechaVencimiento.Value.ToString("dd/MM/yy")</div>
+                                        }
+                                    }
+                                    else { @("—") }
+                                </td>
+                            }
+                            <td class="inv-muted" style="max-width:160px; white-space:normal; font-size:0.78rem;">
+                                @(mov.ObservacionDetallada ?? "—")
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (totalPaginas > 1)
+        {
+            <div class="kx-pager">
+                <button class="kx-pager__btn" disabled="@(_paginaActual <= 1)"
+                        @onclick="@(() => _paginaActual--)">‹ Ant.</button>
+                <span class="kx-pager__info">Página @_paginaActual de @totalPaginas</span>
+                <button class="kx-pager__btn" disabled="@(_paginaActual >= totalPaginas)"
+                        @onclick="@(() => _paginaActual++)">Sig. ›</button>
+            </div>
+        }
+    }
+}
+else if (_consultaEjecutada)
+{
+    <div class="inv-vacio">
+        <MudIcon Icon="@Icons.Material.Outlined.SearchOff" Style="font-size:3rem; color:var(--n-text-3); display:block; margin-bottom:.75rem;" />
+        <p>No hay movimientos con los filtros indicados.</p>
+    </div>
+}
+else
+{
+    <div class="inv-vacio">
+        <MudIcon Icon="@Icons.Material.Outlined.FilterList" Style="font-size:2.5rem; color:var(--n-text-3); display:block; margin-bottom:.75rem;" />
+        <p>Aplica filtros y presiona <strong>Consultar</strong> para ver el historial.</p>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "articuloId")]
+    public int? ArticuloIdParam { get; set; }
+
+    private List<KardexMovimientoItem> _movimientos = new();
+    private ArticuloItem? _articuloSeleccionado;
+    private List<BodegaItem>   _bodegas   = new();
+    private int? _articuloId => _articuloSeleccionado?.ArticuloID;
+    private int? _bodegaId;
+    private DateTime? _desde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+    private DateTime? _hasta = NexoWeb.Common.ColombiaClock.Today;
+    private string? _filtroCategoria;
+    private bool  _cargando;
+    private bool  _consultaEjecutada;
+    private string? _errorCarga;
+    private int _paginaActual = 1;
+    private int _kardexCardPagina = 1;
+    private const int _porPagina = 50;
+
+    private IEnumerable<KardexMovimientoItem> MovimientosFiltrados =>
+        string.IsNullOrEmpty(_filtroCategoria)
+            ? _movimientos
+            : _movimientos.Where(m => CategoriaDe(m.TipoMovimiento) == _filtroCategoria);
+
+    private static string CategoriaDe(string tipo) => tipo switch
+    {
+        var t when t.Contains("Ajuste")                                                   => "Ajuste",
+        var t when t.Contains("Baja") || t.Contains("Pérdida") || t.Contains("Perdida") => "Baja",
+        var t when t.Contains("Traspaso")                                                 => "Traspaso",
+        var t when t.Contains("Compra") || t.Contains("Entrada")                         => "Entrada",
+        var t when t.Contains("Venta") || t.Contains("Salida") || t.Contains("Despacho")=> "Salida",
+        var t when t.Contains("Produccion") || t.Contains("Producción")                  => "Producción",
+        _ => "Otro"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (ArticuloIdParam.HasValue)
+            {
+                var tBodegas  = ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas");
+                var tArticulo = ApiClient.GetAsync<ArticuloItem>($"api/catalogo/articulos/{ArticuloIdParam}");
+                await Task.WhenAll(tBodegas, tArticulo);
+                _bodegas = tBodegas.Result ?? new();
+                if (tArticulo.Result is not null) { _articuloSeleccionado = tArticulo.Result; await ConsultarAsync(); }
+            }
+            else
+            {
+                _bodegas = await ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas") ?? new();
+            }
+        }
+        catch { }
+    }
+
+    private async Task ConsultarAsync()
+    {
+        _cargando = true; _errorCarga = null; _consultaEjecutada = true; _paginaActual = 1; _kardexCardPagina = 1;
+        try
+        {
+            var q = new List<string>();
+            if (_articuloId.HasValue) q.Add($"articuloId={_articuloId}");
+            if (_bodegaId.HasValue)   q.Add($"bodegaId={_bodegaId}");
+            if (_desde.HasValue)      q.Add($"desde={_desde.Value:yyyy-MM-dd}");
+            if (_hasta.HasValue)      q.Add($"hasta={_hasta.Value:yyyy-MM-dd}");
+            var ruta = "api/inventario/kardex" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
+            _movimientos = await ApiClient.GetAsync<List<KardexMovimientoItem>>(ruta) ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private static string FormatearCantidad(KardexMovimientoItem mov)
+    {
+        var signo = mov.EsEntrada ? "+" : "-";
+        var texto = FormatearCantidad(Math.Abs(mov.Cantidad), mov.Unidad, mov.UnidadesPorEmbalaje);
+        return signo + texto;
+    }
+
+    // Usa UnidadesPorEmbalaje (no unidad == "cja") porque Unidad = PresentacionCodigo.
+    // Omite el código de unidad si es puramente numérico (ej. "07") para evitar
+    // que parezca parte del número: "-65,000 07" se leería como decimal.
+    private static string FormatearCantidad(decimal cantidad, string? unidad, decimal? unidadesPorEmbalaje)
+    {
+        if (unidadesPorEmbalaje is > 0)
+            return StockHelper.FormatearCajaUnidades(cantidad, unidadesPorEmbalaje.Value);
+        var sufijo = string.IsNullOrWhiteSpace(unidad) || unidad.All(char.IsDigit) ? "" : " " + unidad;
+        return $"{cantidad:N3}{sufijo}";
+    }
+
+    private static RenderFragment ChipTipo(KardexMovimientoItem mov) => builder =>
+    {
+        var (color, icon) = mov.TipoMovimiento switch
+        {
+            var t when t.Contains("Ajuste")                                                   => (Color.Info, Icons.Material.Filled.Tune),
+            var t when t.Contains("Baja") || t.Contains("Pérdida") || t.Contains("Perdida") => (Color.Error, Icons.Material.Filled.DeleteOutline),
+            var t when t.Contains("Traspaso")                                                 => (Color.Secondary, Icons.Material.Filled.SwapHoriz),
+            var t when t.Contains("Compra") || t.Contains("Entrada")                         => (Color.Success, Icons.Material.Filled.ArrowDownward),
+            var t when t.Contains("Venta") || t.Contains("Salida") || t.Contains("Despacho")=> (Color.Warning, Icons.Material.Filled.ArrowUpward),
+            var t when t.Contains("Produccion") || t.Contains("Producción")                  => (Color.Tertiary, Icons.Material.Filled.Factory),
+            _ => (mov.EsEntrada ? Color.Success : Color.Error, Icons.Material.Filled.SwapVert)
+        };
+
+        builder.OpenComponent<MudChip<string>>(0);
+        builder.AddAttribute(1, "T", typeof(string));
+        builder.AddAttribute(2, "Size", Size.Small);
+        builder.AddAttribute(3, "Color", color);
+        builder.AddAttribute(4, "Icon", icon);
+        builder.AddAttribute(5, "ChildContent", (RenderFragment)(b => b.AddContent(0, mov.TipoMovimiento)));
+        builder.CloseComponent();
+    };
+}
+

@@ -1,0 +1,141 @@
+@using NexoWeb.Common.Dtos
+@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="@this">
+            @if (!EsEdicion)
+            {
+                <AppSelect TValue="string" @bind-Value="_origen" Label="Origen" Class="mb-3"
+                           Items="@(new AppSelectItem<string>[]{ new("Lead existente","LEAD"), new("Cliente existente","CLIENTE") })" />
+
+                @if (_origen == "LEAD")
+                {
+                    <AppSelect TValue="int?" @bind-Value="_leadId" Label="Lead" Class="mb-3"
+                               Items="@(Leads.Select(l => new AppSelectItem<int?>($"{l.Nombre}{(l.Empresa is not null ? $" ({l.Empresa})" : "")}", (int?)l.LeadID)))" />
+                }
+                else
+                {
+                    <ClienteAutocomplete Value="_clienteSeleccionado"
+                                        ValueChanged="@(c => { _clienteSeleccionado = c; _clienteId = c?.ClienteID; })"
+                                        Label="Cliente" Required="true" />
+                }
+            }
+
+            <MudTextField @bind-Value="_nombre" Label="Nombre de la oportunidad" Required="true"
+                          RequiredError="El nombre es obligatorio" Class="mb-3" />
+
+            <MudNumericField T="decimal" @bind-Value="_valorEstimado" Label="Valor Estimado ($)" Format="N0" Class="mb-3" />
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Confianza en el cierre</MudText>
+            <MudStack Row Class="mb-3" Spacing="2">
+                <MudChip T="string" Color="@(_confianza == "OPTIMISTA" ? Color.Success : Color.Default)"
+                         Variant="@(_confianza == "OPTIMISTA" ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => _confianza = "OPTIMISTA")"
+                         Icon="@Icons.Material.Filled.TrendingUp">
+                    Optimista
+                </MudChip>
+                <MudChip T="string" Color="@(_confianza == "NEUTRO" ? Color.Warning : Color.Default)"
+                         Variant="@(_confianza == "NEUTRO" ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => _confianza = "NEUTRO")"
+                         Icon="@Icons.Material.Filled.TrendingFlat">
+                    Neutro
+                </MudChip>
+                <MudChip T="string" Color="@(_confianza == "BAJA" ? Color.Error : Color.Default)"
+                         Variant="@(_confianza == "BAJA" ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => _confianza = "BAJA")"
+                         Icon="@Icons.Material.Filled.TrendingDown">
+                    Baja confianza
+                </MudChip>
+            </MudStack>
+            <MudDatePicker @bind-Date="_fechaCierreEsperada" Label="Fecha de cierre esperada" Class="mb-3" />
+
+            <AppSelect TValue="int?" @bind-Value="_responsableId" Label="Responsable" Class="mb-3"
+                       Items="@(Empleados.Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+
+            @if (EsEdicion)
+            {
+                <AppSelect TValue="string" @bind-Value="_etapa" Label="Etapa" Class="mb-3"
+                           Items="@(new AppSelectItem<string>[]{ new("Prospección","PROSPECCION"), new("Calificación","CALIFICACION"), new("Propuesta","PROPUESTA"), new("Negociación","NEGOCIACION"), new("Ganada","GANADA"), new("Perdida","PERDIDA") })" />
+            }
+
+            <MudTextField @bind-Value="_notas" Label="Notas" Lines="2" Class="mb-3" />
+        </MudForm>
+
+        @if (EsEdicion)
+        {
+            <MudDivider Class="my-3" />
+            <ActividadesPanel OportunidadID="@Oportunidad!.OportunidadID"
+                              ResponsableIDPorDefecto="@Oportunidad.ResponsableID" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync">
+            @(EsEdicion ? "Guardar Cambios" : "Crear")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public OportunidadItem? Oportunidad { get; set; }
+    [Parameter] public List<LeadItem> Leads { get; set; } = new();
+    [Parameter] public List<EmpleadoItem> Empleados { get; set; } = new();
+
+    private bool EsEdicion => Oportunidad is not null;
+
+    private MudForm _form = default!;
+    private string _origen = "LEAD";
+    private int? _leadId;
+    private int? _clienteId;
+    private ClienteItem? _clienteSeleccionado;
+    private string _nombre = string.Empty;
+    private decimal _valorEstimado;
+    private string _confianza = "NEUTRO";
+    private DateTime? _fechaCierreEsperada;
+    private int? _responsableId;
+    private string _etapa = "PROSPECCION";
+    private string? _notas;
+
+    protected override void OnInitialized()
+    {
+        if (Oportunidad is not null)
+        {
+            _nombre = Oportunidad.Nombre;
+            _valorEstimado = Oportunidad.ValorEstimado;
+            _confianza = Oportunidad.ConfianzaCierre ?? "NEUTRO";
+            _fechaCierreEsperada = Oportunidad.FechaCierreEsperada;
+            _responsableId = Oportunidad.ResponsableID;
+            _etapa = Oportunidad.Etapa;
+            _notas = Oportunidad.Notas;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid)
+            return;
+
+        if (EsEdicion)
+        {
+            var request = new ActualizarOportunidadRequest(_nombre.Trim(), _valorEstimado, _confianza, _etapa, _fechaCierreEsperada, _responsableId, _notas);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+        else
+        {
+            if (_origen == "LEAD" && _leadId is null) return;
+            if (_origen == "CLIENTE" && _clienteId is null) return;
+
+            var request = new CrearOportunidadRequest(
+                _origen == "LEAD" ? _leadId : null,
+                _origen == "CLIENTE" ? _clienteId : null,
+                _nombre.Trim(), _valorEstimado, _confianza, _fechaCierreEsperada, _responsableId, _notas);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

@@ -1,0 +1,437 @@
+﻿@page "/planificacion/calendario"
+@attribute [Authorize]
+@implements IDisposable
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.CalendarioBroadcast Broadcast
+@using NexoWeb.Common.Dtos
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Calendario - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Planificación</p>
+            <h1 class="nexo-page-hero__title">Calendario</h1>
+        </div>
+    </div>
+</div>
+<InfoAyuda Texto="Agenda reuniones, deadlines, capacitaciones y entregas. Los Administradores y Jefes pueden crear y editar eventos; los Empleados ven los eventos a los que están invitados. Los cambios se reflejan en tiempo real para todos los usuarios conectados." />
+
+<MudPaper Class="pa-0" Style="overflow:hidden">
+    @* ── Encabezado del calendario ──────────────────────────────────── *@
+    <div class="d-flex align-center flex-wrap pa-4" style="gap:0.5rem;border-bottom:1px solid var(--mud-palette-divider)">
+        <MudText Typo="Typo.h6" Style="min-width:160px">
+            @(new DateTime(_anio, _mes, 1).ToString("MMMM yyyy"))
+        </MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small" OnClick="MesAnterior" />
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="IrAHoy">Hoy</MudButton>
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" OnClick="MesSiguiente" />
+        <MudSpacer />
+        <div class="d-flex align-center flex-wrap" style="gap:6px">
+            @foreach (var tipo in _todosTipos)
+            {
+                var tipoKey   = tipo.Key;
+                var tipoColor = tipo.Value;
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Variant="@(_tiposFiltrados.Contains(tipoKey) ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => ToggleFiltroTipo(tipoKey))">
+                    <div class="d-flex align-center" style="gap:5px">
+                        <div style="@EstiloPuntito(tipoColor)"></div>
+                        @tipoKey
+                    </div>
+                </MudChip>
+            }
+        </div>
+        @if (_esAdminOJefe)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="@(() => AbrirDialogoAsync(null, null))">
+                Nuevo evento
+            </MudButton>
+        }
+    </div>
+
+    @* ── Grid del calendario ─────────────────────────────────────────── *@
+    <div style="display:grid;grid-template-columns:repeat(7,1fr)">
+        @foreach (var dia in new[] { "Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb" })
+        {
+            <div style="text-align:center;padding:8px 4px;font-size:12px;color:var(--mud-palette-text-secondary);background:var(--mud-palette-background-grey);border-bottom:1px solid var(--mud-palette-divider);border-right:1px solid var(--mud-palette-divider)">
+                @dia
+            </div>
+        }
+
+        @foreach (var celda in CeldasCalendario())
+        {
+            var fecha       = celda.Fecha;
+            var esMes       = celda.EsEsteMes;
+            var esHoy       = fecha.Date == NexoWeb.Common.ColombiaClock.Today;
+            var seleccionada = _diaSeleccionado?.Date == fecha.Date;
+            var evsDia      = EventosDelDia(fecha);
+
+            <div @onclick="@(() => SeleccionarDia(fecha))" style="@EstiloCelda(seleccionada, esHoy, esMes)">
+                <div style="@EstiloNumero(esHoy)">@fecha.Day</div>
+                @foreach (var ev in evsDia.Take(3))
+                {
+                    <div title="@ev.Titulo — @ev.FechaInicio.ToLocalTime().ToString("HH:mm")"
+                         style="@EstiloPill(ev.ColorTipo)">
+                        @ev.FechaInicio.ToLocalTime().ToString("HH:mm") @ev.Titulo
+                    </div>
+                }
+                @if (evsDia.Count > 3)
+                {
+                    <div style="font-size:10px;color:var(--mud-palette-text-secondary);padding:1px 4px">
+                        +@(evsDia.Count - 3) más
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</MudPaper>
+
+@* ── Panel de detalle del día seleccionado ────────────────────────── *@
+@if (_diaSeleccionado.HasValue)
+{
+    var evsDia = EventosDelDia(_diaSeleccionado.Value);
+
+    <MudPaper Class="mt-4 pa-0" Style="overflow:hidden">
+        <div class="d-flex align-center pa-3" style="border-bottom:1px solid var(--mud-palette-divider)">
+            <MudIcon Icon="@Icons.Material.Filled.CalendarToday" Class="mr-2" Size="Size.Small" />
+            <MudText Typo="Typo.subtitle1">
+                @_diaSeleccionado.Value.ToString("dddd d 'de' MMMM")
+            </MudText>
+            <MudSpacer />
+            @if (_esAdminOJefe)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="@(() => AbrirDialogoAsync(null, _diaSeleccionado))">
+                    Agregar aquí
+                </MudButton>
+            }
+        </div>
+
+        @if (_cargando)
+        {
+            <div class="pa-4"><MudProgressLinear Indeterminate="true" /></div>
+        }
+        else if (evsDia.Count == 0)
+        {
+            <div class="pa-6 d-flex flex-column align-center" style="color:var(--mud-palette-text-secondary)">
+                <MudIcon Icon="@Icons.Material.Outlined.EventBusy" Style="font-size:2rem;margin-bottom:8px;opacity:0.4" />
+                <MudText Typo="Typo.body2">Sin eventos para este día</MudText>
+            </div>
+        }
+        else
+        {
+            @foreach (var ev in evsDia.OrderBy(e => e.FechaInicio))
+            {
+                <div style="border-left:3px solid @ev.ColorTipo;padding:14px 16px;border-bottom:1px solid var(--mud-palette-divider)">
+                    <div class="d-flex align-center justify-space-between mb-1">
+                        <div class="d-flex align-center" style="gap:8px">
+                            <MudChip T="string" Size="Size.Small" Style="@EstiloChipTipo(ev.ColorTipo)">
+                                @ev.TipoEvento
+                            </MudChip>
+                            <MudText Typo="Typo.subtitle2">@ev.Titulo</MudText>
+                        </div>
+                        @if (_esAdminOJefe)
+                        {
+                            var yaOcurrio = ev.FechaFin.ToLocalTime() < NexoWeb.Common.ColombiaClock.Now;
+                            <div class="d-flex align-center" style="gap:4px">
+                                @if (yaOcurrio)
+                                {
+                                    <MudTooltip Text="El evento ya ocurrió y no se puede modificar">
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                                            Finalizado
+                                        </MudChip>
+                                    </MudTooltip>
+                                }
+                                else
+                                {
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                                   OnClick="@(() => AbrirDialogoAsync(ev, null))" />
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => EliminarEventoAsync(ev))" />
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="d-flex flex-wrap" style="gap:12px;font-size:13px;color:var(--mud-palette-text-secondary);margin-bottom:6px">
+                        <span>
+                            <MudIcon Icon="@Icons.Material.Outlined.Schedule" Size="Size.Small" Style="vertical-align:middle;margin-right:3px" />
+                            @ev.FechaInicio.ToLocalTime().ToString("HH:mm") – @ev.FechaFin.ToLocalTime().ToString("HH:mm")
+                        </span>
+                        @if (!string.IsNullOrEmpty(ev.Lugar))
+                        {
+                            <span>
+                                <MudIcon Icon="@Icons.Material.Outlined.LocationOn" Size="Size.Small" Style="vertical-align:middle;margin-right:3px" />
+                                @ev.Lugar
+                            </span>
+                        }
+                        @if (!string.IsNullOrEmpty(ev.LinkVirtual))
+                        {
+                            <a href="@ev.LinkVirtual" target="_blank" style="color:var(--mud-palette-primary)">
+                                <MudIcon Icon="@Icons.Material.Outlined.VideoCall" Size="Size.Small" Style="vertical-align:middle;margin-right:3px" />
+                                Link virtual
+                            </a>
+                        }
+                        @if (!string.IsNullOrEmpty(ev.CentroCosto))
+                        {
+                            <span>
+                                <MudIcon Icon="@Icons.Material.Outlined.Business" Size="Size.Small" Style="vertical-align:middle;margin-right:3px" />
+                                @ev.CentroCosto
+                            </span>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(ev.Descripcion))
+                    {
+                        <MudText Typo="Typo.body2" Class="mb-2" Style="color:var(--mud-palette-text-secondary)">
+                            @ev.Descripcion
+                        </MudText>
+                    }
+
+                    @if (ev.Asistentes.Count > 0)
+                    {
+                        <div class="d-flex align-center flex-wrap" style="gap:6px;margin-top:6px">
+                            <MudIcon Icon="@Icons.Material.Outlined.Group" Size="Size.Small"
+                                     Style="color:var(--mud-palette-text-secondary)" />
+                            @foreach (var a in ev.Asistentes)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                         Color="@(a.Estado == "Confirmado" ? Color.Success : Color.Default)">
+                                    @a.Nombre
+                                </MudChip>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </MudPaper>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private int _mes  = NexoWeb.Common.ColombiaClock.Today.Month;
+    private int _anio = NexoWeb.Common.ColombiaClock.Today.Year;
+    private DateTime? _diaSeleccionado = NexoWeb.Common.ColombiaClock.Today;
+
+    private List<EventoCalendarioItem> _eventos     = new();
+    private List<UsuarioDisponibleItem> _usuarios   = new();
+    private List<CentroCostoItem> _centrosCosto     = new();
+    private bool _cargando    = true;
+    private bool _esAdminOJefe;
+
+    private readonly Dictionary<string, string> _todosTipos = new()
+    {
+        { "Reunion",      "#7C5CFF" },
+        { "Deadline",     "#F59E0B" },
+        { "Capacitacion", "#10B981" },
+        { "Entrega",      "#3B82F6" },
+        { "Urgente",      "#EF4444" }
+    };
+
+    private HashSet<string> _tiposFiltrados = new() { "Reunion", "Deadline", "Capacitacion", "Entrega", "Urgente" };
+
+    // ── Helpers de estilos inline (evitan comillas anidadas en Razor) ──
+
+    private static string EstiloPuntito(string color) =>
+        $"width:8px;height:8px;border-radius:50%;background:{color};flex-shrink:0";
+
+    private static string EstiloCelda(bool seleccionada, bool esHoy, bool esMes)
+    {
+        var bg = seleccionada
+            ? "color-mix(in srgb,var(--mud-palette-primary) 8%,transparent)"
+            : esHoy
+                ? "color-mix(in srgb,var(--mud-palette-primary) 4%,transparent)"
+                : "transparent";
+        var opacity = esMes ? "1" : "0.45";
+        return $"min-height:90px;padding:6px;border-right:1px solid var(--mud-palette-divider);border-bottom:1px solid var(--mud-palette-divider);cursor:pointer;background:{bg};opacity:{opacity}";
+    }
+
+    private static string EstiloNumero(bool esHoy)
+    {
+        var bg    = esHoy ? "var(--mud-palette-primary)" : "transparent";
+        var color = esHoy ? "#fff" : "var(--mud-palette-text-primary)";
+        return $"display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;font-size:13px;font-weight:500;margin-bottom:3px;background:{bg};color:{color}";
+    }
+
+    private static string EstiloPill(string color) =>
+        $"font-size:10px;font-weight:500;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:color-mix(in srgb,{color} 18%,transparent);color:{color};border-left:2px solid {color}";
+
+    private static string EstiloChipTipo(string color) =>
+        $"background:color-mix(in srgb,{color} 15%,transparent);color:{color}";
+
+    // ── Ciclo de vida ──────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState;
+        _esAdminOJefe = auth.User.IsInRole("Administracion") || auth.User.IsInRole("Jefes");
+
+        Broadcast.OnCambio += OnEventosActualizados;
+
+        var tUsuarios     = ApiClient.GetAsync<List<UsuarioDisponibleItem>>("api/calendario/usuarios");
+        var tCentrosCosto = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo");
+        try { await Task.WhenAll(tUsuarios, tCentrosCosto); } catch { }
+        _usuarios     = tUsuarios.IsCompletedSuccessfully     ? tUsuarios.Result     ?? new() : new();
+        _centrosCosto = tCentrosCosto.IsCompletedSuccessfully ? tCentrosCosto.Result ?? new() : new();
+        await CargarEventosAsync();
+    }
+
+    public void Dispose() => Broadcast.OnCambio -= OnEventosActualizados;
+
+    private void OnEventosActualizados() =>
+        InvokeAsync(async () =>
+        {
+            await CargarEventosAsync();
+            StateHasChanged();
+        });
+
+    // ── Carga de datos ─────────────────────────────────────────────────
+
+    private async Task CargarEventosAsync()
+    {
+        _cargando = true;
+        var desde = new DateTime(_anio, _mes, 1);
+        var hasta = desde.AddMonths(1).AddDays(-1);
+        try
+        {
+            _eventos = await ApiClient.GetAsync<List<EventoCalendarioItem>>(
+                $"api/calendario/eventos?desde={desde:yyyy-MM-dd}&hasta={hasta:yyyy-MM-dd}") ?? new();
+        }
+        catch { }
+        finally { _cargando = false; }
+    }
+
+    // ── Navegación del mes ─────────────────────────────────────────────
+
+    private void SeleccionarDia(DateTime fecha)
+    {
+        _diaSeleccionado = _diaSeleccionado?.Date == fecha.Date ? null : fecha;
+    }
+
+    private void ToggleFiltroTipo(string tipo)
+    {
+        if (!_tiposFiltrados.Remove(tipo)) _tiposFiltrados.Add(tipo);
+    }
+
+    private void MesAnterior()
+    {
+        if (_mes == 1) { _mes = 12; _anio--; } else _mes--;
+        _ = CargarEventosAsync();
+    }
+
+    private void MesSiguiente()
+    {
+        if (_mes == 12) { _mes = 1; _anio++; } else _mes++;
+        _ = CargarEventosAsync();
+    }
+
+    private void IrAHoy()
+    {
+        _mes             = NexoWeb.Common.ColombiaClock.Today.Month;
+        _anio            = NexoWeb.Common.ColombiaClock.Today.Year;
+        _diaSeleccionado = NexoWeb.Common.ColombiaClock.Today;
+        _ = CargarEventosAsync();
+    }
+
+    // ── Helpers del calendario ─────────────────────────────────────────
+
+    private List<EventoCalendarioItem> EventosDelDia(DateTime fecha) =>
+        _eventos
+            .Where(e => e.FechaInicio.ToLocalTime().Date == fecha.Date && _tiposFiltrados.Contains(e.TipoEvento))
+            .OrderBy(e => e.FechaInicio)
+            .ToList();
+
+    private IEnumerable<(DateTime Fecha, bool EsEsteMes)> CeldasCalendario()
+    {
+        var primerDia    = new DateTime(_anio, _mes, 1);
+        var diasEnMes    = DateTime.DaysInMonth(_anio, _mes);
+        var offsetInicio = (int)primerDia.DayOfWeek;
+
+        for (var i = offsetInicio - 1; i >= 0; i--)
+            yield return (primerDia.AddDays(-i - 1), false);
+
+        for (var d = 1; d <= diasEnMes; d++)
+            yield return (new DateTime(_anio, _mes, d), true);
+
+        var total    = offsetInicio + diasEnMes;
+        var resto    = total % 7 == 0 ? 0 : 7 - (total % 7);
+        var ultimoDia = new DateTime(_anio, _mes, diasEnMes);
+        for (var i = 1; i <= resto; i++)
+            yield return (ultimoDia.AddDays(i), false);
+    }
+
+    // ── Diálogo crear / editar ─────────────────────────────────────────
+
+    private async Task AbrirDialogoAsync(EventoCalendarioItem? evento, DateTime? fechaSugerida)
+    {
+        var parametros = new DialogParameters<CalendarioEventoDialog>
+        {
+            { x => x.Evento,        evento },
+            { x => x.FechaSugerida, fechaSugerida },
+            { x => x.Usuarios,      _usuarios },
+            { x => x.CentrosCosto,  _centrosCosto }
+        };
+
+        var titulo  = evento is null ? "Nuevo evento" : "Editar evento";
+        var dialogo = await DialogService.ShowAsync<CalendarioEventoDialog>(titulo, parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled) return;
+
+        try
+        {
+            if (evento is null)
+            {
+                var req = (CrearEventoRequest)resultado.Data!;
+                await ApiClient.PostAsync<CrearEventoRequest, object>("api/calendario/eventos", req);
+                Snackbar.Add("Evento creado correctamente.", Severity.Success);
+            }
+            else
+            {
+                var req = (ActualizarEventoRequest)resultado.Data!;
+                await ApiClient.PutAsync<ActualizarEventoRequest, object>($"api/calendario/eventos/{evento.EventoID}", req);
+                Snackbar.Add("Evento actualizado.", Severity.Success);
+            }
+
+            Broadcast.NotificarCambio();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task EliminarEventoAsync(EventoCalendarioItem ev)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Eliminar evento",
+            $"¿Eliminar \"{ev.Titulo}\"? Esta acción no se puede deshacer.",
+            yesText: "Sí, eliminar", cancelText: "Cancelar");
+
+        if (confirm != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/calendario/eventos/{ev.EventoID}");
+            Snackbar.Add("Evento eliminado.", Severity.Info);
+            Broadcast.NotificarCambio();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

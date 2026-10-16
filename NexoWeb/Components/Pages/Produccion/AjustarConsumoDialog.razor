@@ -1,0 +1,147 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_cargando)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_errorCarga is not null)
+        {
+            <MudAlert Severity="Severity.Error">@_errorCarga</MudAlert>
+        }
+        else if (_consumos.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Esta orden no tiene consumos registrados aun.</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-3">Selecciona el insumo a ajustar:</MudText>
+
+            <MudTable Items="_consumos" Hover="true" Dense="true" SelectedItem="_consumoSeleccionado"
+                      SelectedItemChanged="OnConsumoSeleccionado" T="ConsumoOpItem">
+                <HeaderContent>
+                    <MudTh>Articulo</MudTh>
+                    <MudTh Style="text-align:right">Teorico</MudTh>
+                    <MudTh Style="text-align:right">Real Actual</MudTh>
+                    <MudTh>Motivo Exceso</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Articulo">@context.Articulo</MudTd>
+                    <MudTd DataLabel="Teorico" Style="text-align:right">@context.CantidadTeorica.ToString("N2")</MudTd>
+                    <MudTd DataLabel="Real Actual" Style="text-align:right">@context.CantidadReal.ToString("N2")</MudTd>
+                    <MudTd DataLabel="Motivo Exceso">@(context.MotivoExceso ?? "-")</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            @if (_consumoSeleccionado is not null)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                    <MudText Typo="Typo.subtitle2" Class="mb-3">
+                        Ajustar: @_consumoSeleccionado.Articulo
+                        (Teorico: @_consumoSeleccionado.CantidadTeorica.ToString("N2"))
+                    </MudText>
+
+                    <MudNumericField @bind-Value="_nuevaCantidad" Label="Nueva cantidad real" Min="0.0001m"
+                                     Format="N2" Class="mb-3" Required="true" />
+
+                    @if (_nuevaCantidad > _consumoSeleccionado.CantidadTeorica)
+                    {
+                        <AppSelect TValue="int?" @bind-Value="_motivoExcesoId" Label="Motivo de exceso (requerido)" Class="mb-3"
+                                   Items="@(new[] { new AppSelectItem<int?>("-- Seleccione --", (int?)null) }.Concat(_motivos.Select(m => new AppSelectItem<int?>(m.Nombre, (int?)m.MotivoExcesoID))))" />
+                    }
+
+                    <MudTextField @bind-Value="_observacion" Label="Observacion (opcional)" Lines="2" Class="mb-3" />
+                </MudPaper>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cerrar</MudButton>
+        <MudButton Color="Color.Warning" Variant="Variant.Filled"
+                   Disabled="@(!PuedeGuardar || _guardando)"
+                   OnClick="GuardarAsync">
+            @(_guardando ? "Guardando..." : "Guardar Ajuste")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public OrdenProduccionResumen Orden { get; set; } = default!;
+
+    private List<ConsumoOpItem> _consumos = new();
+    private List<MotivoExcesoItem> _motivos = new();
+    private ConsumoOpItem? _consumoSeleccionado;
+    private decimal _nuevaCantidad;
+    private int? _motivoExcesoId;
+    private string? _observacion;
+    private bool _cargando = true;
+    private bool _guardando;
+    private string? _errorCarga;
+
+    private bool PuedeGuardar =>
+        _consumoSeleccionado is not null &&
+        _nuevaCantidad > 0 &&
+        (_nuevaCantidad <= _consumoSeleccionado.CantidadTeorica || _motivoExcesoId.HasValue);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaConsumos = ApiClient.GetAsync<List<ConsumoOpItem>>($"api/produccion/ordenes/{Orden.OrdenProduccionID}/consumos");
+            var tareaMotivos = ApiClient.GetAsync<List<MotivoExcesoItem>>("api/produccion/ordenes/motivos-exceso");
+            await Task.WhenAll(tareaConsumos, tareaMotivos);
+            _consumos = await tareaConsumos ?? new();
+            _motivos = await tareaMotivos ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void OnConsumoSeleccionado(ConsumoOpItem? consumo)
+    {
+        // MudTable dispara este evento con null cuando SelectedItem se limpia
+        // (ej. despues de recargar la lista tras guardar un ajuste).
+        _consumoSeleccionado = consumo;
+        _nuevaCantidad = consumo?.CantidadReal ?? 0;
+        _motivoExcesoId = null;
+        _observacion = consumo?.Observacion;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _guardando = true;
+        try
+        {
+            var request = new AjustarConsumoRealRequest(_nuevaCantidad, _motivoExcesoId, _observacion?.Trim());
+            await ApiClient.PatchAsync<AjustarConsumoRealRequest, object?>(
+                $"api/produccion/ordenes/consumo/{_consumoSeleccionado!.ConsumoID}", request);
+
+            Snackbar.Add("Consumo actualizado correctamente.", Severity.Success);
+
+            // Recarga la lista para reflejar el cambio
+            _consumos = await ApiClient.GetAsync<List<ConsumoOpItem>>(
+                $"api/produccion/ordenes/{Orden.OrdenProduccionID}/consumos") ?? new();
+            _consumoSeleccionado = null;
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

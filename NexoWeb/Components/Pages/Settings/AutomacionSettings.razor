@@ -1,0 +1,269 @@
+@page "/settings/automatizacion"
+@attribute [Authorize(Roles = "Administracion")]
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+@using System.Text.Json
+
+<PageTitle>Automatización CRM - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">CRM · Settings</p>
+            <h1 class="nexo-page-hero__title">Automatización CRM</h1>
+        </div>
+    </div>
+    <a href="/settings" style="text-decoration:none">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" Size="Size.Small">
+            Volver a Settings
+        </MudButton>
+    </a>
+</div>
+
+<MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Outlined.Autorenew">
+    El motor evalúa las reglas periódicas cada hora. Las reglas de evento (como <strong>cambio de etapa</strong>)
+    se disparan en tiempo real al guardar la oportunidad. Cada regla crea una actividad en la oportunidad o cliente afectado.
+</MudAlert>
+
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_reglas.Count == 0)
+{
+    <MudText>No hay reglas configuradas.</MudText>
+}
+else
+{
+    @foreach (var vm in _vms)
+    {
+        <MudPaper Class="pa-4 mb-3" Style="max-width:720px;">
+            <div class="d-flex align-center justify-space-between mb-3" style="gap:12px;">
+                <div class="d-flex align-center" style="gap:10px;">
+                    <span style="font-size:1.4rem;">@IconoEvento(vm.Regla.Evento)</span>
+                    <div>
+                        <div style="font-weight:700; font-size:0.95rem;">@vm.Regla.Nombre</div>
+                        <div style="font-size:0.78rem; color:var(--n-text-3);">@vm.Regla.Descripcion</div>
+                    </div>
+                </div>
+                <div class="d-flex align-center" style="gap:8px;">
+                    <MudChip T="string" Size="Size.Small" Color="@ChipColor(vm.Regla.Evento)">
+                        @EtiquetaEvento(vm.Regla.Evento)
+                    </MudChip>
+                    <MudSwitch T="bool" @bind-Value="vm.Activa" Color="Color.Primary" />
+                </div>
+            </div>
+
+            @* Parámetros específicos por tipo de evento *@
+            <MudGrid Spacing="2">
+                @if (vm.Regla.Evento == "ETAPA_CAMBIADA")
+                {
+                    <MudItem xs="12" sm="6">
+                        <AppSelect TValue="string" @bind-Value="vm.EtapaDestino" Label="Disparar al llegar a"
+                                   Items="@(new AppSelectItem<string>[]{ new("Calificación","CALIFICACION"), new("Propuesta","PROPUESTA"), new("Negociación","NEGOCIACION") })" />
+                    </MudItem>
+                }
+                else if (vm.Regla.Evento == "COTIZACION_PENDIENTE")
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField T="int" @bind-Value="vm.DiasEspera" Label="Días sin respuesta" Min="1" Max="30" Dense="true" />
+                    </MudItem>
+                }
+                else if (vm.Regla.Evento == "CLIENTE_FRIO")
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField T="int" @bind-Value="vm.DiasSinContacto" Label="Días sin interacción" Min="7" Max="365" Dense="true" />
+                    </MudItem>
+                }
+                else if (vm.Regla.Evento == "OPORTUNIDAD_VENCIDA")
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField T="int" @bind-Value="vm.ProbabilidadMinima" Label="Probabilidad mínima (%)" Min="0" Max="100" Dense="true" />
+                    </MudItem>
+                }
+                else if (vm.Regla.Evento == "OPORTUNIDAD_SIN_ACTIVIDAD")
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField T="int" @bind-Value="vm.DiasMaxSinActividad" Label="Días máximo sin actividades" Min="1" Max="90" Dense="true" />
+                    </MudItem>
+                }
+                else if (vm.Regla.Evento == "COTIZACION_POR_VENCER")
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField T="int" @bind-Value="vm.DiasAntes" Label="Días antes del vencimiento" Min="1" Max="14" Dense="true" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-1">
+                            También envía un email al cliente si tiene dirección de email registrada.
+                        </MudAlert>
+                    </MudItem>
+                }
+
+                @* Acción — común a todas las reglas *@
+                <MudItem xs="12" sm="6">
+                    <AppSelect TValue="string" @bind-Value="vm.TipoActividad" Label="Tipo de actividad a crear"
+                               Items="@(new AppSelectItem<string>[]{ new("Llamada","LLAMADA"), new("Email","EMAIL"), new("Reunión","REUNION"), new("Tarea","TAREA") })" />
+                </MudItem>
+                <MudItem xs="12" sm="9">
+                    <MudTextField T="string" @bind-Value="vm.TituloActividad" Label="Título de la actividad" Dense="true" />
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudNumericField T="int" @bind-Value="vm.DiasVencimiento" Label="Vence en (días)" Min="0" Max="30" Dense="true" />
+                </MudItem>
+            </MudGrid>
+
+            <div class="d-flex justify-space-between align-center mt-3">
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
+                           StartIcon="@Icons.Material.Filled.PlayArrow"
+                           OnClick="@(() => EjecutarAhoraAsync(vm))"
+                           Disabled="@vm.Ejecutando">
+                    @(vm.Ejecutando ? "Ejecutando..." : "Ejecutar ahora")
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           OnClick="@(() => GuardarAsync(vm))"
+                           Disabled="@vm.Guardando">
+                    @(vm.Guardando ? "Guardando..." : "Guardar")
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+}
+
+@code {
+    private List<ReglaAutomacionItem> _reglas = new();
+    private List<ReglaVM> _vms = new();
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _reglas = await ApiClient.GetAsync<List<ReglaAutomacionItem>>("api/crm/automatizacion") ?? new();
+            _vms = _reglas.Select(r => ReglaVM.FromItem(r)).ToList();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _cargando = false; }
+    }
+
+    private async Task GuardarAsync(ReglaVM vm)
+    {
+        vm.Guardando = true;
+        try
+        {
+            var req = new ActualizarReglaRequest(vm.Activa, vm.ToJson());
+            await ApiClient.PutAsync<ActualizarReglaRequest, object?>($"api/crm/automatizacion/{vm.Regla.ReglaID}", req);
+            Snackbar.Add($"Regla «{vm.Regla.Nombre}» guardada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { vm.Guardando = false; }
+    }
+
+    private async Task EjecutarAhoraAsync(ReglaVM vm)
+    {
+        vm.Ejecutando = true;
+        try
+        {
+            var resp = await ApiClient.PostAsync<object?, EjecutarReglaResponse>(
+                $"api/crm/automatizacion/{vm.Regla.ReglaID}/ejecutar", null);
+            var n = resp?.ActividadesCreadas ?? 0;
+            Snackbar.Add(n == 0
+                ? $"Sin entidades nuevas que procesar para «{vm.Regla.Nombre}»."
+                : $"Regla ejecutada: {n} actividad(es) creada(s).", n == 0 ? Severity.Info : Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { vm.Ejecutando = false; }
+    }
+
+    private static string IconoEvento(string e) => e switch
+    {
+        "ETAPA_CAMBIADA"            => "⚡",
+        "COTIZACION_PENDIENTE"      => "📄",
+        "COTIZACION_POR_VENCER"     => "📧",
+        "CLIENTE_FRIO"              => "🧊",
+        "OPORTUNIDAD_VENCIDA"       => "📅",
+        "OPORTUNIDAD_SIN_ACTIVIDAD" => "😴",
+        _ => "🔔"
+    };
+
+    private static string EtiquetaEvento(string e) => e switch
+    {
+        "ETAPA_CAMBIADA"            => "Evento inmediato",
+        "COTIZACION_PENDIENTE"      => "Periódico · Cotizaciones",
+        "COTIZACION_POR_VENCER"     => "Periódico · Email al cliente",
+        "CLIENTE_FRIO"              => "Periódico · Clientes",
+        "OPORTUNIDAD_VENCIDA"       => "Periódico · Oportunidades",
+        "OPORTUNIDAD_SIN_ACTIVIDAD" => "Periódico · Oportunidades",
+        _ => e
+    };
+
+    private static Color ChipColor(string e) => e == "ETAPA_CAMBIADA" ? Color.Warning : Color.Info;
+
+    // ── ViewModel ────────────────────────────────────────────────────────────
+
+    private class ReglaVM
+    {
+        public ReglaAutomacionItem Regla { get; set; } = default!;
+        public bool Activa { get; set; }
+
+        // Parámetros específicos por evento
+        public string EtapaDestino       { get; set; } = "PROPUESTA";
+        public int    DiasEspera         { get; set; } = 3;
+        public int    DiasSinContacto    { get; set; } = 60;
+        public int    ProbabilidadMinima { get; set; } = 50;
+        public int    DiasMaxSinActividad { get; set; } = 14;
+        public int    DiasAntes           { get; set; } = 2;
+
+        // Acción (común)
+        public string TipoActividad   { get; set; } = "TAREA";
+        public string TituloActividad { get; set; } = "";
+        public int    DiasVencimiento { get; set; } = 1;
+
+        public bool Guardando  { get; set; }
+        public bool Ejecutando { get; set; }
+
+        public static ReglaVM FromItem(ReglaAutomacionItem r)
+        {
+            var vm = new ReglaVM { Regla = r, Activa = r.Activa };
+            try
+            {
+                var p = JsonDocument.Parse(r.ParametrosJSON).RootElement;
+                vm.EtapaDestino        = Str(p, "EtapaDestino") ?? "PROPUESTA";
+                vm.DiasEspera          = Int(p, "DiasEspera", 3);
+                vm.DiasSinContacto     = Int(p, "DiasSinContacto", 60);
+                vm.ProbabilidadMinima  = Int(p, "ProbabilidadMinima", 50);
+                vm.DiasMaxSinActividad = Int(p, "DiasMaxSinActividad", 14);
+                vm.DiasAntes           = Int(p, "DiasAntes", 2);
+                vm.TipoActividad       = Str(p, "TipoActividad") ?? "TAREA";
+                vm.TituloActividad     = Str(p, "TituloActividad") ?? r.Nombre;
+                vm.DiasVencimiento     = Int(p, "DiasVencimiento", 1);
+            }
+            catch { /* usa defaults */ }
+            return vm;
+        }
+
+        public string ToJson()
+        {
+            var dict = new Dictionary<string, object>
+            {
+                ["TipoActividad"]   = TipoActividad,
+                ["TituloActividad"] = TituloActividad,
+                ["DiasVencimiento"] = DiasVencimiento
+            };
+            switch (Regla.Evento)
+            {
+                case "ETAPA_CAMBIADA":            dict["EtapaDestino"]        = EtapaDestino; break;
+                case "COTIZACION_PENDIENTE":       dict["DiasEspera"]          = DiasEspera; break;
+                case "CLIENTE_FRIO":               dict["DiasSinContacto"]     = DiasSinContacto; break;
+                case "OPORTUNIDAD_VENCIDA":        dict["ProbabilidadMinima"]  = ProbabilidadMinima; break;
+                case "OPORTUNIDAD_SIN_ACTIVIDAD":  dict["DiasMaxSinActividad"] = DiasMaxSinActividad; break;
+                case "COTIZACION_POR_VENCER":       dict["DiasAntes"]           = DiasAntes; break;
+            }
+            return JsonSerializer.Serialize(dict);
+        }
+
+        private static string? Str(JsonElement e, string k) => e.TryGetProperty(k, out var v) ? v.GetString() : null;
+        private static int Int(JsonElement e, string k, int d) => e.TryGetProperty(k, out var v) && v.TryGetInt32(out var i) ? i : d;
+    }
+}

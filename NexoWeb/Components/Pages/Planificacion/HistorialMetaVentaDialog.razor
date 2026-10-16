@@ -1,0 +1,35 @@
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        @if (Historial.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Esta meta no se ha modificado todavía.</MudText>
+        }
+        else
+        {
+            <MudTable Items="Historial" Dense="true" Hover="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Valor Anterior</MudTh>
+                    <MudTh>Notas</MudTh>
+                    <MudTh>Fecha del Cambio</MudTh>
+                    <MudTh>Usuario</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Valor Anterior">@context.MetaValorAnterior.ToString("C0")</MudTd>
+                    <MudTd DataLabel="Notas">@(context.NotasAnterior ?? "-")</MudTd>
+                    <MudTd DataLabel="Fecha del Cambio">@context.FechaCambio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+                    <MudTd DataLabel="Usuario">@(context.Usuario ?? "-")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Close())">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public List<MetaVentaHistorialItem> Historial { get; set; } = new();
+}

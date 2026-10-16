@@ -1,0 +1,1215 @@
+﻿@* Components/Pages/Settings/Settings.razor *@
+@page "/settings"
+@attribute [Authorize]
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+@inject NexoWeb.Common.Auth.AuthStateService AuthState
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject NavigationManager Navegacion
+@inject IDialogService DialogService
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Configuración - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Cuenta</p>
+            <h1 class="nexo-page-hero__title">Configuración</h1>
+        </div>
+    </div>
+</div>
+
+<div class="nexo-settings-layout">
+
+    @* â"€â"€ Sidebar de navegacion â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ *@
+    <MudPaper Class="nexo-settings-sidebar pa-2" Elevation="1">
+
+        <div class="nexo-settings-nav-group">Cuenta</div>
+
+        <div class="nexo-settings-nav-item @(_seccion == "perfil" ? "ns-active" : "")"
+             @onclick='() => _seccion = "perfil"'>
+            <MudIcon Icon="@Icons.Material.Outlined.AccountCircle" Size="Size.Small" />
+            <span>Mi perfil</span>
+        </div>
+
+        <div class="nexo-settings-nav-item @(_seccion == "sesion" ? "ns-active" : "")"
+             @onclick='() => _seccion = "sesion"'>
+            <MudIcon Icon="@Icons.Material.Outlined.LockOpen" Size="Size.Small" />
+            <span>Seguridad</span>
+        </div>
+
+        <div class="nexo-settings-nav-item @(_seccion == "apariencia" ? "ns-active" : "")"
+             @onclick='() => _seccion = "apariencia"'>
+            <MudIcon Icon="@Icons.Material.Outlined.Palette" Size="Size.Small" />
+            <span>Apariencia</span>
+        </div>
+
+        <div class="nexo-settings-nav-item @(_seccion == "menu" ? "ns-active" : "")"
+             @onclick='() => _seccion = "menu"'>
+            <MudIcon Icon="@Icons.Material.Outlined.ViewSidebar" Size="Size.Small" />
+            <span>Menú lateral</span>
+        </div>
+
+        <div class="nexo-settings-nav-item @(_seccion == "produccion" ? "ns-active" : "")"
+             @onclick='() => _seccion = "produccion"'>
+            <MudIcon Icon="@Icons.Material.Outlined.Tune" Size="Size.Small" />
+            <span>Preferencias</span>
+        </div>
+
+        <div class="nexo-settings-nav-divider"></div>
+        <div class="nexo-settings-nav-group">Soporte</div>
+
+        <div class="nexo-settings-nav-item @(_seccion == "ayuda" ? "ns-active" : "")"
+             @onclick='() => _seccion = "ayuda"'>
+            <MudIcon Icon="@Icons.Material.Outlined.HelpOutline" Size="Size.Small" />
+            <span>Ayuda</span>
+        </div>
+
+        <div class="nexo-settings-nav-item @(_seccion == "descanso" ? "ns-active" : "")"
+             @onclick='() => _seccion = "descanso"'>
+            <MudIcon Icon="@Icons.Material.Outlined.SelfImprovement" Size="Size.Small" />
+            <span>Descanso</span>
+        </div>
+
+        <AuthorizeView Roles="Administracion">
+            <Authorized>
+                <div class="nexo-settings-nav-divider"></div>
+                <div class="nexo-settings-nav-group">Empresa</div>
+
+                <div class="nexo-settings-nav-item @(_seccion == "negocio" ? "ns-active" : "")"
+                     @onclick='() => _seccion = "negocio"'>
+                    <MudIcon Icon="@Icons.Material.Outlined.Storefront" Size="Size.Small" />
+                    <span>Mi Negocio</span>
+                </div>
+
+                <div class="nexo-settings-nav-item @(_seccion == "tiponegocio" ? "ns-active" : "")"
+                     @onclick='() => _seccion = "tiponegocio"'>
+                    <MudIcon Icon="@Icons.Material.Outlined.BusinessCenter" Size="Size.Small" />
+                    <span>Tipo de Negocio</span>
+                </div>
+
+                <div class="nexo-settings-nav-item @(_seccion == "inventario" ? "ns-active" : "")"
+                     @onclick='() => _seccion = "inventario"'>
+                    <MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" />
+                    <span>Módulos</span>
+                </div>
+
+                <div class="nexo-settings-nav-item @(_seccion == "integraciones" ? "ns-active" : "")"
+                     @onclick='() => _seccion = "integraciones"'>
+                    <MudIcon Icon="@Icons.Material.Outlined.Extension" Size="Size.Small" />
+                    <span>Integraciones</span>
+                </div>
+
+                <div class="nexo-settings-nav-item ns-subitem"
+                     @onclick='() => Navegacion.NavigateTo("/settings/email")'>
+                    <MudIcon Icon="@Icons.Material.Outlined.Email" Size="Size.Small" />
+                    <span>Email</span>
+                    <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" Class="ns-chevron" />
+                </div>
+
+                <div class="nexo-settings-nav-item ns-subitem"
+                     @onclick='() => Navegacion.NavigateTo("/settings/whatsapp")'>
+                    <MudIcon Icon="@Icons.Material.Outlined.Chat" Size="Size.Small" />
+                    <span>WhatsApp</span>
+                    <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" Class="ns-chevron" />
+                </div>
+
+                <div class="nexo-settings-nav-item ns-subitem"
+                     @onclick='() => Navegacion.NavigateTo("/settings/automatizacion")'>
+                    <MudIcon Icon="@Icons.Material.Outlined.Autorenew" Size="Size.Small" />
+                    <span>Automatización CRM</span>
+                    <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" Class="ns-chevron" />
+                </div>
+            </Authorized>
+        </AuthorizeView>
+
+    </MudPaper>
+
+    @* â"€â"€ Panel de contenido â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ *@
+    <div class="nexo-settings-content">
+
+        @* â"€â"€ Perfil â"€â"€ *@
+        @if (_seccion == "perfil")
+        {
+            <MudPaper Class="pa-0" Style="overflow:hidden">
+                <div class="nexo-chart-header pa-5 pb-4" style="border-bottom:1px solid var(--mud-palette-lines-default)">
+                    <MudIcon Icon="@Icons.Material.Outlined.AccountCircle" Size="Size.Small" Class="nexo-chart-header__icon" />
+                    <div>
+                        <div class="nexo-chart-header__title">Mi perfil</div>
+                        <div class="nexo-chart-header__sub">Tu foto y nombre visibles en la plataforma</div>
+                    </div>
+                </div>
+
+                @* Foto + datos en layout horizontal *@
+                <div style="display:grid; grid-template-columns:clamp(140px,220px,30%) 1fr; gap:0; min-height:240px">
+
+                    @* Columna foto *@
+                    <div style="padding:24px; border-right:1px solid var(--mud-palette-lines-default);
+                                display:flex; flex-direction:column; align-items:center; gap:14px;
+                                background:color-mix(in srgb, var(--mud-palette-primary) 4%, transparent)">
+                        @if (AuthState.FotoPerfilDataUri is not null)
+                        {
+                            <div style="width:96px; height:96px; border-radius:50%; overflow:hidden;
+                                        border:3px solid var(--mud-palette-primary); flex-shrink:0">
+                                <img src="@AuthState.FotoPerfilDataUri" alt="Foto"
+                                     style="width:100%; height:100%; object-fit:cover" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="width:96px; height:96px; border-radius:50%;
+                                        background:var(--mud-palette-primary); color:#fff;
+                                        display:flex; align-items:center; justify-content:center;
+                                        font-size:2.2rem; font-weight:700; flex-shrink:0; letter-spacing:-1px">
+                                @(AuthState.Nombres?[0])@(AuthState.Apellidos?[0])
+                            </div>
+                        }
+
+                        <div style="font-weight:600; font-size:0.88rem; text-align:center; word-break:break-word">
+                            @AuthState.NombreCompleto
+                        </div>
+                        <div style="font-size:0.75rem; opacity:.6; text-align:center">@AuthState.Rol</div>
+
+                        <div style="display:flex; flex-direction:column; gap:6px; width:100%; margin-top:4px">
+                            <InputFile id="perfil-foto-input" OnChange="OnFotoPerfilSeleccionadaAsync"
+                                       accept="image/png,image/jpeg,image/webp" style="display:none;" />
+                            <label for="perfil-foto-input" class="nexo-perfil-panel__btn-archivo"
+                                   style="text-align:center; cursor:pointer">
+                                @(AuthState.FotoPerfilDataUri is null ? "Subir foto" : "Cambiar foto")
+                            </label>
+                            @if (AuthState.FotoPerfilDataUri is not null)
+                            {
+                                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                                           FullWidth="true" OnClick="QuitarFotoPerfilAsync" Disabled="_procesandoFotoPerfil">
+                                    Quitar foto
+                                </MudButton>
+                            }
+                        </div>
+                        <div style="font-size:0.68rem; opacity:.5; text-align:center">Maximo 1 MB.</div>
+                        @if (AuthState.Rol == "Administracion")
+                        {
+                            <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined"
+                                       FullWidth="true" OnClick="VolverEmpleadoAsync" Disabled="_volviendoEmpleado"
+                                       Style="margin-top:6px">
+                                @(_volviendoEmpleado ? "Procesando…" : "Volver a Empleado")
+                            </MudButton>
+                        }
+                    </div>
+
+                    @* Columna datos *@
+                    <div style="padding:24px; display:flex; flex-direction:column; gap:16px">
+                        <MudTextField @bind-Value="_perfilNombres" Label="Nombres" Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_perfilApellidos" Label="Apellidos" Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" />
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="GuardarPerfilAsync"
+                                   Disabled="@(_guardandoPerfil || string.IsNullOrWhiteSpace(_perfilNombres) || string.IsNullOrWhiteSpace(_perfilApellidos))">
+                            @(_guardandoPerfil ? "Guardando..." : "Guardar datos")
+                        </MudButton>
+
+                        <div style="font-size:0.75rem; opacity:.55; margin-top:4px">
+                            Esta informacion aparece en el menu lateral y en los registros del sistema.
+                        </div>
+                    </div>
+                </div>
+            </MudPaper>
+        }
+
+        @* â"€â"€ Apariencia â"€â"€ *@
+        @if (_seccion == "apariencia")
+        {
+            <MudPaper Class="pa-5">
+                <div class="nexo-chart-header mb-4">
+                    <MudIcon Icon="@Icons.Material.Outlined.Palette" Size="Size.Small" Class="nexo-chart-header__icon" />
+                    <div>
+                        <div class="nexo-chart-header__title">Apariencia</div>
+                        <div class="nexo-chart-header__sub">Se guarda para tu usuario — no afecta a los demas</div>
+                    </div>
+                </div>
+
+                <div class="d-flex align-center justify-space-between py-2">
+                    <div>
+                        <div style="font-weight:600; font-size:0.9rem;">Tema oscuro</div>
+                        <div style="font-size:0.78rem; color:var(--n-text-3);">
+                            Cambia el fondo de las paginas a oscuro. La barra superior y el menu lateral no cambian.
+                        </div>
+                    </div>
+                    <MudSwitch T="bool" Value="Preferencias.TemaOscuro" ValueChanged="OnTemaOscuroCambiadoAsync"
+                               Color="Color.Primary" />
+                </div>
+
+                <MudDivider Class="my-1" />
+
+                <div class="d-flex align-center justify-space-between py-2">
+                    <div>
+                        <div style="font-weight:600; font-size:0.9rem;">🐾 Modo antiestres</div>
+                        <div style="font-size:0.78rem; color:var(--n-text-3);">
+                            Cada cierto tiempo aparece un mensaje motivacional con compania canina. Para cuando el dia se pone pesado.
+                        </div>
+                    </div>
+                    <MudSwitch T="bool" Value="Preferencias.AntiestresActivo"
+                               ValueChanged="OnAntiestresActivoCambiadoAsync" Color="Color.Secondary" />
+                </div>
+                @if (Preferencias.AntiestresActivo)
+                {
+                    <div class="py-2">
+                        <div style="font-size:0.85rem; font-weight:600; margin-bottom:6px;">⏱ Frecuencia del recordatorio</div>
+                        <div class="d-flex align-center gap-3 flex-wrap">
+                            <MudNumericField T="int" Value="_intervaloMin" ValueChanged="OnIntervaloMinCambiadoAsync"
+                                            Label="Minutos" Min="0" Max="120" Style="max-width:110px"
+                                            Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudNumericField T="int" Value="_intervaloSegExtra" ValueChanged="OnIntervaloSegCambiadoAsync"
+                                            Label="Segundos extra" Min="0" Max="59" Style="max-width:130px"
+                                            Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <div style="font-size:0.78rem; color:var(--n-text-3);">
+                                = cada <strong>@(Preferencias.IntervaloAntiestresSeg)s</strong>
+                                @if (Preferencias.IntervaloAntiestresSeg < 60)
+                                {
+                                    <span>(@Preferencias.IntervaloAntiestresSeg segundos)</span>
+                                }
+                                else
+                                {
+                                    <span>(@(Preferencias.IntervaloAntiestresSeg / 60) min @(Preferencias.IntervaloAntiestresSeg % 60) seg)</span>
+                                }
+                            </div>
+                        </div>
+                        <div style="font-size:0.75rem; color:var(--n-text-3); margin-top:4px;">Minimo 10 segundos. El perrito aparecera con exactamente ese intervalo.</div>
+                    </div>
+                }
+            </MudPaper>
+        }
+
+        @* â"€â"€ Sesion â"€â"€ *@
+        else if (_seccion == "sesion")
+        {
+            <MudPaper Class="pa-5">
+                <div class="nexo-chart-header mb-4">
+                    <MudIcon Icon="@Icons.Material.Outlined.LockOpen" Size="Size.Small" Class="nexo-chart-header__icon" />
+                    <div>
+                        <div class="nexo-chart-header__title">Seguridad</div>
+                        <div class="nexo-chart-header__sub">Control de acceso y duración de tu sesión</div>
+                    </div>
+                </div>
+
+                <div class="d-flex align-center justify-space-between py-2">
+                    <div>
+                        <div style="font-weight:600; font-size:0.9rem;">Mantener sesion activa</div>
+                        <div style="font-size:0.78rem; color:var(--n-text-3);">
+                            Renueva el token automaticamente antes de que expire (util para pantallas de kiosco o trabajo continuo).
+                            Sin esta opcion, la sesion cierra al vencer el token (~60 min de inactividad).
+                        </div>
+                    </div>
+                    <MudSwitch T="bool" Value="Preferencias.MantenerSesionActiva"
+                               ValueChanged="OnMantenerSesionCambiadoAsync" Color="Color.Primary" />
+                </div>
+            </MudPaper>
+        }
+
+        @* â"€â"€ Menú lateral â"€â"€ *@
+        else if (_seccion == "menu")
+        {
+            <MudPaper Class="pa-0" Style="overflow:hidden">
+                <div class="nexo-chart-header pa-5 pb-4" style="border-bottom:1px solid var(--mud-palette-lines-default)">
+                    <MudIcon Icon="@Icons.Material.Outlined.ViewSidebar" Size="Size.Small" Class="nexo-chart-header__icon" />
+                    <div>
+                        <div class="nexo-chart-header__title">Menú lateral</div>
+                        <div class="nexo-chart-header__sub">Arrastra o usa las flechas para reordenar los grupos de navegación</div>
+                    </div>
+                </div>
+                <div class="pa-5">
+                    @{ var ordenActual = _ordenNavLocal; }
+                    <div style="display:flex; flex-direction:column; gap:8px; max-width:420px">
+                        @for (int i = 0; i < ordenActual.Count; i++)
+                        {
+                            var idx = i;
+                            var key = ordenActual[idx];
+                            <div style="display:flex; align-items:center; gap:10px; background:var(--mud-palette-surface);
+                                        border:1px solid var(--mud-palette-lines-default); border-radius:10px;
+                                        padding:10px 14px">
+                                <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Style="color:var(--mud-palette-text-tertiary); cursor:grab" Size="Size.Small" />
+                                <span style="flex:1; font-size:0.875rem; font-weight:500">@NombreGrupo(key)</span>
+                                <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp"
+                                               Size="Size.Small"
+                                               Disabled="@(idx == 0)"
+                                               OnClick="@(() => MoverGrupoArriba(idx))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown"
+                                               Size="Size.Small"
+                                               Disabled="@(idx == ordenActual.Count - 1)"
+                                               OnClick="@(() => MoverGrupoAbajo(idx))" />
+                            </div>
+                        }
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:20px">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="GuardarOrdenNavAsync"
+                                   Disabled="_guardandoOrdenNav">
+                            @(_guardandoOrdenNav ? "Guardando..." : "Guardar orden")
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                                   OnClick="RestablecerOrdenNavAsync">
+                            Restablecer
+                        </MudButton>
+                    </div>
+                </div>
+            </MudPaper>
+        }
+
+        @* â"€â"€ Produccion â"€â"€ *@
+        else if (_seccion == "produccion")
+        {
+            <MudPaper Class="pa-5">
+                <div class="nexo-chart-header mb-4">
+                    <MudIcon Icon="@Icons.Material.Outlined.Tune" Size="Size.Small" Class="nexo-chart-header__icon" />
+                    <div>
+                        <div class="nexo-chart-header__title">Preferencias</div>
+                        <div class="nexo-chart-header__sub">Ajustes personales del módulo de producción — solo afectan a tu usuario.</div>
+                    </div>
+                </div>
+
+                @* â"€â"€ OP â"€â"€ *@
+                <div class="d-flex align-center justify-space-between mb-1">
+                    <div>
+                        <div style="font-weight:600; font-size:0.9rem">Código de OP automático</div>
+                        <div style="font-size:0.78rem; color:var(--n-text-3)">
+                            Al crear una orden se pre-llena el código con el formato <strong>@Preferencias.PrefijoOP-YYYYMM-NNN</strong>.
+                            Puedes editarlo antes de guardar.
+                        </div>
+                    </div>
+                    <MudSwitch T="bool" Value="Preferencias.AutoCodigoOP"
+                               ValueChanged="OnAutoCodigoOPCambiadoAsync" Color="Color.Primary" />
+                </div>
+                @if (Preferencias.AutoCodigoOP)
+                {
+                    <div class="mt-2 mb-4" style="max-width:200px">
+                        <MudTextField T="string" Value="Preferencias.PrefijoOP"
+                                      ValueChanged="OnPrefijoOPCambiadoAsync"
+                                      Label="Prefijo" Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" HelperText="Máx. 6 caracteres"
+                                      MaxLength="6" />
+                    </div>
+                }
+                else { <div class="mb-4"></div> }
+
+                <MudDivider Class="mb-4" />
+
+                @* â"€â"€ Lote â"€â"€ *@
+                <div class="d-flex align-center justify-space-between mb-1">
+                    <div>
+                        <div style="font-weight:600; font-size:0.9rem">Número de lote automático</div>
+                        <div style="font-size:0.78rem; color:var(--n-text-3)">
+                            Al cerrar una OP se pre-llena el número de lote con el formato <strong>@Preferencias.PrefijoLote-YYYYMM-NNN</strong>.
+                            Puedes editarlo antes de confirmar.
+                        </div>
+                    </div>
+                    <MudSwitch T="bool" Value="Preferencias.AutoNumeroLote"
+                               ValueChanged="OnAutoNumeroLoteCambiadoAsync" Color="Color.Primary" />
+                </div>
+                @if (Preferencias.AutoNumeroLote)
+                {
+                    <div class="mt-2" style="max-width:200px">
+                        <MudTextField T="string" Value="Preferencias.PrefijoLote"
+                                      ValueChanged="OnPrefijoLoteCambiadoAsync"
+                                      Label="Prefijo" Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" HelperText="Máx. 6 caracteres"
+                                      MaxLength="6" />
+                    </div>
+                }
+            </MudPaper>
+        }
+
+        @* â"€â"€ Ayuda â"€â"€ *@
+        else if (_seccion == "ayuda")
+        {
+            <MudPaper Class="pa-5">
+                <div class="nexo-chart-header mb-4">
+                    <MudIcon Icon="@Icons.Material.Outlined.HelpOutline" Size="Size.Small" Class="nexo-chart-header__icon" />
+                    <div>
+                        <div class="nexo-chart-header__title">Ayuda</div>
+                        <div class="nexo-chart-header__sub">Guia para nuevos usuarios del sistema</div>
+                    </div>
+                </div>
+
+                <div class="d-flex align-center justify-space-between py-2">
+                    <div>
+                        <div style="font-weight:600; font-size:0.9rem;">Mostrar informacion en cada pagina</div>
+                        <div style="font-size:0.78rem; color:var(--n-text-3);">Muestra un icono con una breve explicacion arriba de cada pantalla.</div>
+                    </div>
+                    <MudSwitch T="bool" Value="Preferencias.MostrarAyuda" ValueChanged="OnMostrarAyudaCambiadoAsync" Color="Color.Primary" />
+                </div>
+
+                <MudDivider Class="my-3" />
+
+                <div class="d-flex align-center justify-space-between py-2">
+                    <div>
+                        <div style="font-weight:600; font-size:0.9rem;">Flujo de trabajo y contacto</div>
+                        <div style="font-size:0.78rem; color:var(--n-text-3);">Como funciona el sistema, y como escribirnos si necesitas ayuda.</div>
+                    </div>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Outlined.OpenInNew"
+                               OnClick="@(() => Navegacion.NavigateTo("/settings/ayuda"))">
+                        Ver guia
+                    </MudButton>
+                </div>
+            </MudPaper>
+        }
+
+        @* â"€â"€ Descanso â"€â"€ *@
+        else if (_seccion == "descanso")
+        {
+            <MudPaper Class="pa-0" Style="overflow:hidden">
+                <div class="nexo-chart-header pa-5 pb-4" style="border-bottom:1px solid var(--mud-palette-lines-default)">
+                    <MudIcon Icon="@Icons.Material.Outlined.SelfImprovement" Size="Size.Small" Class="nexo-chart-header__icon" />
+                    <div>
+                        <div class="nexo-chart-header__title">Descanso</div>
+                        <div class="nexo-chart-header__sub">Tómate un momento. Las burbujas no se van a explotar solas.</div>
+                    </div>
+                </div>
+
+                <div class="pa-5">
+                    <MudText Typo="Typo.body2" Class="mb-1" Style="color:var(--n-text-3)">
+                        @(_burbujasPopped.Count(x => x)) de @_burbujasPopped.Length explotadas
+                    </MudText>
+
+                    @if (_burbujasPopped.All(x => x))
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-3">
+                            ¡Todas explotadas! Ya puedes volver al trabajo.
+                        </MudAlert>
+                    }
+
+                    <div style="display:flex; flex-wrap:wrap; gap:6px; max-width:520px; margin-bottom:20px">
+                        @for (int i = 0; i < _burbujasPopped.Length; i++)
+                        {
+                            var idx = i;
+                            var popped = _burbujasPopped[idx];
+                            <div @onclick="() => ExplotarBurbuja(idx)"
+                                 title="@(popped ? "ya explotada" : "explotar")"
+                                 style="width:40px; height:40px; border-radius:50%;
+                                        cursor:@(popped ? "default" : "pointer");
+                                        background:@(popped ? "var(--mud-palette-lines-default)" : "var(--mud-palette-primary)");
+                                        box-shadow:@(popped ? "none" : "inset -2px -3px 5px rgba(0,0,0,.25), 2px 2px 5px rgba(0,0,0,.15)");
+                                        transform:@(popped ? "scale(0.82)" : "scale(1)");
+                                        transition:all .12s ease;
+                                        opacity:@(popped ? "0.35" : "1")">
+                            </div>
+                        }
+                    </div>
+
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                               StartIcon="@Icons.Material.Outlined.Refresh"
+                               OnClick="ReiniciarBurbujas">
+                        Nuevo lote
+                    </MudButton>
+                </div>
+            </MudPaper>
+        }
+
+        @* ── Tipo de Negocio (Administracion) ── *@
+        else if (_seccion == "tiponegocio")
+        {
+            <AuthorizeView Roles="Administracion">
+                <Authorized>
+                    <MudPaper Class="pa-5">
+                        <div class="nexo-chart-header mb-4">
+                            <MudIcon Icon="@Icons.Material.Outlined.BusinessCenter" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Tipo de Negocio</div>
+                                <div class="nexo-chart-header__sub">Activa módulos específicos según el rubro de tu empresa</div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem;">Sistema de Medidas</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                                    Activa campos de dimensiones físicas (largo, ancho, espesor, diámetro) en cada artículo,
+                                    más una calculadora de materiales con volumen, área, peso y pies tabla.
+                                    Ideal para carpinterías, madereras y negocios que trabajan con medidas.
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" Value="ConfiguracionEmpresa.SistemaMedidas"
+                                       ValueChanged="OnSistemaMedidasCambiadoAsync"
+                                       Color="Color.Primary" />
+                        </div>
+
+                        <MudDivider Class="my-4" />
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem;">Venta desde Receta</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                                    Al descontar stock de una factura, consume los insumos de la receta en vez del stock del producto terminado.
+                                    <strong>No usar junto con Órdenes de Producción manuales</strong> — los modos son excluyentes.
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" Value="ConfiguracionEmpresa.VentaDesdeReceta"
+                                       ValueChanged="OnVentaDesdeRecetaCambiadaAsync"
+                                       Color="Color.Warning" />
+                        </div>
+
+                        <MudDivider Class="my-4" />
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem;">Vender sin stock</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                                    Permite facturar artículos aunque no haya existencias disponibles. El stock puede quedar en valores negativos.
+                                    <strong>Úsalo solo si controlas el inventario fuera del sistema o tienes stock en tránsito.</strong>
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" Value="ConfiguracionEmpresa.VenderSinStock"
+                                       ValueChanged="OnVenderSinStockCambiadoAsync"
+                                       Color="Color.Error" />
+                        </div>
+
+                        <MudDivider Class="my-4" />
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem;">Sistema de Parqueaderos</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                                    Habilita el módulo de control de acceso vehicular: registro de entradas/salidas,
+                                    tarifas por tipo de vehículo y generación de tiquetes. Ideal para parqueaderos y edificios.
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" Value="false" Disabled="true" Color="Color.Info" />
+                        </div>
+
+                        <MudDivider Class="my-4" />
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem;">Sistema Restaurante</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                                    Activa la gestión de mesas, comandas y cocina: toma de pedidos por mesa,
+                                    impresión en cocina y liquidación de cuentas. Ideal para restaurantes y cafeterías.
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" Value="false" Disabled="true" Color="Color.Info" />
+                        </div>
+
+                        <MudDivider Class="my-4" />
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem;">Sistema de Seguimiento</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                                    Permite rastrear el estado de pedidos, entregas y servicios en tiempo real.
+                                    Clientes reciben notificaciones de avance y el equipo gestiona etapas desde un panel centralizado.
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" Value="false" Disabled="true" Color="Color.Info" />
+                        </div>
+                    </MudPaper>
+                </Authorized>
+            </AuthorizeView>
+        }
+
+        @* ── Mi Negocio (Administracion) ── *@
+        else if (_seccion == "negocio")
+        {
+            <AuthorizeView Roles="Administracion">
+                <Authorized>
+                    <MudPaper Class="pa-5">
+                        <div class="nexo-chart-header mb-4">
+                            <MudIcon Icon="@Icons.Material.Outlined.Storefront" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Mi Negocio</div>
+                                <div class="nexo-chart-header__sub">Nombre y logo que ven todos los usuarios en el menu lateral</div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-center" style="gap: 1rem;">
+                            <img src="@(ConfiguracionEmpresa.LogoDataUri ?? "/images/LogoV.png")" alt="Logo"
+                                 style="height: 40px; width: auto; object-fit: contain; border-radius: 6px;" />
+                            <div class="d-flex" style="gap: 0.5rem;">
+                                <InputFile id="nexo-logo-input" OnChange="OnLogoSeleccionadoAsync"
+                                           accept="image/png,image/jpeg,image/webp" style="display:none;" />
+                                <label for="nexo-logo-input" class="nexo-perfil-panel__btn-archivo">
+                                    @(ConfiguracionEmpresa.LogoDataUri is null ? "Subir logo" : "Cambiar logo")
+                                </label>
+                                @if (ConfiguracionEmpresa.LogoDataUri is not null)
+                                {
+                                    <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text" OnClick="QuitarLogoAsync" Disabled="_procesandoLogo">
+                                        Quitar
+                                    </MudButton>
+                                }
+                            </div>
+                        </div>
+                        <div style="font-size:0.7rem; color:var(--n-text-3); margin-top:0.5rem;">
+                            Maximo 1 MB. Se muestra siempre al mismo tamano (40px de alto) sin importar las dimensiones originales de la imagen.
+                        </div>
+
+                        <MudTextField T="string" @bind-Value="_nombreEmpresa" Label="Nombre del negocio" Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" Class="mt-4" />
+                        <MudTextField T="string" @bind-Value="_nombrePropietario" Label="Nombre del propietario (opcional)"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3"
+                                      Placeholder="Ej: Juan Perez" />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Class="mt-3"
+                                   OnClick="GuardarNombreEmpresaAsync" Disabled="@(_procesandoLogo || string.IsNullOrWhiteSpace(_nombreEmpresa))">
+                            Guardar
+                        </MudButton>
+                    </MudPaper>
+                </Authorized>
+            </AuthorizeView>
+        }
+
+        @* â"€â"€ Inventario y Produccion (Administracion) â"€â"€ *@
+        else if (_seccion == "inventario")
+        {
+            <AuthorizeView Roles="Administracion">
+                <Authorized>
+                    <MudPaper Class="pa-5">
+                        <div class="nexo-chart-header mb-4">
+                            <MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Módulos</div>
+                                <div class="nexo-chart-header__sub">Configuración global de inventario, producción y facturación</div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <div style="font-weight:600; font-size:0.9rem; margin-bottom:4px">Modo de seleccion de lotes</div>
+                            <div style="font-size:0.78rem; color:var(--n-text-3); margin-bottom:10px">
+                                Define como se elige el lote de materia prima al liberar una orden de produccion o registrar un consumo.
+                            </div>
+                            <MudButtonGroup OverrideStyles="false">
+                                <MudButton Variant="@(_modoLotes == "FIFO" ? Variant.Filled : Variant.Outlined)"
+                                           Color="@(_modoLotes == "FIFO" ? Color.Primary : Color.Default)"
+                                           StartIcon="@(_modoLotes == "FIFO" ? Icons.Material.Filled.Check : Icons.Material.Filled.Sort)"
+                                           OnClick="@(() => _modoLotes = "FIFO")">
+                                    Automatico (FIFO)
+                                </MudButton>
+                                <MudButton Variant="@(_modoLotes == "MANUAL" ? Variant.Filled : Variant.Outlined)"
+                                           Color="@(_modoLotes == "MANUAL" ? Color.Primary : Color.Default)"
+                                           StartIcon="@(_modoLotes == "MANUAL" ? Icons.Material.Filled.Check : Icons.Material.Filled.TouchApp)"
+                                           OnClick="@(() => _modoLotes = "MANUAL")">
+                                    Manual
+                                </MudButton>
+                            </MudButtonGroup>
+                            @if (_modoLotes == "FIFO")
+                            {
+                                <div style="font-size:0.75rem; color:var(--n-text-3); margin-top:6px">
+                                    El sistema usa siempre el primer lote ingresado (el mas antiguo) — sin intervencion del usuario.
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="font-size:0.75rem; color:var(--n-text-3); margin-top:6px">
+                                    Al liberar una orden el operario elige que lotes consumir (util cuando hay lotes de distintas calidades).
+                                </div>
+                            }
+                        </div>
+
+                        <MudDivider Class="mb-4" />
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem">Manejar fechas de vencimiento</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3)">
+                                    Activa alertas y validaciones cuando un lote esta proximo a vencer o ya vencio.
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" @bind-Value="_manejarVencimientos" Color="Color.Primary" />
+                        </div>
+
+                        @if (_manejarVencimientos)
+                        {
+                            <div class="mt-3" style="max-width:280px">
+                                <MudNumericField T="int" @bind-Value="_diasAlertaVencimiento"
+                                                 Label="Alertar con cuantos dias de anticipacion"
+                                                 Min="1" Max="365" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 HelperText="Se mostrara una advertencia cuando falten este numero de dias para que un lote venza." />
+                            </div>
+                        }
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Class="mt-4"
+                                   OnClick="GuardarConfigInventarioAsync" Disabled="_guardandoInventario">
+                            @(_guardandoInventario ? "Guardando..." : "Guardar configuracion de inventario")
+                        </MudButton>
+                    </MudPaper>
+
+                    @* ── Venta desde Receta ── *@
+                    <MudPaper Class="pa-5 rounded-xl" Elevation="0" Style="border:1px solid var(--mud-palette-lines-default)">
+                        <div class="d-flex align-center gap-3 mb-3">
+                            <MudIcon Icon="@Icons.Material.Outlined.MenuBook" Color="Color.Primary" Size="Size.Medium" />
+                            <div>
+                                <MudText Typo="Typo.subtitle1" Style="font-weight:700">Venta desde Receta</MudText>
+                                <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">
+                                    Al descontar stock de una factura, consume los insumos de la receta en vez del stock del producto terminado.
+                                </MudText>
+                            </div>
+                        </div>
+
+                        <MudAlert Severity="Severity.Warning" Class="mb-3" Dense="true">
+                            Todos los articulos de la factura deben tener una receta activa. Si alguno no tiene, el descuento falla.
+                        </MudAlert>
+
+                        <div class="d-flex align-center justify-space-between">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem">Activar Venta desde Receta</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3)">
+                                    Aplica a facturas de NEXO y de Visions. <strong>No usar junto con Órdenes de Producción manuales</strong> — los modos son excluyentes.
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" Value="ConfiguracionEmpresa.VentaDesdeReceta"
+                                       ValueChanged="OnVentaDesdeRecetaCambiadaAsync"
+                                       Color="Color.Warning" />
+                        </div>
+                    </MudPaper>
+
+                    @* â"€â"€ Numeracion de Documentos â"€â"€ *@
+                    <MudPaper Class="pa-5 rounded-xl" Elevation="0" Style="border:1px solid var(--mud-palette-lines-default)">
+                        <div class="d-flex align-center gap-3 mb-4">
+                            <MudIcon Icon="@Icons.Material.Outlined.Tag" Color="Color.Primary" Size="Size.Medium" />
+                            <div>
+                                <MudText Typo="Typo.subtitle1" Style="font-weight:700">Numeración de Documentos</MudText>
+                                <MudText Typo="Typo.caption" Style="color:var(--n-text-3)">
+                                    Define cómo se genera el número de documento al crear facturas y remisiones.
+                                </MudText>
+                            </div>
+                        </div>
+
+                        <AppSelect TValue="string" @bind-Value="_modoNroDoc" Label="Modo de numeración" Class="mb-3"
+                                   Items="@(new AppSelectItem<string>[]{ new("Manual — el usuario escribe el número","Manual"), new("Secuencial — contador propio de NEXO","Secuencial"), new("Aleatorio — 10 dígitos aleatorios","Aleatorio") })" />
+
+                        @if (_modoNroDoc == "Secuencial")
+                        {
+                            <MudNumericField T="long" @bind-Value="_ultimoNroDocSecuencial"
+                                             Label="Último número usado (el siguiente será este + 1)"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3"
+                                             Min="0" />
+                        }
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                                   OnClick="GuardarConfigNroDocAsync" Disabled="_guardandoNroDoc">
+                            @(_guardandoNroDoc ? "Guardando..." : "Guardar configuracion de numeracion")
+                        </MudButton>
+                    </MudPaper>
+                </Authorized>
+            </AuthorizeView>
+        }
+
+        @* â"€â"€ Integraciones (Administracion) â"€â"€ *@
+        else if (_seccion == "integraciones")
+        {
+            <AuthorizeView Roles="Administracion">
+                <Authorized>
+                    <MudPaper Class="pa-5">
+                        <div class="nexo-chart-header mb-4">
+                            <MudIcon Icon="@Icons.Material.Outlined.Extension" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Integraciones</div>
+                                <div class="nexo-chart-header__sub">Configura que sistemas externos usa esta empresa</div>
+                            </div>
+                        </div>
+
+                        <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Outlined.Info">
+                            <strong>¿Qué es Visions?</strong> Visions es el sistema de facturación/punto de venta externo
+                            con el que NEXO puede sincronizar ventas e inventario. Si esta empresa <strong>no usa Visions</strong>,
+                            desactiva esta opción para ocultar las funciones relacionadas (Mapeo de Artículos Visions,
+                            configuración Visions en Centros de Costo, etc.).
+                        </MudAlert>
+
+                        <div class="d-flex align-center justify-space-between py-2">
+                            <div>
+                                <div style="font-weight:600; font-size:0.9rem;">La empresa utiliza Visions</div>
+                                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                                    Activa o desactiva la integracion con Visions para toda la plataforma.
+                                </div>
+                            </div>
+                            <MudSwitch T="bool" Value="ConfiguracionEmpresa.UsaVisions"
+                                       ValueChanged="OnUsaVisionsCambiadoAsync"
+                                       Color="Color.Primary" />
+                        </div>
+
+                        @if (ConfiguracionEmpresa.UsaVisions)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true" Class="mt-2"
+                                       StartIcon="@Icons.Material.Outlined.SyncAlt"
+                                       OnClick="@(() => Navegacion.NavigateTo("/admin/integracion-visions"))">
+                                Estado del agente e instalacion
+                            </MudButton>
+                        }
+                    </MudPaper>
+                </Authorized>
+            </AuthorizeView>
+        }
+
+    </div>
+</div>
+
+@code {
+    private string _seccion = "apariencia";
+
+    // â"€â"€ Orden del menú lateral â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private static readonly List<string> _ordenNavDefault = new()
+    {
+        "ventas", "crm", "catalogo", "produccion", "inventario", "planificacion", "rrhh", "admin"
+    };
+    private static readonly Dictionary<string, string> _nombresGrupo = new()
+    {
+        ["ventas"]       = "Comercial",
+        ["crm"]          = "CRM",
+        ["catalogo"]     = "Catálogo",
+        ["produccion"]   = "Producción",
+        ["inventario"]   = "Inventario",
+        ["planificacion"]= "Planificación",
+        ["rrhh"]         = "Recursos Humanos",
+        ["admin"]        = "Administración",
+    };
+
+    private List<string> _ordenNavLocal = new();
+    private bool _guardandoOrdenNav;
+
+    private string NombreGrupo(string key) =>
+        _nombresGrupo.TryGetValue(key, out var n) ? n : key;
+
+    private void CargarOrdenNavLocal()
+    {
+        var guardado = Preferencias.OrdenGruposNav;
+        _ordenNavLocal = guardado.Count > 0
+            ? guardado.Concat(_ordenNavDefault.Except(guardado)).ToList()
+            : new List<string>(_ordenNavDefault);
+    }
+
+    private void MoverGrupoArriba(int idx)
+    {
+        if (idx <= 0) return;
+        (_ordenNavLocal[idx], _ordenNavLocal[idx - 1]) = (_ordenNavLocal[idx - 1], _ordenNavLocal[idx]);
+    }
+
+    private void MoverGrupoAbajo(int idx)
+    {
+        if (idx >= _ordenNavLocal.Count - 1) return;
+        (_ordenNavLocal[idx], _ordenNavLocal[idx + 1]) = (_ordenNavLocal[idx + 1], _ordenNavLocal[idx]);
+    }
+
+    private async Task GuardarOrdenNavAsync()
+    {
+        _guardandoOrdenNav = true;
+        await Preferencias.EstablecerOrdenGruposNavAsync(new List<string>(_ordenNavLocal));
+        _guardandoOrdenNav = false;
+        Snackbar.Add("Orden del menú guardado", Severity.Success);
+    }
+
+    private async Task RestablecerOrdenNavAsync()
+    {
+        _ordenNavLocal = new List<string>(_ordenNavDefault);
+        await Preferencias.EstablecerOrdenGruposNavAsync(new List<string>(_ordenNavDefault));
+        Snackbar.Add("Orden restablecido al predeterminado", Severity.Info);
+    }
+
+    private async Task OnTemaOscuroCambiadoAsync(bool nuevoValor)
+    {
+        await Preferencias.EstablecerTemaOscuroAsync(nuevoValor);
+    }
+
+    private async Task OnMostrarAyudaCambiadoAsync(bool nuevoValor)
+    {
+        await Preferencias.EstablecerMostrarAyudaAsync(nuevoValor);
+    }
+
+    private async Task OnMantenerSesionCambiadoAsync(bool nuevoValor)
+    {
+        await Preferencias.EstablecerMantenerSesionActivaAsync(nuevoValor);
+        Snackbar.Add(nuevoValor
+            ? "Sesion activa: el token se renovara automaticamente."
+            : "Sesion normal: cerrara al vencer el token.", Severity.Info);
+    }
+
+    private int _intervaloMin     => Preferencias.IntervaloAntiestresSeg / 60;
+    private int _intervaloSegExtra => Preferencias.IntervaloAntiestresSeg % 60;
+
+    private async Task OnAntiestresActivoCambiadoAsync(bool nuevoValor)
+    {
+        await Preferencias.EstablecerAntiestresActivoAsync(nuevoValor);
+        Snackbar.Add(nuevoValor
+            ? "Modo antiestres activado 🐾 El perrito aparecera cada cierto tiempo."
+            : "Modo antiestres desactivado.", Severity.Info);
+    }
+
+    private async Task OnIntervaloMinCambiadoAsync(int min)
+    {
+        var seg = Math.Max(0, min) * 60 + _intervaloSegExtra;
+        if (seg < 10) seg = 10;
+        await Preferencias.EstablecerIntervaloAntiestresSeg(seg);
+    }
+
+    private async Task OnIntervaloSegCambiadoAsync(int segExtra)
+    {
+        var seg = _intervaloMin * 60 + Math.Max(0, segExtra);
+        if (seg < 10) seg = 10;
+        await Preferencias.EstablecerIntervaloAntiestresSeg(seg);
+    }
+
+    // â"€â"€ Descanso (burbujas) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private bool[] _burbujasPopped = new bool[70];
+    private void ExplotarBurbuja(int idx) { if (!_burbujasPopped[idx]) _burbujasPopped[idx] = true; }
+    private void ReiniciarBurbujas() => _burbujasPopped = new bool[70];
+
+    // â"€â"€ Integraciones (Administracion) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private async Task OnUsaVisionsCambiadoAsync(bool nuevoValor)
+    {
+        if (!nuevoValor)
+        {
+            var confirm = await DialogService.ShowMessageBox(
+                "Desactivar integración con Visions",
+                "Al desactivar Visions se ocultarán el Mapeo de Artículos, la configuración Visions en Centros de Costo y todas las menciones relacionadas. Los datos guardados no se eliminan y puedes volver a activarlo cuando quieras. ¿Confirmas?",
+                yesText: "Sí, desactivar", cancelText: "Cancelar");
+
+            if (confirm != true) return;
+        }
+
+        try
+        {
+            await ConfiguracionEmpresa.ActualizarUsaVisionsAsync(nuevoValor);
+            Snackbar.Add(nuevoValor ? "Integracion con Visions activada." : "Integracion con Visions desactivada.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // â"€â"€ Inventario y Produccion (Administracion) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private string _modoLotes = "FIFO";
+    private bool _manejarVencimientos;
+    private int _diasAlertaVencimiento = 7;
+    private bool _guardandoInventario;
+
+    // â"€â"€ Numeracion de Documentos (Administracion) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private string _modoNroDoc = "Manual";
+    private long _ultimoNroDocSecuencial = 0;
+    private bool _guardandoNroDoc;
+
+    // â"€â"€ Produccion (Personal) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private async Task OnAutoCodigoOPCambiadoAsync(bool v)    => await Preferencias.EstablecerAutoCodigoOPAsync(v);
+    private async Task OnPrefijoOPCambiadoAsync(string v)     { if (!string.IsNullOrWhiteSpace(v)) await Preferencias.EstablecerPrefijoOPAsync(v); }
+    private async Task OnAutoNumeroLoteCambiadoAsync(bool v)  => await Preferencias.EstablecerAutoNumeroLoteAsync(v);
+    private async Task OnPrefijoLoteCambiadoAsync(string v)   { if (!string.IsNullOrWhiteSpace(v)) await Preferencias.EstablecerPrefijoLoteAsync(v); }
+
+    private async Task GuardarConfigNroDocAsync()
+    {
+        _guardandoNroDoc = true;
+        try
+        {
+            await ConfiguracionEmpresa.ActualizarConfigNroDocAsync(_modoNroDoc, _ultimoNroDocSecuencial);
+            Snackbar.Add("Configuracion de numeracion guardada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardandoNroDoc = false; }
+    }
+
+    private async Task GuardarConfigInventarioAsync()
+    {
+        _guardandoInventario = true;
+        try
+        {
+            await ConfiguracionEmpresa.ActualizarConfigInventarioAsync(
+                _manejarVencimientos, _diasAlertaVencimiento, _modoLotes);
+            Snackbar.Add("Configuracion de inventario guardada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardandoInventario = false; }
+    }
+
+    private async Task OnVentaDesdeRecetaCambiadaAsync(bool nuevoValor)
+    {
+        try
+        {
+            await ConfiguracionEmpresa.ActualizarVentaDesdeRecetaAsync(nuevoValor);
+            Snackbar.Add(nuevoValor
+                ? "Venta desde Receta activada. El stock de insumos se descontara al facturar."
+                : "Venta desde Receta desactivada. El stock del producto terminado se descontara al facturar.",
+                Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task OnSistemaMedidasCambiadoAsync(bool nuevoValor)
+    {
+        try
+        {
+            await ConfiguracionEmpresa.ActualizarSistemaMedidasAsync(nuevoValor);
+            Snackbar.Add(nuevoValor
+                ? "Sistema de Medidas activado. Los artículos mostrarán campos de dimensiones físicas."
+                : "Sistema de Medidas desactivado.",
+                Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task OnVenderSinStockCambiadoAsync(bool nuevoValor)
+    {
+        try
+        {
+            await ConfiguracionEmpresa.ActualizarVenderSinStockAsync(nuevoValor);
+            Snackbar.Add(nuevoValor
+                ? "Vender sin stock activado. El sistema no bloqueará facturas por falta de existencias."
+                : "Vender sin stock desactivado. El sistema validará stock antes de facturar.",
+                Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // â"€â"€ Mi Negocio (Administracion) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private string _nombreEmpresa = "";
+    private string? _nombrePropietario;
+    private bool _procesandoLogo;
+
+    // â"€â"€ Mi Perfil â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private string _perfilNombres = "";
+    private string _perfilApellidos = "";
+    private bool _guardandoPerfil;
+    private bool _procesandoFotoPerfil;
+    private bool _volviendoEmpleado;
+
+    private async Task GuardarPerfilAsync()
+    {
+        _guardandoPerfil = true;
+        try
+        {
+            var resp = await ApiClient.PutAsync<ActualizarPerfilRequest, PerfilActualizadoResponse>(
+                "api/auth/perfil", new ActualizarPerfilRequest(_perfilNombres.Trim(), _perfilApellidos.Trim()));
+            await AuthState.ActualizarNombreAsync(_perfilNombres.Trim(), _perfilApellidos.Trim());
+            Snackbar.Add("Datos actualizados correctamente.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardandoPerfil = false; }
+    }
+
+    private async Task VolverEmpleadoAsync()
+    {
+        _volviendoEmpleado = true;
+        try
+        {
+            var resp = await ApiClient.PostAsync<object, RenovarResponse>("api/auth/volver-empleado", new { });
+            await AuthState.ActualizarTokenYRolAsync(resp.AccessToken, resp.ExpiraEn, "Empleados");
+            Snackbar.Add("Ahora eres Empleado. Las páginas protegidas se actualizarán.", Severity.Info);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _volviendoEmpleado = false; }
+    }
+
+    private async Task OnFotoPerfilSeleccionadaAsync(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 1_000_000;
+        if (e.File.Size > maxBytes)
+        {
+            Snackbar.Add("La imagen es muy grande (maximo 1 MB).", Severity.Warning);
+            return;
+        }
+        _procesandoFotoPerfil = true;
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxBytes);
+            using var memoria = new MemoryStream();
+            await stream.CopyToAsync(memoria);
+            var base64 = Convert.ToBase64String(memoria.ToArray());
+            await ApiClient.PutAsync<ActualizarFotoPerfilRequest, object?>(
+                "api/auth/perfil/foto", new ActualizarFotoPerfilRequest(base64, e.File.ContentType));
+            await AuthState.ActualizarFotoAsync(base64, e.File.ContentType);
+            Snackbar.Add("Foto actualizada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _procesandoFotoPerfil = false; }
+    }
+
+    private async Task QuitarFotoPerfilAsync()
+    {
+        _procesandoFotoPerfil = true;
+        try
+        {
+            await ApiClient.DeleteAsync("api/auth/perfil/foto");
+            await AuthState.EliminarFotoAsync();
+            Snackbar.Add("Foto eliminada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _procesandoFotoPerfil = false; }
+    }
+
+    protected override void OnInitialized()
+    {
+        CargarOrdenNavLocal();
+        _nombreEmpresa = ConfiguracionEmpresa.NombreEmpresa;
+        _nombrePropietario = ConfiguracionEmpresa.NombrePropietario;
+        _modoLotes = ConfiguracionEmpresa.ModoLotes;
+        _manejarVencimientos = ConfiguracionEmpresa.ManejarVencimientos;
+        _diasAlertaVencimiento = ConfiguracionEmpresa.DiasAlertaVencimiento;
+        _modoNroDoc = ConfiguracionEmpresa.ModoNroDoc;
+        _ultimoNroDocSecuencial = ConfiguracionEmpresa.UltimoNroDocSecuencial;
+        _perfilNombres = AuthState.Nombres ?? "";
+        _perfilApellidos = AuthState.Apellidos ?? "";
+    }
+
+    private async Task GuardarNombreEmpresaAsync()
+    {
+        try
+        {
+            await ConfiguracionEmpresa.ActualizarNombreAsync(
+                _nombreEmpresa.Trim(),
+                string.IsNullOrWhiteSpace(_nombrePropietario) ? null : _nombrePropietario.Trim());
+            Snackbar.Add("Datos del negocio actualizados.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task OnLogoSeleccionadoAsync(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 1_000_000;
+
+        if (e.File.Size > maxBytes)
+        {
+            Snackbar.Add("La imagen es muy grande (maximo 1 MB).", Severity.Warning);
+            return;
+        }
+
+        _procesandoLogo = true;
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxBytes);
+            using var memoria = new MemoryStream();
+            await stream.CopyToAsync(memoria);
+            var base64 = Convert.ToBase64String(memoria.ToArray());
+
+            await ConfiguracionEmpresa.ActualizarLogoAsync(base64, e.File.ContentType);
+            Snackbar.Add("Logo actualizado.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _procesandoLogo = false;
+        }
+    }
+
+    private async Task QuitarLogoAsync()
+    {
+        _procesandoLogo = true;
+        try
+        {
+            await ConfiguracionEmpresa.EliminarLogoAsync();
+            Snackbar.Add("Logo eliminado.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _procesandoLogo = false;
+        }
+    }
+}
+

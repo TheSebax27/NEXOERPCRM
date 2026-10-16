@@ -1,0 +1,134 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.subtitle2" Class="mb-1">@_cotizacionActual.Cliente</MudText>
+        <div class="d-flex flex-wrap mb-3" style="gap: 0.4rem;">
+            <MudChip T="string" Size="Size.Small" Color="@ColorEstado(_cotizacionActual.Estado)">@_cotizacionActual.Estado</MudChip>
+            <MudChip T="string" Size="Size.Small">Total: @_cotizacionActual.Total.ToString("C0")</MudChip>
+            @if (_cotizacionActual.FacturaID is not null)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Info">Factura #@_cotizacionActual.FacturaID</MudChip>
+            }
+        </div>
+
+        @if (_lineas.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin artículos.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_lineas" Dense="true" Hover="true" Elevation="0" Class="mb-4">
+                <HeaderContent>
+                    <MudTh>Articulo</MudTh>
+                    <MudTh Style="text-align:right">Cantidad</MudTh>
+                    <MudTh Style="text-align:right">Precio Unit.</MudTh>
+                    <MudTh Style="text-align:right">Subtotal</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Articulo">
+                        @if (context.ComboID.HasValue)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Secondary"
+                                     Icon="@Icons.Material.Filled.LocalOffer" Class="ma-0 mr-1">COMBO</MudChip>
+                        }
+                        @(context.SkuArticulo is not null ? $"{context.SkuArticulo} - " : "")@context.NombreArticulo
+                    </MudTd>
+                    <MudTd DataLabel="Cantidad" Style="text-align:right">@context.Cantidad.ToString("0.##")</MudTd>
+                    <MudTd DataLabel="Precio Unit." Style="text-align:right">@context.PrecioUnitario.ToString("C0")</MudTd>
+                    <MudTd DataLabel="Subtotal" Style="text-align:right">@context.Subtotal.ToString("C0")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+
+        @if (_cotizacionActual.FacturaID is null)
+        {
+            <div class="d-flex flex-wrap" style="gap: 0.5rem;">
+                @if (_cotizacionActual.Estado == "BORRADOR")
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => CambiarEstadoAsync("ENVIADA"))">Marcar Enviada</MudButton>
+                }
+                @if (_cotizacionActual.Estado is "BORRADOR" or "ENVIADA")
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" OnClick="@(() => CambiarEstadoAsync("ACEPTADA"))">Marcar Aceptada</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" OnClick="@(() => CambiarEstadoAsync("RECHAZADA"))">Marcar Rechazada</MudButton>
+                }
+                @if (_cotizacionActual.Estado == "ACEPTADA")
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="ConvertirAFacturaAsync" Disabled="_convirtiendo">
+                        Generar Factura
+                    </MudButton>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public CotizacionItem Cotizacion { get; set; } = default!;
+
+    private CotizacionItem _cotizacionActual = default!;
+    private List<CotizacionLineaItem> _lineas = new();
+    private bool _convirtiendo;
+
+    private Color ColorEstado(string estado) => estado switch
+    {
+        "ACEPTADA" => Color.Success,
+        "RECHAZADA" => Color.Error,
+        "VENCIDA" => Color.Error,
+        "ENVIADA" => Color.Info,
+        _ => Color.Default
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cotizacionActual = Cotizacion;
+        _lineas = await ApiClient.GetAsync<List<CotizacionLineaItem>>($"api/crm/cotizaciones/{_cotizacionActual.CotizacionID}/lineas") ?? new();
+    }
+
+    private async Task CambiarEstadoAsync(string nuevoEstado)
+    {
+        try
+        {
+            await ApiClient.PutAsync<ActualizarEstadoCotizacionRequest, object?>(
+                $"api/crm/cotizaciones/{_cotizacionActual.CotizacionID}/estado", new ActualizarEstadoCotizacionRequest(nuevoEstado));
+            _cotizacionActual = _cotizacionActual with { Estado = nuevoEstado };
+            Snackbar.Add("Estado actualizado.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ConvertirAFacturaAsync()
+    {
+        _convirtiendo = true;
+        try
+        {
+            var respuesta = await ApiClient.PostAsync<object?, ConvertirCotizacionResponse>(
+                $"api/crm/cotizaciones/{_cotizacionActual.CotizacionID}/convertir-a-factura", null);
+            if (respuesta is not null)
+            {
+                _cotizacionActual = _cotizacionActual with { FacturaID = respuesta.FacturaId, Estado = "ACEPTADA" };
+                Snackbar.Add($"Factura #{respuesta.FacturaId} generada correctamente.", Severity.Success);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _convirtiendo = false;
+        }
+    }
+
+    private void Cerrar() => MudDialog.Close(DialogResult.Ok(true));
+}

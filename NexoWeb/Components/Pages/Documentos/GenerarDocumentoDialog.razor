@@ -1,0 +1,427 @@
+@using NexoWeb.Common.Dtos
+@using System.Text.Json
+@implements IAsyncDisposable
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudDialog Style="min-width: 780px; max-width: 900px;">
+    <DialogContent>
+        @if (_paso == 1)
+        {
+            @* ── Paso 1: Seleccionar plantilla y llenar variables ──*@
+            @if (!_inicializando && !_plantillas.Any())
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-3">
+                    No hay plantillas activas. Crea una plantilla antes de generar un documento.
+                </MudAlert>
+            }
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudSelect T="PlantillaResumen?" Value="_plantillaSeleccionada"
+                               ValueChanged="OnPlantillaChanged"
+                               Label="Plantilla" Variant="Variant.Outlined" Required="true"
+                               ToStringFunc="@(p => p?.Nombre ?? "")">
+                        @foreach (var p in _plantillas)
+                        {
+                            <MudSelectItem T="PlantillaResumen?" Value="@p">@p.Nombre (@p.TipoEntidad)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                @if (_plantillaSeleccionada is not null)
+                {
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_titulo" Label="Título del documento"
+                                      Required="true" Variant="Variant.Outlined" />
+                    </MudItem>
+
+                    @* Entidad vinculada según TipoEntidad *@
+                    @if (_plantillaSeleccionada.TipoEntidad == "CLIENTE")
+                    {
+                        <MudItem xs="12">
+                            <ClienteAutocomplete Value="_clienteSeleccionado"
+                                                 ValueChanged="@(c => _clienteSeleccionado = c)"
+                                                 Label="Cliente" Class="" />
+                        </MudItem>
+                    }
+                    else if (_plantillaSeleccionada.TipoEntidad == "PROVEEDOR")
+                    {
+                        <MudItem xs="12">
+                            <MudAutocomplete T="ProveedorItem?" Value="_proveedorSeleccionado"
+                                             ValueChanged="@(p => _proveedorSeleccionado = p)"
+                                             Label="Proveedor"
+                                             SearchFunc="BuscarProveedores"
+                                             ToStringFunc="@(p => p is null ? "" : p.RazonSocial)"
+                                             Variant="Variant.Outlined"
+                                             MinCharacters="0" ResetValueOnEmptyText="true" DebounceInterval="200" />
+                        </MudItem>
+                    }
+                    else if (_plantillaSeleccionada.TipoEntidad == "EMPLEADO")
+                    {
+                        <MudItem xs="12">
+                            <MudAutocomplete T="EmpleadoItem?" Value="_empleadoSeleccionado"
+                                             ValueChanged="@(e => _empleadoSeleccionado = e)"
+                                             Label="Empleado"
+                                             SearchFunc="BuscarEmpleados"
+                                             ToStringFunc="@(e => e is null ? "" : $"{e.Nombres} {e.Apellidos}")"
+                                             Variant="Variant.Outlined"
+                                             MinCharacters="0" ResetValueOnEmptyText="true" DebounceInterval="200" />
+                        </MudItem>
+                    }
+
+                    @* Variables a completar *@
+                    @if (_variables.Count > 0)
+                    {
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Campos del documento</MudText>
+                        </MudItem>
+                        @foreach (var variable in _variables)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudTextField T="string"
+                                              Value="@(_valoresVariables.TryGetValue(variable, out var vv) ? vv : string.Empty)"
+                                              ValueChanged="@((string v) => _valoresVariables[variable] = v)"
+                                              Label="@FormatearNombreVariable(variable)"
+                                              Variant="Variant.Outlined" />
+                            </MudItem>
+                        }
+                    }
+
+                    <MudItem xs="12">
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.subtitle2" Class="mb-1">Vista previa</MudText>
+                        <div class="nexo-doc-preview"
+                             style="background: #ffffff; color: #1a1a1a; border: 1px solid #E5E7EB; border-radius: 8px;
+                                    padding: 16px 20px; max-height: 260px; overflow-y: auto;
+                                    font-family: Georgia, 'Times New Roman', serif; font-size: 0.85rem; line-height: 1.6;">
+                            @((MarkupString)VistaPrevia)
+                        </div>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+        else
+        {
+            @* ── Paso 2: Firma digital ──────────────────────────── *@
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle1">Firma del documento</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-2" Style="color: var(--n-text-3);">
+                        Dibuja tu firma o sube una imagen. Puedes omitir este paso.
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_firmaNombre" Label="Nombre del firmante"
+                                  Variant="Variant.Outlined" Class="mb-2" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" Class="mb-3">
+                        <MudButton Color="@(_firmaModoDibujo ? Color.Primary : Color.Default)"
+                                   OnClick="@(() => { _firmaModoDibujo = true; _firmaImagenBase64 = null; })">
+                            ✏️ Dibujar
+                        </MudButton>
+                        <MudButton Color="@(!_firmaModoDibujo ? Color.Primary : Color.Default)"
+                                   OnClick="@(() => _firmaModoDibujo = false)">
+                            🖼️ Subir imagen
+                        </MudButton>
+                    </MudButtonGroup>
+                </MudItem>
+                @if (_firmaModoDibujo)
+                {
+                    <MudItem xs="12">
+                        <div style="border: 2px dashed #6C5CE7; border-radius: 8px; overflow: hidden; background: #fff;">
+                            <canvas id="@_canvasId"
+                                    style="width: 100%; height: 160px; display: block; cursor: crosshair;" />
+                        </div>
+                        <div class="d-flex justify-end mt-1">
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       OnClick="LimpiarFirmaAsync">Limpiar</MudButton>
+                        </div>
+                    </MudItem>
+                }
+                else
+                {
+                    <MudItem xs="12">
+                        @if (_firmaImagenBase64 is null)
+                        {
+                            <label style="display:block; border: 2px dashed #6C5CE7; border-radius: 8px;
+                                          padding: 2rem; text-align: center; cursor: pointer; background: #f9f9ff;">
+                                <MudIcon Icon="@Icons.Material.Outlined.CloudUpload"
+                                         Style="font-size:2rem; color:#6C5CE7; display:block; margin: 0 auto 0.5rem;" />
+                                <span style="color:#6C5CE7; font-size:0.85rem;">
+                                    Haz clic para seleccionar imagen de firma
+                                </span>
+                                <br /><span style="color:#999; font-size:0.75rem;">PNG, JPG o WebP · Máx. 500 KB</span>
+                                <InputFile OnChange="OnFirmaImagenAsync" accept="image/png,image/jpeg,image/webp"
+                                           style="display:none;" />
+                            </label>
+                        }
+                        else
+                        {
+                            <div style="border: 1px solid #E5E7EB; border-radius: 8px; padding: 8px; background: #fff; text-align:center;">
+                                <img src="@_firmaImagenBase64" alt="Firma"
+                                     style="max-height: 120px; max-width: 100%; object-fit: contain;" />
+                            </div>
+                            <div class="d-flex justify-end mt-1">
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           OnClick="@(() => _firmaImagenBase64 = null)">Quitar imagen</MudButton>
+                            </div>
+                        }
+                        @if (_firmaImagenError is not null)
+                        {
+                            <MudText Style="color:var(--n-error); font-size:0.8rem;" Class="mt-1">@_firmaImagenError</MudText>
+                        }
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_paso == 2)
+        {
+            <MudButton OnClick="VolverpPaso1">Atrás</MudButton>
+            <MudButton Color="Color.Secondary" Variant="Variant.Outlined"
+                       OnClick="@(() => GuardarAsync(conFirma: false))" Disabled="_guardando">
+                Sin firma
+            </MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        }
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="@(async () => { if (_paso == 1) IrAPaso2(); else await GuardarAsync(conFirma: true); })"
+                   Disabled="@(_guardando || _plantillaSeleccionada is null)">
+            @if (_guardando)
+            { <span>Generando...</span> }
+            else if (_paso == 1)
+            { <span>Siguiente: Firma</span> }
+            else
+            { <span>Guardar con firma</span> }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    private int _paso = 1;
+    private string _canvasId = $"firma-canvas-{Guid.NewGuid():N}";
+    private bool _canvasInicializado;
+
+    private List<PlantillaResumen> _plantillas = new();
+    private List<ProveedorItem> _proveedores = new();
+    private List<EmpleadoItem> _empleados = new();
+
+    private PlantillaResumen? _plantillaSeleccionada;
+    private PlantillaDetalle? _plantillaDetalle;
+    private ClienteItem? _clienteSeleccionado;
+    private ProveedorItem? _proveedorSeleccionado;
+    private EmpleadoItem? _empleadoSeleccionado;
+
+    private string _titulo = string.Empty;
+    private List<string> _variables = new();
+    private Dictionary<string, string> _valoresVariables = new();
+    private string _firmaNombre = string.Empty;
+    private bool _guardando;
+    private bool _inicializando = true;
+    private bool _firmaModoDibujo = true;
+    private string? _firmaImagenBase64;
+    private string? _firmaImagenError;
+
+    private string VistaPrevia =>
+        _plantillaDetalle is null
+            ? string.Empty
+            : SustituirVariables(_plantillaDetalle.Cuerpo, _valoresVariables);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaPlantillas  = ApiClient.GetAsync<List<PlantillaResumen>>("api/documentos/plantillas");
+            var tareaProveedores = ApiClient.GetAsync<List<ProveedorItem>>("api/catalogo/proveedores");
+            var tareaEmpleados   = ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true");
+
+            await Task.WhenAll(tareaPlantillas, tareaProveedores, tareaEmpleados);
+
+            _plantillas  = tareaPlantillas.IsCompletedSuccessfully  ? tareaPlantillas.Result  ?? new() : new();
+            _proveedores = tareaProveedores.IsCompletedSuccessfully ? tareaProveedores.Result ?? new() : new();
+            _empleados   = tareaEmpleados.IsCompletedSuccessfully   ? tareaEmpleados.Result   ?? new() : new();
+            _plantillas  = _plantillas.Where(p => p.Activa).ToList();
+            _inicializando = false;
+        }
+        catch (Exception ex)
+        {
+            _inicializando = false;
+            Snackbar.Add($"Error al cargar datos del formulario: {ex.Message}", Severity.Error);
+            MudDialog.Close(DialogResult.Cancel());
+        }
+    }
+
+    private async Task OnPlantillaChanged(PlantillaResumen? plantilla)
+    {
+        _plantillaSeleccionada = plantilla;
+        _variables.Clear();
+        _valoresVariables.Clear();
+        _plantillaDetalle = null;
+
+        if (plantilla is null) return;
+
+        _titulo = plantilla.Nombre;
+        try
+        {
+            _plantillaDetalle = await ApiClient.GetAsync<PlantillaDetalle>(
+                $"api/documentos/plantillas/{plantilla.PlantillaID}");
+
+            if (_plantillaDetalle?.Variables is not null)
+            {
+                try
+                {
+                    _variables = JsonSerializer.Deserialize<List<string>>(_plantillaDetalle.Variables) ?? new();
+                    foreach (var v in _variables)
+                        _valoresVariables[v] = string.Empty;
+                }
+                catch { /* Variables mal formadas, se ignoran */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar detalle de plantilla: {ex.Message}", Severity.Warning);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task<IEnumerable<ProveedorItem>> BuscarProveedores(string? texto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return _proveedores.Take(15);
+        return _proveedores.Where(p => p.RazonSocial.Contains(texto, StringComparison.OrdinalIgnoreCase))
+                           .Take(15);
+    }
+
+    private async Task<IEnumerable<EmpleadoItem>> BuscarEmpleados(string? texto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return _empleados.Take(15);
+        return _empleados.Where(e =>
+            (e.Nombres + " " + e.Apellidos).Contains(texto, StringComparison.OrdinalIgnoreCase))
+            .Take(15);
+    }
+
+    private void IrAPaso2()
+    {
+        if (_plantillaSeleccionada is null || string.IsNullOrWhiteSpace(_titulo)) return;
+        _paso = 2;
+    }
+
+    private void VolverpPaso1() { _paso = 1; _canvasInicializado = false; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_paso == 2 && !_canvasInicializado)
+        {
+            _canvasInicializado = true;
+            await InicializarCanvasAsync();
+        }
+    }
+
+    private async Task InicializarCanvasAsync()
+    {
+        try { await JS.InvokeVoidAsync("signaturePadInterop.init", _canvasId); }
+        catch { /* JS aún no cargado */ }
+    }
+
+    private async Task LimpiarFirmaAsync()
+    {
+        try { await JS.InvokeVoidAsync("signaturePadInterop.clear", _canvasId); }
+        catch { /* ignorar */ }
+    }
+
+    private async Task OnFirmaImagenAsync(InputFileChangeEventArgs e)
+    {
+        _firmaImagenError = null;
+        const long max = 500_000;
+        if (e.File.Size > max) { _firmaImagenError = "La imagen supera 500 KB."; return; }
+        using var stream = e.File.OpenReadStream(max);
+        using var mem = new MemoryStream();
+        await stream.CopyToAsync(mem);
+        var base64 = Convert.ToBase64String(mem.ToArray());
+        _firmaImagenBase64 = $"data:{e.File.ContentType};base64,{base64}";
+    }
+
+    private async Task GuardarAsync(bool conFirma)
+    {
+        if (_plantillaSeleccionada is null || string.IsNullOrWhiteSpace(_titulo)) return;
+
+        _guardando = true;
+        int documentoId = 0;
+        try
+        {
+            var contenido = SustituirVariables(_plantillaDetalle?.Cuerpo ?? string.Empty, _valoresVariables);
+            var req = new GenerarDocumentoRequest(
+                _plantillaSeleccionada.PlantillaID, _titulo, contenido,
+                _clienteSeleccionado?.ClienteID,
+                _proveedorSeleccionado?.ProveedorID,
+                _empleadoSeleccionado?.EmpleadoID);
+            documentoId = await ApiClient.PostAsync<GenerarDocumentoRequest, int>("api/documentos", req);
+        }
+        catch
+        {
+            Snackbar.Add("Error al crear el documento.", Severity.Error);
+            _guardando = false;
+            return;
+        }
+
+        if (conFirma && documentoId > 0)
+        {
+            try
+            {
+                string? firmaBase64 = null;
+                if (_firmaModoDibujo)
+                {
+                    try { firmaBase64 = await JS.InvokeAsync<string?>("signaturePadInterop.toDataURL", _canvasId); }
+                    catch { /* JS aún no cargado */ }
+                }
+                else
+                {
+                    firmaBase64 = _firmaImagenBase64;
+                }
+
+                if (!string.IsNullOrEmpty(firmaBase64))
+                {
+                    var firmaReq = new AgregarFirmaRequest(firmaBase64, _firmaNombre);
+                    await ApiClient.PostAsync<AgregarFirmaRequest, object?>(
+                        $"api/documentos/{documentoId}/firma", firmaReq);
+                }
+            }
+            catch { Snackbar.Add("Documento creado, pero no se pudo guardar la firma.", Severity.Warning); }
+        }
+
+        Snackbar.Add("Documento generado correctamente.", Severity.Success);
+        _guardando = false;
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+
+    private static string SustituirVariables(string cuerpo, Dictionary<string, string> valores)
+    {
+        var resultado = cuerpo;
+        foreach (var (key, value) in valores)
+        {
+            var encoded = System.Net.WebUtility.HtmlEncode(value ?? "");
+            resultado = resultado.Replace($"{{{{{key}}}}}", encoded);
+        }
+        return resultado;
+    }
+
+    private static string FormatearNombreVariable(string variable) =>
+        System.Globalization.CultureInfo.CurrentCulture.TextInfo
+            .ToTitleCase(variable.Replace('_', ' '));
+
+    private void Cancelar() => MudDialog.Cancel();
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("signaturePadInterop.destroy", _canvasId); } catch { }
+    }
+}

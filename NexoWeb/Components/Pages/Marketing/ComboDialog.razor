@@ -1,0 +1,344 @@
+﻿@using NexoWeb.Common.Dtos
+@using Microsoft.AspNetCore.Components.Forms
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog Style="min-width:min(660px,95vw); max-height:90vh; overflow-y:auto">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.LocalOffer" Class="mr-2" />
+            @(ComboId is null ? "Nuevo combo" : (SoloVer ? "Detalle" : "Editar combo"))
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_cargando)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else
+        {
+            <MudGrid Spacing="2">
+                <!-- Imagen -->
+                <MudItem xs="12">
+                    <div class="d-flex align-center" style="gap:1rem">
+                        @if (!string.IsNullOrEmpty(_imagenBase64))
+                        {
+                            <img src="@($"data:{_imagenContentType};base64,{_imagenBase64}")"
+                                 style="width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--mud-palette-lines-default)" />
+                        }
+                        else
+                        {
+                            <div style="width:120px;height:90px;display:flex;align-items:center;justify-content:center;background:var(--mud-palette-background-grey);border-radius:8px;">
+                                <MudIcon Icon="@Icons.Material.Filled.Image" Style="font-size:2rem;color:var(--mud-palette-text-disabled)" />
+                            </div>
+                        }
+                        @if (!SoloVer)
+                        {
+                            <div>
+                                <InputFile id="imgCombo" OnChange="CargarImagenAsync" accept="image/jpeg,image/png,image/webp" style="display:none" />
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                           OnClick="@(() => { })"
+                                           HtmlTag="label" for="imgCombo"
+                                           StartIcon="@Icons.Material.Filled.Upload">
+                                    @(_imagenBase64 is null ? "Subir imagen" : "Cambiar imagen")
+                                </MudButton>
+                                @if (!string.IsNullOrEmpty(_imagenBase64))
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error" OnClick="@(() => { _imagenBase64 = null; _imagenContentType = null; })" />
+                                }
+                                <MudText Typo="Typo.caption" Style="display:block;color:var(--mud-palette-text-secondary)">JPG, PNG o WebP · máx 2 MB</MudText>
+                            </div>
+                        }
+                    </div>
+                </MudItem>
+
+                <!-- Datos básicos -->
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_nombre" Label="Nombre del combo" Required Disabled="SoloVer" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <AppSelect TValue="string" @bind-Value="_estado" Label="Estado" Disabled="SoloVer"
+                               Items="@(new AppSelectItem<string>[]{ new("Borrador","Borrador"), new("Activo","Activo"), new("Inactivo","Inactivo") })" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_descripcion" Label="Descripción" Lines="2" Disabled="SoloVer" />
+                </MudItem>
+
+                <!-- Vigencia -->
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_fechaInicioDate" Label="Válido desde (opcional)" Clearable="true" Disabled="SoloVer" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_fechaFinDate" Label="Válido hasta (opcional)" Clearable="true" Disabled="SoloVer" />
+                </MudItem>
+
+                <!-- Precio -->
+                <MudItem xs="12" sm="6">
+                    <AppSelect TValue="string" @bind-Value="_modoPrecio" Label="Modo de precio" Disabled="SoloVer"
+                               Items="@(new AppSelectItem<string>[]{ new("Manual — yo defino el precio","MANUAL"), new("Calculado — suma de artículos con descuento","CALCULADO") })" />
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    @if (_modoPrecio == "MANUAL")
+                    {
+                        <MudNumericField T="decimal?" @bind-Value="_precioManual" Label="Precio manual" Format="N0" Min="0" Disabled="SoloVer" />
+                    }
+                    else
+                    {
+                        <MudTextField Value="@(_precioCalculado?.ToString("C0") ?? "Sin artículos")" Label="Precio calculado" ReadOnly="true" />
+                    }
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudNumericField T="decimal" Value="_descuento" Label="Descuento %" Min="0" Max="100" Disabled="SoloVer"
+                                     ValueChanged="@(async (decimal v) => { _descuento = v; await RecalcularPrecioAsync(v); })" />
+                </MudItem>
+                @{
+                    var precioBaseDialog = _modoPrecio == "MANUAL" ? (_precioManual ?? 0) : (_precioCalculado ?? 0);
+                    var precioEfectivoDialog = _descuento > 0 && precioBaseDialog > 0
+                        ? precioBaseDialog * (1m - _descuento / 100m) : precioBaseDialog;
+                }
+                @if (_descuento > 0 && precioBaseDialog > 0)
+                {
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="py-1">
+                            Precio efectivo con @_descuento.ToString("G29")% de descuento:
+                            <strong>@precioEfectivoDialog.ToString("C0")</strong>
+                            &nbsp;(ahorro @((precioBaseDialog - precioEfectivoDialog).ToString("C0")))
+                        </MudAlert>
+                    </MudItem>
+                }
+
+                <!-- Artículos del combo -->
+                <MudItem xs="12">
+                    <div class="d-flex align-center justify-space-between mt-2 mb-1">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:600">Artículos del combo</MudText>
+                        @if (!SoloVer)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       StartIcon="@Icons.Material.Filled.Add"
+                                       OnClick="AgregarFila">
+                                Agregar artículo
+                            </MudButton>
+                        }
+                    </div>
+                    @if (_filas.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary)">Sin artículos. Agrega al menos uno.</MudText>
+                    }
+                    else
+                    {
+                        <div style="overflow-x:auto">
+                            <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+                                <thead>
+                                    <tr style="background:var(--mud-palette-background-grey)">
+                                        <th style="padding:6px 8px;text-align:left">Artículo</th>
+                                        <th style="padding:6px 4px;width:100px">Cantidad</th>
+                                        <th style="padding:6px 4px;width:110px;text-align:right">Precio unit.</th>
+                                        @if (!SoloVer) { <th style="width:40px"></th> }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var fila in _filas)
+                                    {
+                                        <tr style="border-bottom:1px solid var(--mud-palette-lines-default)">
+                                            <td style="padding:4px 8px">
+                                                @if (SoloVer)
+                                                {
+                                                    <span>@(fila.NombreArticulo ?? "-")</span>
+                                                }
+                                                else
+                                                {
+                                                    <ArticuloAutocomplete Value="fila.Articulo"
+                                                                          ValueChanged="@(async a => await OnArticuloCambiadoAsync(fila, a))" />
+                                                }
+                                            </td>
+                                            <td style="padding:2px 4px">
+                                                <MudNumericField T="decimal" Value="fila.Cantidad"
+                                                                 Min="0.001m" Format="0.##"
+                                                                 Margin="Margin.Dense" Dense="true"
+                                                                 Disabled="SoloVer"
+                                                                 ValueChanged="@(async (decimal v) => { fila.Cantidad = v; await RecalcularPrecioAsync(_descuento); })" />
+                                            </td>
+                                            <td style="padding:4px 8px;text-align:right">
+                                                @((fila.PrecioVenta * fila.Cantidad).ToString("C0"))
+                                            </td>
+                                            @if (!SoloVer)
+                                            {
+                                                <td style="padding:2px 4px">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                                   Size="Size.Small" Color="Color.Error"
+                                                                   OnClick="@(() => { _filas.Remove(fila); RecalcularPrecioAsync(_descuento); })" />
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="2" style="padding:4px 8px;text-align:right;font-weight:600">Subtotal artículos:</td>
+                                        <td style="padding:4px 8px;text-align:right;font-weight:600">@(_filas.Sum(f => f.PrecioVenta * f.Cantidad).ToString("C0"))</td>
+                                        @if (!SoloVer) { <td></td> }
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
+                </MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">@(SoloVer ? "Cerrar" : "Cancelar")</MudButton>
+        @if (!SoloVer)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       Disabled="@(!Valido || _guardando)"
+                       OnClick="GuardarAsync">
+                @(_guardando ? "Guardando…" : (ComboId is null ? "Crear" : "Guardar"))
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int? ComboId { get; set; }
+    [Parameter] public bool SoloVer { get; set; }
+
+    private bool _cargando = true;
+    private bool _guardando;
+
+    private string _nombre = "";
+    private string? _descripcion;
+    private string _estado = "Borrador";
+    private string _modoPrecio = "MANUAL";
+    private decimal? _precioManual;
+    private decimal _descuento;
+    private decimal? _precioCalculado;
+    private DateTime? _fechaInicioDate;
+    private DateTime? _fechaFinDate;
+    private string? _imagenBase64;
+    private string? _imagenContentType;
+
+    private record FilaArticulo
+    {
+        public ArticuloItem? Articulo { get; set; }
+        public int ArticuloID => Articulo?.ArticuloID ?? 0;
+        public decimal Cantidad { get; set; } = 1;
+        public string? NombreArticulo => Articulo is null ? null : $"{Articulo.SKU} — {Articulo.Nombre}";
+        public decimal PrecioVenta { get; set; }
+    }
+
+    private List<FilaArticulo> _filas = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (ComboId.HasValue)
+            {
+                var detalle = await ApiClient.GetAsync<ComboDetalle>($"api/marketing/combos/{ComboId}");
+                if (detalle is not null)
+                {
+                    _nombre       = detalle.Nombre;
+                    _descripcion  = detalle.Descripcion;
+                    _estado       = detalle.Estado;
+                    _modoPrecio   = detalle.ModoPrecio;
+                    _precioManual = detalle.PrecioManual;
+                    _descuento    = detalle.PorcentajeDescuento;
+                    _imagenBase64 = detalle.ImagenBase64;
+                    _imagenContentType = detalle.ImagenContentType;
+                    _fechaInicioDate = detalle.FechaInicio?.ToDateTime(TimeOnly.MinValue);
+                    _fechaFinDate    = detalle.FechaFin?.ToDateTime(TimeOnly.MinValue);
+                    _precioCalculado = detalle.PrecioCalculado;
+                    _filas = detalle.Items.Select(i =>
+                    {
+                        var stub = new ArticuloItem(i.ArticuloID, i.SKU, i.NombreArticulo, null, "Producto Terminado", 0, 0, 0, true, 0, null, null, false, null, null, null, i.PrecioUnitarioSnapshot);
+                        return new FilaArticulo { Articulo = stub, Cantidad = i.Cantidad, PrecioVenta = i.PrecioUnitarioSnapshot ?? 0 };
+                    }).ToList();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar combo: {ex.Message}", Severity.Error);
+            MudDialog.Cancel();
+        }
+        finally { _cargando = false; }
+    }
+
+    private void AgregarFila() => _filas.Add(new FilaArticulo());
+
+    private async Task OnArticuloCambiadoAsync(FilaArticulo fila, ArticuloItem? articulo)
+    {
+        fila.Articulo = articulo;
+        fila.PrecioVenta = articulo?.PrecioVenta ?? 0;
+        await RecalcularPrecioAsync(_descuento);
+    }
+
+    private Task RecalcularPrecioAsync(decimal descuento)
+    {
+        _descuento = descuento;
+        var subtotal = _filas.Sum(f => f.PrecioVenta * f.Cantidad);
+        _precioCalculado = subtotal > 0 ? subtotal : null;
+        return Task.CompletedTask;
+    }
+
+    private async Task CargarImagenAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 2 * 1024 * 1024)
+        {
+            Snackbar.Add("La imagen no debe superar los 2 MB.", Severity.Warning);
+            return;
+        }
+        _imagenContentType = file.ContentType;
+        using var stream = file.OpenReadStream(2 * 1024 * 1024);
+        using var ms = new System.IO.MemoryStream();
+        await stream.CopyToAsync(ms);
+        _imagenBase64 = Convert.ToBase64String(ms.ToArray());
+    }
+
+    private bool Valido =>
+        !string.IsNullOrWhiteSpace(_nombre) &&
+        _filas.Count > 0 && _filas.All(f => f.ArticuloID > 0 && f.Cantidad > 0) &&
+        (_modoPrecio != "MANUAL" || _precioManual is > 0);
+
+    private async Task GuardarAsync()
+    {
+        if (!Valido) return;
+        _guardando = true;
+        try
+        {
+            var items = _filas.Select(f => new ComboItemInput(f.ArticuloID, f.Cantidad)).ToList();
+            DateOnly? fi = _fechaInicioDate.HasValue ? DateOnly.FromDateTime(_fechaInicioDate.Value) : null;
+            DateOnly? ff = _fechaFinDate.HasValue    ? DateOnly.FromDateTime(_fechaFinDate.Value)    : null;
+
+            if (ComboId is null)
+            {
+                var req = new CrearComboRequest(
+                    _nombre.Trim(), _descripcion, _imagenBase64, _imagenContentType,
+                    _estado, _modoPrecio, fi, ff, _precioManual, _descuento, items);
+                await ApiClient.PostAsync<CrearComboRequest, object>("api/marketing/combos", req);
+                Snackbar.Add("Combo creado.", Severity.Success);
+            }
+            else
+            {
+                var req = new ActualizarComboRequest(
+                    _nombre.Trim(), _descripcion, _imagenBase64, _imagenContentType,
+                    _estado, _modoPrecio, fi, ff, _precioManual, _descuento, items);
+                await ApiClient.PutAsync<ActualizarComboRequest, object>($"api/marketing/combos/{ComboId}", req);
+                Snackbar.Add("Combo actualizado.", Severity.Success);
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally { _guardando = false; }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}
+

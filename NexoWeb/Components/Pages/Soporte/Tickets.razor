@@ -1,0 +1,667 @@
+﻿@page "/soporte/tickets"
+@using NexoWeb.Common.Auth
+@inject INexoApiClient Api
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject AuthStateService Auth
+
+<PageTitle>Soporte | NEXO ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+
+    @* Header *@
+    <div class="d-flex align-center justify-space-between mb-4">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Tickets</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Gestiona y da seguimiento a las solicitudes de tus clientes.</MudText>
+        </div>
+        <div class="d-flex gap-2 align-center">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.FilterList"
+                       OnClick="ToggleFiltros">Filtrar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrear">
+                Nuevo Ticket
+            </MudButton>
+        </div>
+    </div>
+    <InfoAyuda Texto="Gestiona y da seguimiento a solicitudes de soporte: crea tickets, asígnalos a responsables y controla estados hasta su resolución." />
+
+    @* KPI Bar *@
+    <div class="sop-kpi-row mb-4">
+        <div class="sop-kpi-tile" style="border-top:3px solid #1976D2">
+            <MudIcon Icon="@Icons.Material.Filled.ConfirmationNumber" Color="Color.Primary" Size="Size.Small" Class="mb-1" />
+            <div class="sop-kpi-val">@_tickets.Count</div>
+            <div class="sop-kpi-lbl">Total</div>
+        </div>
+        <div class="sop-kpi-tile" style="border-top:3px solid #0288D1">
+            <MudIcon Icon="@Icons.Material.Filled.Inbox" Color="Color.Info" Size="Size.Small" Class="mb-1" />
+            <div class="sop-kpi-val">@_tickets.Count(t => t.Estado == "ABIERTO")</div>
+            <div class="sop-kpi-lbl">Abiertos</div>
+        </div>
+        <div class="sop-kpi-tile" style="border-top:3px solid #F57C00">
+            <MudIcon Icon="@Icons.Material.Filled.Timelapse" Color="Color.Warning" Size="Size.Small" Class="mb-1" />
+            <div class="sop-kpi-val">@_tickets.Count(t => t.Estado == "EN_PROGRESO")</div>
+            <div class="sop-kpi-lbl">En Progreso</div>
+        </div>
+        <div class="sop-kpi-tile" style="border-top:3px solid #388E3C">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" Class="mb-1" />
+            <div class="sop-kpi-val">@_tickets.Count(t => t.Estado == "RESUELTO")</div>
+            <div class="sop-kpi-lbl">Resueltos</div>
+        </div>
+    </div>
+
+    @* Filters *@
+    @if (_mostrarFiltros)
+    {
+        <MudPaper Class="pa-3 mb-4" Elevation="0" Style="border:1px solid var(--mud-palette-lines-default);border-radius:10px">
+            <div class="d-flex align-center gap-3 flex-wrap">
+                <MudTextField @bind-Value="_filtroBusqueda" Label="Nombre, NIT, teléfono o negocio"
+                              Variant="Variant.Outlined" Clearable="true" Immediate="true"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Style="min-width:280px" Margin="Margin.Dense" />
+                <AppSelect TValue="string" @bind-Value="_filtroEstado" Label="Estado" Style="min-width:160px"
+                           Items="@(new AppSelectItem<string>[]{ new("Abierto","ABIERTO"), new("En Progreso","EN_PROGRESO"), new("Resuelto","RESUELTO"), new("Cerrado","CERRADO") })" />
+                <AppSelect TValue="string" @bind-Value="_filtroPrioridad" Label="Prioridad" Style="min-width:140px"
+                           Items="@(new AppSelectItem<string>[]{ new("Baja","BAJA"), new("Media","MEDIA"), new("Alta","ALTA"), new("Crítica","CRITICA") })" />
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="Cargar"
+                           StartIcon="@Icons.Material.Filled.Refresh">Actualizar</MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    @if (_cargando)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
+    }
+
+    @* Vista toggle *@
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Mostrando @_ticketsFiltrados.Count() de @_tickets.Count ticket(s)
+        </MudText>
+        <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary">
+            <MudButton StartIcon="@Icons.Material.Filled.TableRows"
+                       Variant="@(_vistaEsTabla ? Variant.Filled : Variant.Outlined)"
+                       OnClick="SetVistaTabla">Tickets</MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.ViewKanban"
+                       Variant="@(_vistaEsTabla ? Variant.Outlined : Variant.Filled)"
+                       OnClick="SetVistaKanban">Kanban</MudButton>
+        </MudButtonGroup>
+    </div>
+
+    @if (_vistaEsTabla)
+    {
+        @if (!ListaFiltrada.Any())
+        {
+            <MudPaper Class="pa-4 pa-sm-8 text-center" Elevation="0"
+                      Style="border:1px dashed var(--mud-palette-lines-default);border-radius:12px">
+                <MudIcon Icon="@Icons.Material.Filled.ConfirmationNumber"
+                         Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
+                <MudText Color="Color.Secondary">No hay tickets con los filtros seleccionados.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <div class="stk-grid">
+                @foreach (var t in ListaFiltrada)
+                {
+                    var bars = BarHeights(t.TicketID);
+                    <div class="stk stk--@TicketColor(t)" @onclick="@(() => AbrirDetalle(t))">
+                        <div class="stk__date">CREADO<br>@t.FechaCreacion.ToLocalTime().ToString("dd MMM yyyy").ToUpper()</div>
+
+                        <div class="stk__head">
+                            <div class="stk__icon">
+                                <MudIcon Icon="@CatIcon(t.Categoria)" Size="Size.Small" />
+                            </div>
+                            <div>
+                                <div class="stk__eyebrow">ASUNTO</div>
+                                <div class="stk__subject">@t.Titulo</div>
+                            </div>
+                        </div>
+
+                        <div class="stk__perf"></div>
+
+                        <div class="stk__body">
+                            <div>
+                                <div class="stk__eyebrow">SOLICITADO POR</div>
+                                <div class="stk__requester">
+                                    <div class="stk__avatar">@Iniciales(t.ReportadoPorNombre ?? "?")</div>
+                                    <span class="stk__name">@t.ReportadoPorNombre</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="stk__eyebrow">CATEGORÍA</div>
+                                <div class="stk__cat">
+                                    <MudIcon Icon="@CatIcon(t.Categoria)" Size="Size.Small" />
+                                    @t.Categoria
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(t.Descripcion))
+                            {
+                                <div>
+                                    <div class="stk__eyebrow">DESCRIPCIÓN</div>
+                                    <div class="stk__desc">@t.Descripcion</div>
+                                </div>
+                            }
+                            <div class="stk__tags">
+                                <div class="stk__pill"><span class="stk__dot"></span>@EstadoLabel(t.Estado)</div>
+                                <div class="stk__pill"><span class="stk__dot"></span>@t.Prioridad</div>
+                            </div>
+                        </div>
+
+                        <div class="stk__perf" style="margin-top:16px;margin-bottom:0"></div>
+
+                        <div class="stk__stub">
+                            <div class="stk__barcode">
+                                @for (int b = 0; b < bars.Length; b++)
+                                {
+                                    var sz = b % 3 == 0 ? "t" : b % 3 == 1 ? "s" : "m";
+                                    <div class="stk__bar stk__bar--@sz" style="height:@(bars[b])%"></div>
+                                }
+                            </div>
+                            <div class="stk__no"><span class="stk__hash">#</span>@t.TicketID.ToString("D6")</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        @* Kanban view *@
+        <div class="sop-kanban">
+            @foreach (var col in _columnas)
+            {
+                <div class="sop-kanban-col">
+                    <div class="sop-kanban-header" style="border-top: 3px solid @col.Color">
+                        <span>@col.Label</span>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled">@GetTicketsPorEstado(col.Estado).Count</MudChip>
+                    </div>
+                    <div class="sop-kanban-cards">
+                        @foreach (var kt in GetTicketsPorEstado(col.Estado))
+                        {
+                            <div class="sop-kanban-card" @onclick="@(() => AbrirDetalle(kt))">
+                                <div class="d-flex justify-space-between align-start mb-1">
+                                    <span class="sop-prio-dot sop-prio-dot--@PrioridadCss(kt.Prioridad)" style="margin-top:4px"></span>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">#@kt.TicketID</MudText>
+                                </div>
+                                <MudText Typo="Typo.body2" Class="font-weight-medium mb-1">@kt.Titulo</MudText>
+                                <div class="d-flex justify-space-between align-center">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@kt.Categoria</MudText>
+                                    @if (kt.AsignadoANombre is not null)
+                                    {
+                                        <MudAvatar Size="Size.Small" Color="Color.Primary" Style="width:22px;height:22px;font-size:10px">
+                                            @Iniciales(kt.AsignadoANombre)
+                                        </MudAvatar>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        @if (!GetTicketsPorEstado(col.Estado).Any())
+                        {
+                            <div class="sop-kanban-empty">Sin tickets</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* Detail Drawer *@
+    <MudDrawer @bind-Open="_drawerAbierto" Anchor="Anchor.End" Elevation="2"
+               Width="460px" Variant="DrawerVariant.Temporary">
+        @if (_ticketSeleccionado is not null)
+        {
+            <div class="pa-4" style="overflow-y:auto;height:100%">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div class="d-flex align-center gap-2">
+                        <span class="sop-ticket-num sop-ticket-num--@PrioridadCss(_ticketSeleccionado.Prioridad)"
+                              style="font-size:1.1rem">
+                            #@_ticketSeleccionado.TicketID.ToString("D6")
+                        </span>
+                    </div>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                   OnClick="@(() => { _drawerAbierto = false; _resolverMode = false; _resolverNotas = string.Empty; _whatsappMode = false; _npsMode = false; })" />
+                </div>
+                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-2">@_ticketSeleccionado.Titulo</MudText>
+                <div class="d-flex gap-2 flex-wrap mb-3">
+                    <div class="sop-estado-pill sop-estado-pill--@EstadoCss(_ticketSeleccionado.Estado)">
+                        <span class="sop-estado-dot"></span>@EstadoLabel(_ticketSeleccionado.Estado)
+                    </div>
+                    <div class="d-flex align-center gap-1">
+                        <span class="sop-prio-dot sop-prio-dot--@PrioridadCss(_ticketSeleccionado.Prioridad)"></span>
+                        <span class="sop-prio-text">@_ticketSeleccionado.Prioridad</span>
+                    </div>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@_ticketSeleccionado.Categoria</MudChip>
+                </div>
+                <MudText Typo="Typo.body2" Class="mb-3">@_ticketSeleccionado.Descripcion</MudText>
+                <MudDivider Class="mb-3" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Reportado por: <strong>@_ticketSeleccionado.ReportadoPorNombre</strong></MudText><br />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Asignado a: <strong>@(_ticketSeleccionado.AsignadoANombre ?? "Sin asignar")</strong></MudText><br />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Creado: <strong>@_ticketSeleccionado.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong></MudText>
+                @if (_ticketSeleccionado.FechaResolucion.HasValue)
+                {
+                    <br /><MudText Typo="Typo.caption" Color="Color.Secondary">Resuelto: <strong>@_ticketSeleccionado.FechaResolucion.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong></MudText>
+                }
+
+                @* Botones editar + WhatsApp *@
+                <div class="d-flex justify-end gap-2 mt-2 flex-wrap">
+                    @if (!string.IsNullOrWhiteSpace(_ticketSeleccionado.ReportadoPorNombre))
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.Chat"
+                                   OnClick="@(() => { _whatsappMode = true; _waMensaje = $"Hola, te informamos sobre tu ticket #{_ticketSeleccionado.TicketID:D6} - {_ticketSeleccionado.Titulo}. Estado actual: {_ticketSeleccionado.Estado}."; })">
+                            WhatsApp
+                        </MudButton>
+                    }
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Edit"
+                               OnClick="@(() => AbrirEditar(_ticketSeleccionado))">
+                        Editar ticket
+                    </MudButton>
+                </div>
+
+                @if (_whatsappMode)
+                {
+                    <div style="background:color-mix(in srgb,#16a34a 10%,var(--mud-palette-surface));border-radius:10px;padding:12px;margin-top:8px">
+                        <MudText Typo="Typo.caption" Class="d-block font-weight-bold mb-2" Color="Color.Success">
+                            📱 Enviar por WhatsApp
+                        </MudText>
+                        <MudTextField @bind-Value="_waPhone" Label="Teléfono (sin +57)" Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" Class="mb-2"
+                                      Placeholder="3001234567" />
+                        <MudTextField @bind-Value="_waMensaje" Label="Mensaje" Variant="Variant.Outlined"
+                                      Lines="3" Margin="Margin.Dense" Class="mb-2" />
+                        <div class="d-flex gap-2 justify-end">
+                            <MudButton Size="Size.Small" OnClick="@(() => _whatsappMode = false)">Cancelar</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                       Disabled="_enviandoWa" OnClick="EnviarWhatsApp">
+                                @if (_enviandoWa) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+                                Enviar
+                            </MudButton>
+                        </div>
+                    </div>
+                }
+
+                @* Quick state change / Resolver *@
+                <MudDivider Class="my-3" />
+
+                @if (_resolverMode)
+                {
+                    <div class="stk-resolver">
+                        <MudText Typo="Typo.caption" Class="mb-2 d-block font-weight-bold" Style="color:#388E3C">
+                            ¿Cómo se resolvió el problema?
+                        </MudText>
+                        <MudTextField @bind-Value="_resolverNotas" Variant="Variant.Outlined" Lines="3"
+                                      Placeholder="Describe qué se hizo para resolver este ticket..."
+                                      Class="mb-2" />
+                        <div class="d-flex gap-2 justify-end">
+                            <MudButton Size="Size.Small"
+                                       OnClick="@(() => { _resolverMode = false; _resolverNotas = string.Empty; })">
+                                Cancelar
+                            </MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                       Disabled="_cambiandoEstado"
+                                       OnClick="ConfirmarResolucion">
+                                @if (_cambiandoEstado) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+                                Marcar como resuelto
+                            </MudButton>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Class="mb-2 d-block">Cambiar estado rápido:</MudText>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <MudButton Size="Size.Small"
+                                   Variant="@(_ticketSeleccionado.Estado == "ABIERTO" ? Variant.Filled : Variant.Outlined)"
+                                   Color="Color.Info"
+                                   OnClick="@(() => CambiarEstado(_ticketSeleccionado.TicketID, "ABIERTO"))">Abierto</MudButton>
+                        <MudButton Size="Size.Small"
+                                   Variant="@(_ticketSeleccionado.Estado == "EN_PROGRESO" ? Variant.Filled : Variant.Outlined)"
+                                   Color="Color.Warning"
+                                   OnClick="@(() => CambiarEstado(_ticketSeleccionado.TicketID, "EN_PROGRESO"))">En Progreso</MudButton>
+                        <MudButton Size="Size.Small"
+                                   Variant="@(_ticketSeleccionado.Estado == "RESUELTO" ? Variant.Filled : Variant.Outlined)"
+                                   Color="Color.Success"
+                                   OnClick="@(() => _resolverMode = true)">Resuelto</MudButton>
+                        <MudButton Size="Size.Small"
+                                   Variant="@(_ticketSeleccionado.Estado == "CERRADO" ? Variant.Filled : Variant.Outlined)"
+                                   Color="Color.Default"
+                                   OnClick="@(() => CambiarEstado(_ticketSeleccionado.TicketID, "CERRADO"))">Cerrado</MudButton>
+                    </div>
+                }
+
+                @* NPS automático *@
+                @if (_npsMode)
+                {
+                    <MudDivider Class="my-3" />
+                    <div style="background:color-mix(in srgb,#16a34a 10%,var(--mud-palette-surface));border-radius:12px;padding:16px;margin-top:8px">
+                        <MudText Typo="Typo.subtitle2" Class="mb-1" Color="Color.Success">
+                            ⭐ ¿Qué tan satisfecho quedaste con la solución?
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                            0 = Muy insatisfecho &nbsp;·&nbsp; 10 = Muy satisfecho
+                        </MudText>
+                        <div class="d-flex gap-1 flex-wrap mb-3">
+                            @for (int i = 0; i <= 10; i++)
+                            {
+                                int score = i;
+                                var esSeleccionado = _npsPuntuacion == score;
+                                <MudButton Size="Size.Small"
+                                           Variant="@(esSeleccionado ? Variant.Filled : Variant.Outlined)"
+                                           Color="@(score >= 9 ? Color.Success : score >= 7 ? Color.Warning : Color.Error)"
+                                           Style="min-width:36px;padding:0"
+                                           OnClick="@(() => _npsPuntuacion = score)">@score</MudButton>
+                            }
+                        </div>
+                        @if (_npsPuntuacion >= 0)
+                        {
+                            <MudTextField @bind-Value="_npsComentario" Variant="Variant.Outlined"
+                                          Lines="2" Placeholder="Comentario opcional..."
+                                          Class="mb-2" />
+                        }
+                        <div class="d-flex gap-2 justify-end">
+                            <MudButton Size="Size.Small" OnClick="OmitirNps">Omitir</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                       Disabled="@(_npsPuntuacion < 0)" OnClick="EnviarNps">
+                                Enviar valoración
+                            </MudButton>
+                        </div>
+                    </div>
+                }
+
+                @* Comments *@
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Comentarios (@_comentarios.Count)</MudText>
+
+                @foreach (var c in _comentarios)
+                {
+                    <div class="@ComentarioClass(c.EsInterno)">
+                        <div class="d-flex justify-space-between">
+                            <MudText Typo="Typo.caption" Class="font-weight-bold">@c.AutorNombre</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@c.Fecha.ToLocalTime().ToString("dd/MM HH:mm")</MudText>
+                        </div>
+                        @if (c.EsInterno)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Class="mb-1">Nota interna</MudChip>
+                        }
+                        <MudText Typo="Typo.body2">@c.Texto</MudText>
+                    </div>
+                }
+
+                <MudTextField @bind-Value="_nuevoComentario" Label="Agregar comentario" Variant="Variant.Outlined"
+                              Lines="2" Class="mt-2" />
+                <div class="d-flex justify-space-between align-center mt-1">
+                    <MudCheckBox @bind-Value="_comentarioInterno" Label="Nota interna" Size="Size.Small" />
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                               Disabled="@(string.IsNullOrWhiteSpace(_nuevoComentario))"
+                               OnClick="EnviarComentario">
+                        Enviar
+                    </MudButton>
+                </div>
+            </div>
+        }
+    </MudDrawer>
+
+</MudContainer>
+
+@code {
+    private List<TicketItem> _tickets = new();
+    private bool _cargando;
+    private bool _mostrarFiltros;
+    private string? _filtroEstado;
+    private string? _filtroPrioridad;
+    private string? _filtroBusqueda;
+    private bool _vistaEsTabla = true;
+    private void SetVistaTabla() => _vistaEsTabla = true;
+    private void SetVistaKanban() => _vistaEsTabla = false;
+    private void ToggleFiltros() => _mostrarFiltros = !_mostrarFiltros;
+
+    private bool _drawerAbierto;
+    private TicketItem? _ticketSeleccionado;
+    private List<TicketComentarioItem> _comentarios = new();
+    private string _nuevoComentario = string.Empty;
+    private bool _comentarioInterno;
+    private bool _resolverMode;
+    private string _resolverNotas = string.Empty;
+    private bool _cambiandoEstado;
+    private bool _npsMode;
+    private int _npsPuntuacion = -1;
+    private string _npsComentario = string.Empty;
+    private bool _whatsappMode;
+    private string _waPhone = string.Empty;
+    private string _waMensaje = string.Empty;
+    private bool _enviandoWa;
+
+    private record KanbanCol(string Estado, string Label, string Color);
+    private static readonly KanbanCol[] _columnas =
+    [
+        new("ABIERTO",     "Abierto",     "#1976D2"),
+        new("EN_PROGRESO", "En Progreso", "#F57C00"),
+        new("RESUELTO",    "Resuelto",    "#388E3C"),
+        new("CERRADO",     "Cerrado",     "#616161"),
+    ];
+
+    private IEnumerable<TicketItem> _ticketsFiltrados => _tickets
+        .Where(t => _filtroEstado is null || t.Estado == _filtroEstado)
+        .Where(t => _filtroPrioridad is null || t.Prioridad == _filtroPrioridad)
+        .Where(t =>
+        {
+            if (string.IsNullOrWhiteSpace(_filtroBusqueda)) return true;
+            var q = _filtroBusqueda.Trim();
+            return (t.ReportadoPorNombre?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (t.NitCliente?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (t.TelefonoCliente?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (t.Cliente?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (t.Titulo?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false);
+        });
+
+    private List<TicketItem> ListaFiltrada => _ticketsFiltrados.ToList();
+    private List<TicketItem> GetTicketsPorEstado(string estado) =>
+        _ticketsFiltrados.Where(t => t.Estado == estado).ToList();
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        _tickets = (await Api.GetAsync<List<TicketItem>>("api/soporte/tickets") ?? []);
+        _cargando = false;
+    }
+
+    // ── Color mapping by priority ──────────────────────────────
+    private static string TicketColor(TicketItem t) => t.Prioridad switch
+    {
+        "CRITICA" => "rose",
+        "ALTA"    => "amber",
+        "MEDIA"   => "violet",
+        _         => "green"
+    };
+
+    // ── Deterministic barcode heights from ticket ID ───────────
+    private static int[] BarHeights(int id)
+    {
+        var r = new Random(id * 31337 + 7);
+        return Enumerable.Range(0, 14).Select(_ => r.Next(28, 100)).ToArray();
+    }
+
+    private static string EstadoCss(string e) => e switch
+    {
+        "ABIERTO"     => "abierto",
+        "EN_PROGRESO" => "progreso",
+        "RESUELTO"    => "resuelto",
+        "CERRADO"     => "cerrado",
+        _             => "cerrado"
+    };
+
+    private static string PrioridadCss(string p) => p switch
+    {
+        "CRITICA" => "critica",
+        "ALTA"    => "alta",
+        "MEDIA"   => "media",
+        _         => "baja"
+    };
+
+    private static string CatIcon(string cat) => cat switch
+    {
+        "Bug"         => Icons.Material.Filled.BugReport,
+        "Consulta"    => Icons.Material.Filled.HelpOutline,
+        "Mejora"      => Icons.Material.Filled.Lightbulb,
+        "Acceso"      => Icons.Material.Filled.Lock,
+        "Facturación" => Icons.Material.Filled.Receipt,
+        "Reportes"    => Icons.Material.Filled.Analytics,
+        _             => Icons.Material.Filled.SupportAgent
+    };
+
+    private static string EstadoLabel(string e) => e switch
+    {
+        "ABIERTO"     => "Abierto",
+        "EN_PROGRESO" => "En Proceso",
+        "RESUELTO"    => "Resuelto",
+        "CERRADO"     => "Cerrado",
+        _             => e
+    };
+
+    private static string ComentarioClass(bool esInterno) =>
+        esInterno ? "sop-comment sop-comment--interno" : "sop-comment";
+
+    private static string Iniciales(string nombre)
+    {
+        var partes = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return partes.Length >= 2
+            ? $"{partes[0][0]}{partes[1][0]}"
+            : nombre.Length > 0 ? nombre[..1] : "?";
+    }
+
+    private async Task AbrirDetalle(TicketItem t)
+    {
+        _resolverMode = false;
+        _resolverNotas = string.Empty;
+        _ticketSeleccionado = t;
+        _drawerAbierto = true;
+        _comentarios = (await Api.GetAsync<List<TicketComentarioItem>>($"api/soporte/tickets/{t.TicketID}/comentarios") ?? []);
+    }
+
+    private async Task CambiarEstado(int ticketId, string estado)
+    {
+        _cambiandoEstado = true;
+        await Api.PatchAsync<CambiarEstadoTicketRequest, object>(
+            $"api/soporte/tickets/{ticketId}/estado",
+            new CambiarEstadoTicketRequest(estado));
+        Snackbar.Add("Estado actualizado", Severity.Success);
+        _cambiandoEstado = false;
+        await Cargar();
+        if (_ticketSeleccionado?.TicketID == ticketId)
+            _ticketSeleccionado = _tickets.FirstOrDefault(t => t.TicketID == ticketId);
+    }
+
+    private async Task ConfirmarResolucion()
+    {
+        if (_ticketSeleccionado is null) return;
+        _cambiandoEstado = true;
+
+        await Api.PatchAsync<CambiarEstadoTicketRequest, object>(
+            $"api/soporte/tickets/{_ticketSeleccionado.TicketID}/estado",
+            new CambiarEstadoTicketRequest("RESUELTO"));
+
+        if (!string.IsNullOrWhiteSpace(_resolverNotas))
+        {
+            await Api.PostAsync($"api/soporte/tickets/{_ticketSeleccionado.TicketID}/comentarios",
+                new CrearTicketComentarioRequest(_resolverNotas, false));
+            _comentarios = (await Api.GetAsync<List<TicketComentarioItem>>(
+                $"api/soporte/tickets/{_ticketSeleccionado.TicketID}/comentarios") ?? []);
+        }
+
+        _resolverMode = false;
+        _resolverNotas = string.Empty;
+        _cambiandoEstado = false;
+        Snackbar.Add("Ticket marcado como resuelto", Severity.Success);
+
+        // Mostrar encuesta NPS automáticamente
+        _npsPuntuacion = -1;
+        _npsComentario = string.Empty;
+        _npsMode = true;
+
+        await Cargar();
+        _ticketSeleccionado = _tickets.FirstOrDefault(t => t.TicketID == _ticketSeleccionado?.TicketID);
+    }
+
+    private async Task EnviarNps()
+    {
+        if (_ticketSeleccionado is null || _npsPuntuacion < 0) return;
+        await Api.PostAsync($"api/soporte/tickets/{_ticketSeleccionado.TicketID}/nps",
+            new { Puntuacion = _npsPuntuacion, Comentario = _npsComentario });
+        _npsMode = false;
+        Snackbar.Add("¡Gracias por tu valoración!", Severity.Success);
+    }
+
+    private void OmitirNps() { _npsMode = false; }
+
+    private async Task EnviarWhatsApp()
+    {
+        if (string.IsNullOrWhiteSpace(_waPhone) || string.IsNullOrWhiteSpace(_waMensaje)) return;
+        _enviandoWa = true;
+        try
+        {
+            await Api.PostAsync("api/whatsapp/enviar",
+                new { Telefono = _waPhone, Mensaje = _waMensaje });
+            Snackbar.Add("Mensaje enviado por WhatsApp.", Severity.Success);
+            _whatsappMode = false;
+            _waPhone = string.Empty;
+            _waMensaje = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al enviar: {ex.Message}", Severity.Error);
+        }
+        _enviandoWa = false;
+    }
+
+    private async Task AbrirCrear()
+    {
+        var dlg = await Dialogs.ShowAsync<TicketDialog>("Nuevo Ticket", new DialogParameters
+        {
+            ["Modo"] = "crear"
+        }, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+
+        var result = await dlg.Result;
+        if (result is { Canceled: false } && result.Data is CrearTicketRequest req)
+        {
+            await Api.PostAsync("api/soporte/tickets", req);
+            Snackbar.Add("Ticket creado", Severity.Success);
+            await Cargar();
+        }
+    }
+
+    private async Task AbrirEditar(TicketItem t)
+    {
+        var dlg = await Dialogs.ShowAsync<TicketDialog>("Editar Ticket", new DialogParameters
+        {
+            ["Modo"] = "editar",
+            ["Ticket"] = t
+        }, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+
+        var result = await dlg.Result;
+        if (result is { Canceled: false } && result.Data is ActualizarTicketRequest req)
+        {
+            await Api.PutAsync($"api/soporte/tickets/{t.TicketID}", req);
+            Snackbar.Add("Ticket actualizado", Severity.Success);
+            await Cargar();
+            _ticketSeleccionado = _tickets.FirstOrDefault(x => x.TicketID == t.TicketID);
+        }
+    }
+
+    private async Task EnviarComentario()
+    {
+        if (_ticketSeleccionado is null || string.IsNullOrWhiteSpace(_nuevoComentario)) return;
+        var req = new CrearTicketComentarioRequest(_nuevoComentario, _comentarioInterno);
+        await Api.PostAsync($"api/soporte/tickets/{_ticketSeleccionado.TicketID}/comentarios", req);
+        _nuevoComentario = string.Empty;
+        _comentarioInterno = false;
+        _comentarios = (await Api.GetAsync<List<TicketComentarioItem>>($"api/soporte/tickets/{_ticketSeleccionado.TicketID}/comentarios") ?? []);
+        Snackbar.Add("Comentario enviado", Severity.Success);
+    }
+}

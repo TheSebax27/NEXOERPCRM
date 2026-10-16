@@ -1,0 +1,429 @@
+﻿@page "/crm/cotizaciones"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Cotizaciones - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Cotizaciones</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Propuesta formal de venta con líneas de artículos y precios, antes de facturar. Una cotización Aceptada se puede convertir directo en Factura sin volver a teclear cliente ni artículos." />
+
+<MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+           StartIcon="@Icons.Material.Filled.Add" Class="mb-4">
+    Nueva Cotización
+</MudButton>
+
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="4">
+        <ClienteAutocomplete Value="_filtroCliente"
+                             ValueChanged="OnFiltroClienteCambiadoAsync"
+                             Label="Filtrar por cliente" />
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <AppSelect TValue="string" Value="_filtroEstado" ValueChanged="OnFiltroEstadoCambiadoAsync" Label="Estado"
+                   Items="@(new AppSelectItem<string>[]{ new("Borrador","BORRADOR"), new("Enviada","ENVIADA"), new("Aceptada","ACEPTADA"), new("Rechazada","RECHAZADA"), new("Vencida","VENCIDA") })" />
+    </MudItem>
+</MudGrid>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar las cotizaciones: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_cotizaciones.Count == 0)
+{
+    <MudText>No hay cotizaciones registradas.</MudText>
+}
+else if (Preferencias.VistaListado == "lista")
+{
+    <MudTable Items="_cotizaciones" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Fecha</MudTh>
+            <MudTh>Válido hasta</MudTh>
+            <MudTh>Cliente</MudTh>
+            <MudTh>Negocio</MudTh>
+            <MudTh Style="text-align:right">Total</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Factura</MudTh>
+            <MudTh>Acción</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Fecha">@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Válido hasta">
+                @if (context.ValidoHasta is null)
+                {
+                    <span style="color:var(--n-text-3); font-style:italic;">Sin límite</span>
+                }
+                else
+                {
+                    var vencida = context.ValidoHasta.Value.Date < NexoWeb.Common.ColombiaClock.Today
+                                  && context.Estado is not ("ACEPTADA" or "RECHAZADA" or "CONVERTIDA");
+                    @if (vencida)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Filled.Warning">
+                            @context.ValidoHasta.Value.ToString("dd/MM/yy")
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <span>@context.ValidoHasta.Value.ToString("dd/MM/yyyy")</span>
+                    }
+                }
+            </MudTd>
+            <MudTd DataLabel="Cliente">@context.Cliente</MudTd>
+            <MudTd DataLabel="Negocio">
+                @if (context.OportunidadNombre is not null)
+                {
+                    <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Filled.TrendingUp"
+                             Color="Color.Primary" Style="font-size:0.72rem">
+                        @context.OportunidadNombre
+                    </MudChip>
+                }
+                else
+                {
+                    <span style="color:var(--n-text-3);font-size:0.8rem">—</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C0")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Size="Size.Small" Color="@ColorEstado(context.Estado)">@context.Estado</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Factura">@(context.FacturaID is not null ? $"#{context.FacturaID}" : "-")</MudTd>
+            <MudTd DataLabel="Acción">
+                <div class="d-flex align-center" style="gap:4px;">
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirGestionAsync(context))">Gestionar</MudButton>
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf"
+                                   Color="Color.Error" Title="Descargar PDF"
+                                   OnClick="@(() => DescargarPdfAsync(context.CotizacionID))" />
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Print"
+                                   Color="Color.Default" Title="Imprimir"
+                                   OnClick="@(() => ImprimirCotizacionAsync(context.CotizacionID))" />
+                    @if (context.Estado is "BORRADOR" or "ENVIADA" or "PENDIENTE")
+                    {
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Send"
+                                       Color="Color.Primary" Title="Enviar cotización"
+                                       OnClick="@(() => AbrirDialogoEnvio(context))" />
+                    }
+                    @if (context.Estado == "ACEPTADA" && context.FacturaID is null)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.Receipt"
+                                   OnClick="@(() => ConvertirAFacturaAsync(context.CotizacionID))">
+                            → Factura
+        </MudButton>
+                    }
+                    @if (context.Estado == "BORRADOR")
+                    {
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.DeleteForever"
+                                       Color="Color.Error" Title="Eliminar cotización"
+                                       OnClick="@(() => EliminarCotizacionAsync(context.CotizacionID))" />
+                    }
+                </div>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No hay cotizaciones registradas.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+else
+{
+    <div class="nexo-cards-grid">
+        @foreach (var cotiz in _cotizaciones)
+        {
+            <div class="nexo-ec nexo-ec--crm">
+                <div class="nexo-ec__header">
+                    <div class="nexo-ec__avatar" style="background:linear-gradient(135deg,#0891B2,#22D3EE)">
+                        <MudIcon Icon="@Icons.Material.Outlined.Description" Size="Size.Small" Style="color:#fff" />
+                    </div>
+                    <div class="nexo-ec__title-block">
+                        <div class="nexo-ec__name">COT-@cotiz.CotizacionID</div>
+                        <div class="nexo-ec__sub">@cotiz.Cliente</div>
+                    </div>
+                    <MudChip T="string" Size="Size.Small" Color="@ColorEstado(cotiz.Estado)" Style="font-size:0.7rem">@cotiz.Estado</MudChip>
+                </div>
+                <div class="nexo-ec__body">
+                    <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.AttachMoney" Size="Size.Small" /><strong>@cotiz.Total.ToString("N0")</strong></div>
+                    <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.CalendarToday" Size="Size.Small" /><span>@cotiz.Fecha.ToString("dd/MM/yyyy")</span></div>
+                    @if (cotiz.ValidoHasta.HasValue)
+                    {
+                        <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.Event" Size="Size.Small" /><span>Válido hasta @cotiz.ValidoHasta.Value.ToString("dd/MM/yyyy")</span></div>
+                    }
+                </div>
+                <div class="nexo-ec__footer">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => AbrirGestionAsync(cotiz))">Gestionar</MudButton>
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf"
+                                   Color="Color.Error" Title="Descargar PDF"
+                                   OnClick="@(() => DescargarPdfAsync(cotiz.CotizacionID))" />
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Print"
+                                   Color="Color.Default" Title="Imprimir"
+                                   OnClick="@(() => ImprimirCotizacionAsync(cotiz.CotizacionID))" />
+                    @if (cotiz.Estado is "BORRADOR" or "ENVIADA" or "PENDIENTE")
+                    {
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Send"
+                                       Color="Color.Primary" Title="Enviar cotización"
+                                       OnClick="@(() => AbrirDialogoEnvio(cotiz))" />
+                    }
+                    @if (cotiz.Estado == "ACEPTADA" && cotiz.FacturaID is null)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Success" OnClick="@(() => ConvertirAFacturaAsync(cotiz.CotizacionID))">→ Factura</MudButton>
+                    }
+                    @if (cotiz.Estado == "BORRADOR")
+                    {
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.DeleteForever"
+                                       Color="Color.Error" Title="Eliminar cotización"
+                                       OnClick="@(() => EliminarCotizacionAsync(cotiz.CotizacionID))" />
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@* ── Diálogo envío (Email / WhatsApp / Ambos) ──────────────────────── *@
+<MudDialog @bind-IsVisible="_envioDialogVisible" Options='new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true }'>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:10px;">
+            <MudIcon Icon="@Icons.Material.Outlined.Send" Color="Color.Primary" />
+            <span style="font-weight:700">Enviar cotización #@(_envioContexto?.CotizacionID)</span>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4">¿Por qué canal deseas enviar la cotización a <strong>@(_envioContexto?.Cliente)</strong>?</MudText>
+        <div class="d-flex flex-column" style="gap:10px;">
+            <MudCheckBox @bind-Value="_envioEmail"   Label="Correo electrónico" Color="Color.Primary" />
+            <MudCheckBox @bind-Value="_envioWhatsApp" Label="WhatsApp" Color="Color.Success" />
+        </div>
+        @if (_envioWhatsApp && string.IsNullOrWhiteSpace(_envioCliente?.Telefono))
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                <strong>@(_envioCliente?.Nombre)</strong> no tiene teléfono registrado. WhatsApp no se enviará.
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="@(() => _envioDialogVisible = false)">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Outlined.Send"
+                   OnClick="ConfirmarEnvioAsync"
+                   Disabled="@(_envioEnviando || (!_envioEmail && !_envioWhatsApp))">
+            @(_envioEnviando ? "Enviando..." : "Enviar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<CotizacionItem> _cotizaciones = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+    private ClienteItem? _filtroCliente;
+    private string? _filtroEstado;
+
+    private Color ColorEstado(string estado) => estado switch
+    {
+        "ACEPTADA"           => Color.Success,
+        "RECHAZADA" or "VENCIDA" => Color.Error,
+        "ENVIADA"            => Color.Info,
+        _                    => Color.Default
+    };
+
+    async Task DescargarPdfAsync(int cotizacionId)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/crm/cotizaciones/{cotizacionId}/pdf");
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("nexoDescargarArchivo",
+                $"cotizacion_{cotizacionId}.pdf", "application/pdf", base64);
+        }
+        catch
+        {
+            Snackbar.Add("No se pudo generar el PDF.", Severity.Error);
+        }
+    }
+
+    async Task ImprimirCotizacionAsync(int cotizacionId)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/crm/cotizaciones/{cotizacionId}/pdf");
+            await JS.InvokeVoidAsync("nexoImprimirPdf", Convert.ToBase64String(bytes));
+        }
+        catch
+        {
+            Snackbar.Add("No se pudo imprimir.", Severity.Error);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaCotizaciones = ApiClient.GetAsync<List<CotizacionItem>>("api/crm/cotizaciones");
+            var tareaCentrosCosto = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo");
+
+            await Task.WhenAll(tareaCotizaciones, tareaCentrosCosto);
+
+            _cotizaciones = await tareaCotizaciones ?? new();
+            _centrosCosto = await tareaCentrosCosto ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task CargarCotizacionesAsync()
+    {
+        try
+        {
+            var ruta = "api/crm/cotizaciones";
+            var query = new List<string>();
+            if (_filtroCliente is not null) query.Add($"clienteId={_filtroCliente.ClienteID}");
+            if (_filtroEstado is not null) query.Add($"estado={_filtroEstado}");
+            if (query.Count > 0) ruta += "?" + string.Join("&", query);
+
+            _cotizaciones = await ApiClient.GetAsync<List<CotizacionItem>>(ruta) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+    }
+
+    private async Task OnFiltroClienteCambiadoAsync(ClienteItem? cliente)
+    {
+        _filtroCliente = cliente;
+        await CargarCotizacionesAsync();
+    }
+
+    private async Task OnFiltroEstadoCambiadoAsync(string? nuevoValor)
+    {
+        _filtroEstado = nuevoValor;
+        await CargarCotizacionesAsync();
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<CotizacionDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto }
+        };
+
+        var dialogo = await DialogService.ShowAsync<CotizacionDialog>("Nueva Cotización", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+
+        try
+        {
+            var request = (CrearCotizacionRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearCotizacionRequest, object?>("api/crm/cotizaciones", request);
+            Snackbar.Add("Cotización creada correctamente.", Severity.Success);
+            await CargarCotizacionesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirGestionAsync(CotizacionItem cotizacion)
+    {
+        var parametros = new DialogParameters<GestionCotizacionDialog> { { x => x.Cotizacion, cotizacion } };
+        var dialogo = await DialogService.ShowAsync<GestionCotizacionDialog>("Gestionar Cotización", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        await dialogo.Result;
+        await CargarCotizacionesAsync();
+    }
+
+    // ── Envío (Email / WhatsApp / Ambos) ─────────────────────────────────
+    private bool _envioDialogVisible;
+    private bool _envioEnviando;
+    private bool _envioEmail    = true;
+    private bool _envioWhatsApp = false;
+    private CotizacionItem? _envioContexto;
+    private ClienteItem?    _envioCliente;
+
+    private void AbrirDialogoEnvio(CotizacionItem cotizacion)
+    {
+        _envioContexto  = cotizacion;
+        _envioCliente   = new ClienteItem(cotizacion.ClienteID, "", cotizacion.Cliente, null, null, null, null, null, true, null, null, null, null, null, 0, null, null, null, null, null, null, null, null, null, null, null);
+        _envioEmail     = true;
+        _envioWhatsApp  = false;
+        _envioDialogVisible = true;
+    }
+
+    private async Task ConfirmarEnvioAsync()
+    {
+        if (_envioContexto is null) return;
+        _envioEnviando = true;
+        try
+        {
+            var tareas = new List<Task>();
+            if (_envioEmail)
+                tareas.Add(ApiClient.PostAsync<object?, object?>($"api/crm/cotizaciones/{_envioContexto.CotizacionID}/enviar-email", null));
+            if (_envioWhatsApp && !string.IsNullOrWhiteSpace(_envioCliente?.Telefono))
+                tareas.Add(ApiClient.PostAsync<object?, object?>($"api/crm/cotizaciones/{_envioContexto.CotizacionID}/enviar-whatsapp", null));
+            await Task.WhenAll(tareas);
+            var canales = new List<string>();
+            if (_envioEmail) canales.Add("email");
+            if (_envioWhatsApp && !string.IsNullOrWhiteSpace(_envioCliente?.Telefono)) canales.Add("WhatsApp");
+            Snackbar.Add($"Cotización enviada por {string.Join(" y ", canales)}.", Severity.Success);
+            _envioDialogVisible = false;
+            await CargarCotizacionesAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _envioEnviando = false; }
+    }
+
+    private async Task EliminarCotizacionAsync(int cotizacionId)
+    {
+        var confirmar = await DialogService.ShowMessageBox(
+            "Eliminar cotización",
+            $"¿Seguro que deseas eliminar la cotización COT-{cotizacionId}? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (confirmar is not true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/crm/cotizaciones/{cotizacionId}");
+            Snackbar.Add("Cotización eliminada.", Severity.Success);
+            await CargarCotizacionesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ConvertirAFacturaAsync(int cotizacionId)
+    {
+        try
+        {
+            var res = await ApiClient.PostAsync<object?, ConvertirCotizacionResponse>(
+                $"api/crm/cotizaciones/{cotizacionId}/convertir-a-factura", null);
+            Snackbar.Add($"Factura #{res?.FacturaId} creada correctamente. Puedes verla en Facturación.", Severity.Success);
+            await CargarCotizacionesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

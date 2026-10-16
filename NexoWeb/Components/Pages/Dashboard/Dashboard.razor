@@ -1,0 +1,2806 @@
+﻿@* Components/Pages/Dashboard/Dashboard.razor *@
+@page "/"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@inject NexoWeb.Common.Auth.ModulosVisiblesState Modulos
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+@inject IDialogService DialogService
+@using NexoWeb.Common.Dtos
+@using System.Globalization
+@using System.Text.Json
+@using NexoWeb.Components.Pages.Crm
+@implements IDisposable
+
+@* ── Estilos del feed de actividad y sparklines ────────────────────── *@
+<style>
+    .nexo-actividad-feed { display:flex; flex-direction:column; gap:0; }
+    .nexo-actividad-item {
+        display:flex; align-items:flex-start; gap:12px;
+        padding:10px 0;
+        border-bottom:1px solid var(--mud-palette-lines-default);
+        cursor:pointer;
+        transition:background .15s;
+    }
+    .nexo-actividad-item:last-child { border-bottom:none; }
+    .nexo-actividad-item:hover { background:var(--mud-palette-background-grey); border-radius:8px; padding-left:6px; }
+    .nexo-actividad-icon {
+        width:34px; height:34px; border-radius:50%; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center;
+        background:color-mix(in srgb, var(--mud-palette-primary) 12%, transparent);
+    }
+    .nexo-actividad-body { flex:1; min-width:0; }
+    .nexo-actividad-desc { font-size:0.85rem; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .nexo-actividad-meta { font-size:0.72rem; color:var(--n-text-3); margin-top:2px; }
+    .nexo-kpi-spark { margin-top:6px; opacity:.7; }
+    .nexo-agente-chip {
+        display:inline-flex; align-items:center; gap:6px;
+        font-size:0.75rem; padding:3px 10px; border-radius:20px;
+        background:color-mix(in srgb, var(--mud-palette-success) 15%, transparent);
+        border:1px solid color-mix(in srgb, var(--mud-palette-success) 40%, transparent);
+        color:var(--mud-palette-success-darken);
+    }
+    .nexo-agente-chip--warn {
+        background:color-mix(in srgb, var(--mud-palette-warning) 15%, transparent);
+        border-color:color-mix(in srgb, var(--mud-palette-warning) 40%, transparent);
+        color:var(--mud-palette-warning-darken);
+    }
+    .nexo-agente-chip--error {
+        background:color-mix(in srgb, var(--mud-palette-error) 12%, transparent);
+        border-color:color-mix(in srgb, var(--mud-palette-error) 35%, transparent);
+        color:var(--mud-palette-error);
+    }
+</style>
+
+<PageTitle>Business Intelligence - NEXO</PageTitle>
+
+@* ── Encabezado de página ─────────────────────────────────── *@
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">BI</p>
+            <h1 class="nexo-page-hero__title">Business Intelligence</h1>
+        </div>
+    </div>
+    <div class="d-flex align-center flex-wrap" style="gap: 0.5rem;">
+        @* Chip de estado del agente Visions *@
+        @if (ConfiguracionEmpresa.UsaVisions && _estadoAgente is not null)
+        {
+            var minutos = _estadoAgente.UltimoLatido.HasValue
+                ? (int)(DateTime.UtcNow - _estadoAgente.UltimoLatido.Value).TotalMinutes
+                : 9999;
+            var chipClass = minutos <= 10 ? "nexo-agente-chip" : minutos <= 30 ? "nexo-agente-chip nexo-agente-chip--warn" : "nexo-agente-chip nexo-agente-chip--error";
+            var chipIcon = minutos <= 10 ? Icons.Material.Filled.CloudDone : minutos <= 30 ? Icons.Material.Filled.CloudQueue : Icons.Material.Filled.CloudOff;
+            var chipLabel = minutos <= 10
+                ? $"Visions sync hace {minutos} min"
+                : minutos <= 30 ? $"Visions sin sync hace {minutos} min"
+                : "Visions: sin conexión";
+            <div class="@chipClass" @onclick="@(() => Navigation.NavigateTo("/admin/integracion-visions"))" style="cursor:pointer;">
+                <MudIcon Icon="@chipIcon" Size="Size.Small" />
+                @chipLabel
+            </div>
+        }
+        <span class="nexo-page-hero__timestamp">
+            <MudIcon Icon="@Icons.Material.Outlined.Schedule" Size="Size.Small" Class="mr-1" Style="vertical-align: middle; font-size: 14px;" />
+            Actualizado @NexoWeb.Common.ColombiaClock.Now.ToString("dd MMM, HH:mm")
+        </span>
+    </div>
+</div>
+<InfoAyuda Texto="Workspace BI: navega entre pestañas para análisis de Facturación, Producción, CRM e Inventario. Usa los selectores de fecha dentro de cada gráfico para ajustar el período." />
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-6">No se pudo cargar el dashboard: @_errorCarga</MudAlert>
+}
+else if (_cargando)
+{
+    <div class="flex items-center justify-center py-20">
+        <div class="text-center">
+            <MudProgressCircular Indeterminate="true" Size="Size.Large" Class="mb-4" />
+            <p class="text-sm" style="color: var(--mud-palette-text-secondary)">Cargando datos...</p>
+        </div>
+    </div>
+}
+else
+{
+    <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4"
+             ActivePanelIndexChanged="OnTabChangedAsync" Class="nexo-bi-tabs">
+
+        @* ══════════════════════════════════════════════ TAB GENERAL ══ *@
+        <MudTabPanel Text="General" Icon="@Icons.Material.Outlined.Dashboard">
+
+            @* ── FILA 1: 5 KPIs con sparkline ─────────────────────────────── *@
+            <div class="nexo-bi-kpi-row mb-4">
+
+                @* Ventas recientes *@
+                <div class="nexo-kpi nexo-kpi--primary nexo-bi-kpi">
+                    <div class="d-flex align-center justify-space-between">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Receipt" Size="Size.Small" /></div>
+                        @if (_sparklines is not null)
+                        {
+                            <span class="nexo-kpi-delta nexo-kpi-delta--up">↑ 7 días</span>
+                        }
+                    </div>
+                    <div class="nexo-kpi__value" style="font-size:1.6rem">
+                        @(_sparklines?.Facturas.Sum(x => x.Valor) ?? 0)
+                    </div>
+                    <div class="nexo-kpi__label">Facturas (semana)</div>
+                    <div class="nexo-kpi__sub">Hoy: @(_sparklines?.Facturas.LastOrDefault()?.Valor ?? 0)</div>
+                    @if (_sparklines is not null) { <div class="nexo-kpi-spark">@SparklineSvg(_sparklines.Facturas)</div> }
+                </div>
+
+                @* Órdenes de producción *@
+                <div class="nexo-kpi nexo-kpi--indigo nexo-bi-kpi">
+                    <div class="d-flex align-center justify-space-between">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Factory" Size="Size.Small" /></div>
+                        @if (_sparklines is not null) { <span class="nexo-kpi-delta nexo-kpi-delta--up">↑ 7 días</span> }
+                    </div>
+                    <div class="nexo-kpi__value" style="font-size:1.6rem">
+                        @(_sparklines?.Ordenes.Sum(x => x.Valor) ?? 0)
+                    </div>
+                    <div class="nexo-kpi__label">OPs (semana)</div>
+                    <div class="nexo-kpi__sub">Hoy: @(_sparklines?.Ordenes.LastOrDefault()?.Valor ?? 0)</div>
+                    @if (_sparklines is not null) { <div class="nexo-kpi-spark">@SparklineSvg(_sparklines.Ordenes)</div> }
+                </div>
+
+                @* Clientes nuevos *@
+                <div class="nexo-kpi nexo-kpi--teal nexo-bi-kpi">
+                    <div class="d-flex align-center justify-space-between">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Small" /></div>
+                        <span class="nexo-kpi-delta nexo-kpi-delta--up">30 días</span>
+                    </div>
+                    <div class="nexo-kpi__value" style="font-size:1.6rem">@_resumenCrm.ClientesNuevos</div>
+                    <div class="nexo-kpi__label">Clientes nuevos</div>
+                    <div class="nexo-kpi__sub">@_resumenCrm.Interacciones interacciones</div>
+                </div>
+
+                @* Productos activos *@
+                <div class="nexo-kpi nexo-kpi--blue nexo-bi-kpi">
+                    <div class="d-flex align-center justify-space-between">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Category" Size="Size.Small" /></div>
+                        <span class="nexo-kpi-delta" style="color:var(--mud-palette-text-secondary)">catálogo</span>
+                    </div>
+                    <div class="nexo-kpi__value" style="font-size:1.6rem">@_totalArticulosActivos</div>
+                    <div class="nexo-kpi__label">Productos activos</div>
+                    <div class="nexo-kpi__sub">En catálogo</div>
+                </div>
+
+                @* Stock con alerta *@
+                <div class="nexo-kpi nexo-kpi--@(_resumenInventario.ArticulosConAlerta > 0 ? "red" : "green") nexo-bi-kpi">
+                    <div class="d-flex align-center justify-space-between">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@(_resumenInventario.ArticulosConAlerta > 0 ? Icons.Material.Filled.Warning : Icons.Material.Filled.CheckCircle)" Size="Size.Small" /></div>
+                        <span class="nexo-kpi-delta" style="color:@(_resumenInventario.ArticulosConAlerta > 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)")">
+                            @(_resumenInventario.ArticulosConAlerta > 0 ? "¡Atención!" : "OK")
+                        </span>
+                    </div>
+                    <div class="nexo-kpi__value" style="font-size:1.6rem">@_resumenInventario.ArticulosConAlerta</div>
+                    <div class="nexo-kpi__label">Stock con alerta</div>
+                    <div class="nexo-kpi__sub">@(_resumenInventario.ArticulosConAlerta == 0 ? "Todo en orden" : "Requieren pedido")</div>
+                </div>
+            </div>
+
+            @* ── FILA 1b: KPIs Maquinaria ─────────────────────────────────── *@
+            @if (_resumenMaquinaria is not null)
+            {
+                <div class="nexo-section mb-2"><div class="nexo-section__dot"></div><span class="nexo-section__label">Maquinaria</span><div class="nexo-section__line"></div></div>
+                <div class="nexo-bi-kpi-row mb-4" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="nexo-kpi nexo-kpi--indigo nexo-bi-kpi" style="cursor:pointer"
+                         @onclick="@(() => Navigation.NavigateTo("/produccion/maquinaria"))">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.PrecisionManufacturing" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value" style="font-size:1.6rem">@_resumenMaquinaria.TotalMaquinas</div>
+                        <div class="nexo-kpi__label">Máquinas activas</div>
+                        <div class="nexo-kpi__sub">Total en operación</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--@(_resumenMaquinaria.EnMantenimiento > 0 ? "warn" : "green") nexo-bi-kpi" style="cursor:pointer"
+                         @onclick="@(() => Navigation.NavigateTo("/produccion/maquinaria"))">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Build" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value" style="font-size:1.6rem">@_resumenMaquinaria.EnMantenimiento</div>
+                        <div class="nexo-kpi__label">En mantenimiento</div>
+                        <div class="nexo-kpi__sub">@(_resumenMaquinaria.EnMantenimiento == 0 ? "Sin paradas activas" : "Fuera de servicio")</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--@(_resumenMaquinaria.MantenimientoVencido > 0 ? "red" : "green") nexo-bi-kpi" style="cursor:pointer"
+                         @onclick="@(() => Navigation.NavigateTo("/produccion/maquinaria"))">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@(_resumenMaquinaria.MantenimientoVencido > 0 ? Icons.Material.Filled.Warning : Icons.Material.Filled.CheckCircle)" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value" style="font-size:1.6rem">@_resumenMaquinaria.MantenimientoVencido</div>
+                        <div class="nexo-kpi__label">Mant. vencido</div>
+                        <div class="nexo-kpi__sub">@(_resumenMaquinaria.MantenimientoVencido == 0 ? "Al día" : "Requieren atención")</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--blue nexo-bi-kpi" style="cursor:pointer"
+                         @onclick="@(() => Navigation.NavigateTo("/produccion/maquinaria"))">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.AttachMoney" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value" style="font-size:1.4rem">@_resumenMaquinaria.CostoMantenimientoMes.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Costo mant. mes</div>
+                        <div class="nexo-kpi__sub">@NexoWeb.Common.ColombiaClock.Now.ToString("MMMM yyyy")</div>
+                    </div>
+                </div>
+            }
+
+            @* ── FILA 2: Línea (70%) + Dona (30%) ─────────────────────────── *@
+            <MudGrid Class="mb-4" Spacing="3">
+                <MudItem xs="12" md="8">
+                    <MudPaper Class="pa-5" Style="height:100%">
+                        <div class="nexo-chart-header mb-3">
+                            <MudIcon Icon="@Icons.Material.Outlined.TrendingUp" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Tendencia — últimos 7 días</div>
+                                <div class="nexo-chart-header__sub">Facturas y OPs de producción</div>
+                            </div>
+                        </div>
+                        @if (_sparklines is null)
+                        {
+                            <div class="nexo-empty-state"><MudProgressCircular Indeterminate="true" /></div>
+                        }
+                        else if (_sparklines.Facturas.Count > 0)
+                        {
+                            <MudChart ChartType="ChartType.Line"
+                                      ChartSeries="@_seriesGeneralLinea"
+                                      XAxisLabels="@_labelsGeneralLinea"
+                                      ChartOptions="@_opcionesGrafico"
+                                      Width="100%" Height="220px" />
+                        }
+                        else
+                        {
+                            <div class="nexo-empty-state">
+                                <MudIcon Icon="@Icons.Material.Outlined.BarChart" Class="nexo-empty-state__icon" />
+                                <p class="nexo-empty-state__text">Sin facturación ni órdenes en los últimos 7 días.</p>
+                            </div>
+                        }
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudPaper Class="pa-5" Style="height:100%">
+                        <div class="nexo-chart-header mb-3">
+                            <MudIcon Icon="@Icons.Material.Outlined.DonutSmall" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Documentos (semana)</div>
+                                <div class="nexo-chart-header__sub">Distribución por tipo</div>
+                            </div>
+                        </div>
+                        @if (_sparklines is null)
+                        {
+                            <div class="nexo-empty-state"><MudProgressCircular Indeterminate="true" /></div>
+                        }
+                        else if (_dataGeneralDonut.Length > 0 && _dataGeneralDonut.Any(v => v > 0))
+                        {
+                            <MudChart ChartType="ChartType.Donut"
+                                      InputData="@_dataGeneralDonut"
+                                      InputLabels="@_labelsGeneralDonut"
+                                      ChartOptions="@_opcionesGrafico"
+                                      Width="100%" Height="180px" />
+                        }
+                        else
+                        {
+                            <div class="nexo-empty-state">
+                                <MudIcon Icon="@Icons.Material.Outlined.DonutSmall" Class="nexo-empty-state__icon" />
+                                <p class="nexo-empty-state__text">Sin documentos en los últimos 7 días.</p>
+                            </div>
+                        }
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+
+            @* ── FILA 3: Estado OPs · Actividad · Top productos ────────────── *@
+            <MudGrid Class="mb-4" Spacing="3">
+
+                @* Producción — estado y cumplimiento *@
+                <MudItem xs="12" md="3">
+                    <MudPaper Class="pa-5" Style="height:100%">
+                        <div class="nexo-chart-header mb-3">
+                            <MudIcon Icon="@Icons.Material.Outlined.Factory" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Producción</div>
+                                <div class="nexo-chart-header__sub">Últimos 14 días</div>
+                            </div>
+                        </div>
+                        <div class="nexo-bi-stat-list">
+                            <div class="nexo-bi-stat">
+                                <span class="nexo-bi-stat__label">Órdenes finalizadas</span>
+                                <span class="nexo-bi-stat__val">@_totalOrdenesFinalizadas</span>
+                            </div>
+                            <div class="nexo-bi-stat">
+                                <span class="nexo-bi-stat__label">A tiempo</span>
+                                <span class="nexo-bi-stat__val" style="color:var(--mud-palette-success)">@_totalOrdenesATiempo</span>
+                            </div>
+                            <div class="nexo-bi-stat">
+                                <span class="nexo-bi-stat__label">Cumplimiento</span>
+                                <span class="nexo-bi-stat__val" style="color:@(_cumplimientoPromedio >= 80 ? "var(--mud-palette-success)" : _cumplimientoPromedio >= 50 ? "var(--mud-palette-warning)" : "var(--mud-palette-error)")">
+                                    @_cumplimientoPromedio.ToString("N0")%
+                                </span>
+                            </div>
+                            <div class="nexo-bi-stat">
+                                <span class="nexo-bi-stat__label">Unidades producidas</span>
+                                <span class="nexo-bi-stat__val">@_totalRealProducido.ToString("N0")</span>
+                            </div>
+                            <div class="nexo-bi-stat">
+                                <span class="nexo-bi-stat__label">Empleados activos</span>
+                                <span class="nexo-bi-stat__val">@_totalEmpleadosActivos</span>
+                            </div>
+                            <div class="nexo-bi-stat">
+                                <span class="nexo-bi-stat__label">Valor de stock</span>
+                                <span class="nexo-bi-stat__val">@_resumenInventario.ValorTotalStock.ToString("C0")</span>
+                            </div>
+                        </div>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" FullWidth="true" Class="mt-3"
+                                   OnClick="@(() => Navigation.NavigateTo("/produccion/ordenes"))">
+                            Ver producción
+                        </MudButton>
+                    </MudPaper>
+                </MudItem>
+
+                @* Actividad reciente *@
+                <MudItem xs="12" md="5">
+                    <MudPaper Class="pa-0" Style="height:100%; overflow:hidden">
+                        <div class="nexo-chart-header pa-5 pb-3" style="border-bottom:1px solid var(--mud-palette-lines-default)">
+                            <MudIcon Icon="@Icons.Material.Outlined.History" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Actividad reciente</div>
+                                <div class="nexo-chart-header__sub">Actualiza cada 60 s</div>
+                            </div>
+                        </div>
+                        <div class="pa-4 nexo-actividad-feed">
+                            @if (_actividad.Count == 0)
+                            {
+                                <div class="nexo-empty-state"><MudText>Sin actividad reciente.</MudText></div>
+                            }
+                            @foreach (var item in _actividad.Take(8))
+                            {
+                                var iconoColor = item.Color switch
+                                {
+                                    "primary"   => "color:var(--mud-palette-primary)",
+                                    "success"   => "color:var(--mud-palette-success)",
+                                    "info"      => "color:var(--mud-palette-info)",
+                                    _           => "color:var(--mud-palette-text-secondary)"
+                                };
+                                var iconoBg = item.Color switch
+                                {
+                                    "primary"   => "background:color-mix(in srgb,var(--mud-palette-primary) 12%,transparent)",
+                                    "success"   => "background:color-mix(in srgb,var(--mud-palette-success) 12%,transparent)",
+                                    "info"      => "background:color-mix(in srgb,var(--mud-palette-info) 12%,transparent)",
+                                    _           => "background:var(--mud-palette-background-grey)"
+                                };
+                                var icono = item.Icono switch
+                                {
+                                    "receipt"       => Icons.Material.Outlined.Receipt,
+                                    "shopping_cart" => Icons.Material.Outlined.ShoppingCart,
+                                    "factory"       => Icons.Material.Outlined.Factory,
+                                    "description"   => Icons.Material.Outlined.Description,
+                                    "sync"          => Icons.Material.Outlined.Sync,
+                                    _               => Icons.Material.Outlined.Circle
+                                };
+                                var t = DateTime.UtcNow - item.FechaHora;
+                                var tiempo = t.TotalMinutes < 1 ? "ahora" : t.TotalMinutes < 60 ? $"hace {(int)t.TotalMinutes} min" : t.TotalHours < 24 ? $"hace {(int)t.TotalHours} h" : $"hace {(int)t.TotalDays} d";
+                                <div class="nexo-actividad-item" @onclick="@(() => Navigation.NavigateTo(item.Link))">
+                                    <div class="nexo-actividad-icon" style="@iconoBg">
+                                        <MudIcon Icon="@icono" Size="Size.Small" Style="@iconoColor" />
+                                    </div>
+                                    <div class="nexo-actividad-body">
+                                        <div class="nexo-actividad-desc">@item.Descripcion</div>
+                                        <div class="nexo-actividad-meta">@tiempo · @item.Entidad</div>
+                                    </div>
+                                    <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" Style="color:var(--mud-palette-text-disabled); margin-top:7px; flex-shrink:0" />
+                                </div>
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+
+                @* Top 5 productos *@
+                <MudItem xs="12" md="4">
+                    <MudPaper Class="pa-5" Style="height:100%">
+                        <div class="nexo-chart-header mb-3">
+                            <MudIcon Icon="@Icons.Material.Outlined.Leaderboard" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Top productos</div>
+                                <div class="nexo-chart-header__sub">Por precio de venta</div>
+                            </div>
+                        </div>
+                        @{
+                            var topProds = _productosTerminados.OrderByDescending(p => p.PrecioVenta).Take(5).ToList();
+                            var maxPrecio = topProds.Count > 0 ? (double)topProds[0].PrecioVenta : 1;
+                        }
+                        @foreach (var prod in topProds)
+                        {
+                            var pct = maxPrecio > 0 ? (double)prod.PrecioVenta / maxPrecio * 100 : 0;
+                            <div class="nexo-bi-hbar mb-3" style="cursor:pointer"
+                                 @onclick="@(() => Navigation.NavigateTo($"/catalogo/articulos/{prod.ArticuloID}/editar"))">
+                                <MudTooltip Text="@($"{prod.SKU} — {prod.Nombre}")" Placement="Placement.Top">
+                                    <div class="d-flex justify-space-between mb-1" style="width:100%;gap:8px">
+                                        <div style="flex:1;min-width:0">
+                                            <div style="font-size:0.68rem;opacity:.55;font-family:monospace;line-height:1.2">@prod.SKU</div>
+                                            <div class="nexo-bi-hbar__label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@prod.Nombre</div>
+                                        </div>
+                                        <span class="nexo-bi-hbar__val" style="flex-shrink:0">@prod.PrecioVenta.ToString("C0")</span>
+                                    </div>
+                                </MudTooltip>
+                                <div class="nexo-bi-hbar__track">
+                                    <div class="nexo-bi-hbar__fill" style="width:@pct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%"></div>
+                                </div>
+                            </div>
+                        }
+                        @if (topProds.Count == 0)
+                        {
+                            <div class="nexo-empty-state"><MudText>Sin productos en catálogo.</MudText></div>
+                        }
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+
+            @* ── FILA 3b: Análisis de canales (solo Visions) ─────────────── *@
+            @if (ConfiguracionEmpresa.UsaVisions)
+            {
+                <div class="nexo-section mb-2">
+                    <div class="nexo-section__dot" style="background:#7C5CFF"></div>
+                    <span class="nexo-section__label">Análisis de canales · últimos 30 días</span>
+                    <div class="nexo-section__line"></div>
+                </div>
+                @if (_cargandoChartsVisions)
+                {
+                    <div class="d-flex justify-center py-6 mb-4"><MudProgressCircular Indeterminate="true" /></div>
+                }
+                else
+                {
+                    <MudGrid Class="mb-4" Spacing="3">
+
+                        @* Gráfica 1: Ventas por día — línea doble NEXO vs Visions *@
+                        <MudItem xs="12" md="8">
+                            <MudPaper Class="pa-5" Style="height:100%">
+                                <div class="nexo-chart-header mb-3">
+                                    <MudIcon Icon="@Icons.Material.Outlined.ShowChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                    <div>
+                                        <div class="nexo-chart-header__title">Ventas por día</div>
+                                        <div class="nexo-chart-header__sub">NEXO vs Visions POS · últimos 30 días</div>
+                                    </div>
+                                </div>
+                                @if (_seriesVentasDia.Count == 0 || _seriesVentasDia.All(s => s.Data.Length == 0))
+                                {
+                                    <div class="nexo-empty-state">
+                                        <MudIcon Icon="@Icons.Material.Outlined.BarChart" Class="nexo-empty-state__icon" />
+                                        <p class="nexo-empty-state__text">Sin ventas registradas en los últimos 30 días.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="position:relative; height:230px;">
+                                        <canvas id="chart-ventas-dia"></canvas>
+                                    </div>
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+                        @* Gráfica 2: Stock por estado — dona *@
+                        <MudItem xs="12" md="4">
+                            <MudPaper Class="pa-5" Style="height:100%">
+                                <div class="nexo-chart-header mb-3">
+                                    <MudIcon Icon="@Icons.Material.Outlined.DonutSmall" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                    <div>
+                                        <div class="nexo-chart-header__title">Estado de stock</div>
+                                        <div class="nexo-chart-header__sub">@_totalArticulosActivos artículos activos</div>
+                                    </div>
+                                </div>
+                                @if (_totalArticulosActivos == 0)
+                                {
+                                    <div class="nexo-empty-state">
+                                        <MudIcon Icon="@Icons.Material.Outlined.Inventory" Class="nexo-empty-state__icon" />
+                                        <p class="nexo-empty-state__text">Sin artículos en catálogo.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <MudChart ChartType="ChartType.Donut"
+                                              InputData="@DataStockEstado"
+                                              InputLabels="@LabelsStockEstado"
+                                              ChartOptions="@_opcionesGrafico"
+                                              Width="100%" Height="180px" />
+                                    <div class="d-flex justify-space-around mt-2" style="font-size:0.8rem">
+                                        <span style="color:#7C5CFF;font-weight:600">@(Math.Max(_totalArticulosActivos - _resumenInventario.ArticulosConAlerta, 0)) sobre mínimo</span>
+                                        <span style="color:#EF4444;font-weight:600">@_resumenInventario.ArticulosConAlerta bajo mínimo</span>
+                                    </div>
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+                        @* Gráfica 3: Top artículos vendidos — barras horizontales *@
+                        <MudItem xs="12" md="6">
+                            <MudPaper Class="pa-5" Style="height:100%">
+                                <div class="nexo-chart-header mb-3">
+                                    <MudIcon Icon="@Icons.Material.Outlined.BarChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                    <div>
+                                        <div class="nexo-chart-header__title">Top artículos vendidos</div>
+                                        <div class="nexo-chart-header__sub">Por unidades · NEXO + Visions</div>
+                                    </div>
+                                </div>
+                                @if (_topArtVendidos.Count == 0)
+                                {
+                                    <div class="nexo-empty-state">
+                                        <MudIcon Icon="@Icons.Material.Outlined.Inventory" Class="nexo-empty-state__icon" />
+                                        <p class="nexo-empty-state__text">Sin artículos vendidos en el período.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    var maxCant = _topArtVendidos.Count > 0 ? _topArtVendidos.Max(a => a.CantTotal) : 1d;
+                                    @foreach (var art in _topArtVendidos.Take(8))
+                                    {
+                                        var pctA = maxCant > 0 ? art.CantTotal / maxCant * 100 : 0;
+                                        var colorCanal = art.Canal == "POS Visions" ? "#14B8A6" : "#7C5CFF";
+                                        <div class="nexo-bi-hbar mb-2">
+                                            <div class="d-flex justify-space-between mb-1">
+                                                <MudTooltip Text="@art.Nombre" Placement="Placement.Top">
+                                                    <span class="nexo-bi-hbar__label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%">
+                                                        @art.SKU — @art.Nombre
+                                                    </span>
+                                                </MudTooltip>
+                                                <span class="nexo-bi-hbar__val">
+                                                    @art.CantTotal.ToString("N0")
+                                                    <span style="font-size:0.7rem;margin-left:4px;color:@colorCanal">(@art.Canal)</span>
+                                                </span>
+                                            </div>
+                                            <div class="nexo-bi-hbar__track">
+                                                <div class="nexo-bi-hbar__fill" style="width:@pctA.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%; background:@colorCanal"></div>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+                        @* Gráfica 4: Ventas NEXO vs Visions por semana — barras apiladas *@
+                        <MudItem xs="12" md="6">
+                            <MudPaper Class="pa-5" Style="height:100%">
+                                <div class="nexo-chart-header mb-3">
+                                    <MudIcon Icon="@Icons.Material.Outlined.BarChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                    <div>
+                                        <div class="nexo-chart-header__title">NEXO vs Visions por semana</div>
+                                        <div class="nexo-chart-header__sub">Total facturado acumulado por canal</div>
+                                    </div>
+                                </div>
+                                @if (_seriesNexoVsVisions.Count == 0 || _seriesNexoVsVisions.All(s => s.Data.Length == 0))
+                                {
+                                    <div class="nexo-empty-state">
+                                        <MudIcon Icon="@Icons.Material.Outlined.BarChart" Class="nexo-empty-state__icon" />
+                                        <p class="nexo-empty-state__text">Sin datos de ventas por canal.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="position:relative; height:230px;">
+                                        <canvas id="chart-nexo-semana"></canvas>
+                                    </div>
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+                    </MudGrid>
+                }
+            }
+
+            @* ── FILA 4: Barra cartera por cobrar ─────────────────────────── *@
+            @if (_cartera.Count > 0)
+            {
+                <MudPaper Class="pa-5 mb-4">
+                    <div class="nexo-chart-header mb-3">
+                        <MudIcon Icon="@Icons.Material.Outlined.AccountBalanceWallet" Size="Size.Small" Class="nexo-chart-header__icon" Style="color:#F43F5E!important" />
+                        <div class="flex-grow-1">
+                            <div class="nexo-chart-header__title">Cartera por cobrar</div>
+                            <div class="nexo-chart-header__sub">@_cartera.Count documento(s) · Total: @_totalSaldoCartera.ToString("C0")</div>
+                        </div>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => Navigation.NavigateTo("/facturacion"))">Ver facturas</MudButton>
+                    </div>
+                    @{
+                        var maxSaldo = _cartera.Count > 0 ? (double)_cartera.Max(f => f.SaldoPendiente) : 1;
+                    }
+                    @foreach (var f in _cartera.Take(6))
+                    {
+                        var pctC = maxSaldo > 0 ? (double)f.SaldoPendiente / maxSaldo * 100 : 0;
+                        var antig = (NexoWeb.Common.ColombiaClock.Today - f.Fecha).Days;
+                        var color = antig > 60 ? "#EF4444" : antig > 30 ? "#F59E0B" : "#7C5CFF";
+                        <div class="nexo-bi-hbar mb-2">
+                            <div class="d-flex justify-space-between mb-1">
+                                <span class="nexo-bi-hbar__label">@f.Cliente</span>
+                                <span class="nexo-bi-hbar__val" style="color:@color">@f.SaldoPendiente.ToString("C0") <span style="font-size:0.7rem;opacity:.7">(+@antig d)</span></span>
+                            </div>
+                            <div class="nexo-bi-hbar__track">
+                                <div class="nexo-bi-hbar__fill" style="width:@pctC.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%; background:@color"></div>
+                            </div>
+                        </div>
+                    }
+                </MudPaper>
+            }
+
+            @* ── FILA 5: Alertas ejecutivas ───────────────────────────────── *@
+            <div class="nexo-bi-alert-grid mb-4">
+
+                @* Stock bajo *@
+                <div class="nexo-bi-alert nexo-bi-alert--@(_resumenInventario.ArticulosConAlerta > 0 ? "red" : "green")"
+                     @onclick="@(() => Navigation.NavigateTo("/inventario/stock"))" style="cursor:pointer">
+                    <div class="nexo-bi-alert__icon">
+                        <MudIcon Icon="@(_resumenInventario.ArticulosConAlerta > 0 ? Icons.Material.Filled.Warning : Icons.Material.Filled.CheckCircle)" />
+                    </div>
+                    <div class="nexo-bi-alert__body">
+                        <div class="nexo-bi-alert__title">Stock bajo</div>
+                        <div class="nexo-bi-alert__desc">
+                            @if (_resumenInventario.ArticulosConAlerta > 0)
+                            { @($"{_resumenInventario.ArticulosConAlerta} artículo(s) por debajo del mínimo") }
+                            else { <text>Todos los niveles están bien</text> }
+                        </div>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" Style="opacity:.5" />
+                </div>
+
+                @* Clientes fríos *@
+                <div class="nexo-bi-alert nexo-bi-alert--@(_clientesFrios.Count > 0 ? "amber" : "green")"
+                     @onclick="@(() => Navigation.NavigateTo("/crm/clientes"))" style="cursor:pointer">
+                    <div class="nexo-bi-alert__icon">
+                        <MudIcon Icon="@Icons.Material.Filled.AcUnit" />
+                    </div>
+                    <div class="nexo-bi-alert__body">
+                        <div class="nexo-bi-alert__title">Clientes fríos</div>
+                        <div class="nexo-bi-alert__desc">
+                            @if (_clientesFrios.Count > 0)
+                            { @($"{_clientesFrios.Count} sin interacción hace +30 días") }
+                            else { <text>Sin clientes fríos</text> }
+                        </div>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" Style="opacity:.5" />
+                </div>
+
+                @* Cartera pendiente *@
+                <div class="nexo-bi-alert nexo-bi-alert--@(_cartera.Count > 0 ? "red" : "green")"
+                     @onclick="@(() => Navigation.NavigateTo("/facturacion"))" style="cursor:pointer">
+                    <div class="nexo-bi-alert__icon">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" />
+                    </div>
+                    <div class="nexo-bi-alert__body">
+                        <div class="nexo-bi-alert__title">Pagos pendientes</div>
+                        <div class="nexo-bi-alert__desc">
+                            @if (_cartera.Count > 0)
+                            { @($"{_cartera.Count} doc(s) · {_totalSaldoCartera.ToString("C0")}") }
+                            else { <text>Sin documentos por cobrar</text> }
+                        </div>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" Style="opacity:.5" />
+                </div>
+
+                @* Producción atrasada *@
+                <div class="nexo-bi-alert nexo-bi-alert--@(_alertasProyectos.Count > 0 || _desviaciones.Count > 0 ? "amber" : "green")"
+                     @onclick="@(() => Navigation.NavigateTo("/produccion/ordenes"))" style="cursor:pointer">
+                    <div class="nexo-bi-alert__icon">
+                        <MudIcon Icon="@Icons.Material.Filled.PrecisionManufacturing" />
+                    </div>
+                    <div class="nexo-bi-alert__body">
+                        <div class="nexo-bi-alert__title">Producción atrasada</div>
+                        <div class="nexo-bi-alert__desc">
+                            @if (_alertasProyectos.Count > 0 || _desviaciones.Count > 0)
+                            { @($"{_alertasProyectos.Count} proyecto(s) · {_desviaciones.Count} desviación(es)") }
+                            else { <text>Sin atrasos detectados</text> }
+                        </div>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" Style="opacity:.5" />
+                </div>
+
+            </div>
+
+            @* ── Combos de marketing (si aplica) ─────────────────────────── *@
+            @if (!ConfiguracionEmpresa.UsaVisions && _combosActivos.Count > 0)
+            {
+                <div class="nexo-section"><div class="nexo-section__dot"></div><span class="nexo-section__label">Marketing activo</span><div class="nexo-section__line"></div></div>
+                <div class="nexo-kpi-grid mb-4">
+                    @foreach (var combo in _combosActivos.Take(4))
+                    {
+                        <div class="nexo-kpi nexo-kpi--indigo" style="cursor:pointer" @onclick="@(() => Navigation.NavigateTo("/marketing/combos"))">
+                            <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.LocalOffer" Size="Size.Small" /></div>
+                            <div class="nexo-kpi__value">@combo.PrecioEfectivo.ToString("C0")</div>
+                            <div class="nexo-kpi__label">@combo.Nombre</div>
+                            <div class="nexo-kpi__sub">
+                                @if (combo.PorcentajeDescuento > 0) { <text>-@combo.PorcentajeDescuento% · </text> }
+                                @(combo.FechaFin.HasValue ? $"Hasta {combo.FechaFin:dd/MM}" : "Sin vencimiento")
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @* ── Próximo evento ───────────────────────────────────────────── *@
+            @if (_proximoEvento is not null)
+            {
+                var ev = _proximoEvento;
+                var inicio = ev.FechaInicio.ToLocalTime();
+                var colorTipo = ev.ColorTipo;
+                <MudPaper Class="pa-4 mb-4" Style="@($"border-left: 4px solid {colorTipo};")">
+                    <div class="d-flex align-center flex-wrap" style="gap:12px">
+                        <div style="@($"width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,{colorTipo} 12%,transparent);flex-shrink:0")">
+                            <MudIcon Icon="@Icons.Material.Filled.Event" Style="@($"color:{colorTipo}")" />
+                        </div>
+                        <div style="flex:1;min-width:0">
+                            <div style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:@colorTipo;margin-bottom:2px">Próximo evento · @ev.TipoEvento</div>
+                            <div style="font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@ev.Titulo</div>
+                            <div style="font-size:12px;color:var(--mud-palette-text-secondary);margin-top:2px">
+                                @inicio.ToString("dddd d MMM · HH:mm")
+                                @if (!string.IsNullOrEmpty(ev.Lugar)) { <text> · @ev.Lugar</text> }
+                            </div>
+                        </div>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => Navigation.NavigateTo("/planificacion/calendario"))">Ver calendario</MudButton>
+                    </div>
+                </MudPaper>
+            }
+
+        </MudTabPanel>
+
+        @* ═══════════════════════════════════════════ TAB FACTURACIÓN ══ *@
+        <MudTabPanel Text="Facturación" Icon="@Icons.Material.Outlined.Receipt">
+            @if (_tabFactCargando)
+            {
+                <div class="d-flex justify-center py-12"><MudProgressCircular Indeterminate="true" /></div>
+            }
+            else
+            {
+                <div class="nexo-section" style="margin-top:0.25rem">
+                    <div class="nexo-section__dot" style="background:#10B981"></div>
+                    <span class="nexo-section__label">Resumen del período</span>
+                    <div class="nexo-section__line"></div>
+                    <MudDatePicker @bind-Date="_factDesde" @bind-Date:after="OnRangoFactCambiadoAsync" Label="Desde" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudDatePicker @bind-Date="_factHasta" @bind-Date:after="OnRangoFactCambiadoAsync" Label="Hasta" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </div>
+                <div class="nexo-kpi-grid mb-4">
+                    <div class="nexo-kpi nexo-kpi--blue">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_resumenFact.DocumentosEmitidos</div>
+                        <div class="nexo-kpi__label">Documentos Emitidos</div>
+                        <div class="nexo-kpi__sub">En el período seleccionado</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--green">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_resumenFact.TotalEmitido.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Total Facturado</div>
+                        <div class="nexo-kpi__sub">Bruto sin descuentos</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--teal">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Payments" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_resumenFact.TotalCobrado.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Total Cobrado</div>
+                        <div class="nexo-kpi__sub">
+                            @{ var pctCob = _resumenFact.TotalEmitido > 0 ? (_resumenFact.TotalCobrado / _resumenFact.TotalEmitido * 100) : 0; }
+                            @pctCob.ToString("N1")% de efectividad de cobro
+                        </div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--rose">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_resumenFact.SaldoPendiente.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Saldo Pendiente</div>
+                        <div class="nexo-kpi__sub">Por cobrar al cierre del período</div>
+                    </div>
+                </div>
+
+                <div class="nexo-section"><div class="nexo-section__dot" style="background:#10B981"></div><span class="nexo-section__label">Evolución de ingresos</span><div class="nexo-section__line"></div></div>
+                <MudGrid Class="mb-4">
+                    <MudItem xs="12">
+                        <MudPaper Class="pa-5 nexo-chart-card" Style="height:400px">
+                            <div class="nexo-chart-header nexo-chart-card__header">
+                                <MudIcon Icon="@Icons.Material.Outlined.BarChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                <div>
+                                    <div class="nexo-chart-header__title">Ingresos por Mes</div>
+                                    <div class="nexo-chart-header__sub">Facturado vs Cobrado · millones COP · últimos @_mesesFact meses</div>
+                                </div>
+                                <AppSelect TValue="int" Value="_mesesFact" ValueChanged="OnMesesFactCambiadoAsync"
+                                           Style="max-width:140px"
+                                           Items="@(new AppSelectItem<int>[]{ new("3 meses",3), new("6 meses",6), new("12 meses",12), new("24 meses",24) })" />
+                            </div>
+                            <div class="nexo-chart-card__body">
+                                @if (_ingresosMes.Count == 0)
+                                {
+                                    <div class="nexo-empty-state">
+                                        <MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" />
+                                        <p class="nexo-empty-state__text">Sin facturación registrada en este período.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <MudChart ChartType="ChartType.Bar" ChartSeries="@_seriesIngresosMes" XAxisLabels="@_labelsIngresosMes"
+                                              ChartOptions="@_opcionesGrafico" Width="100%" Height="280px" />
+                                }
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                @* ── Comparativa Año a Año ──────────────────────────────── *@
+                @if (_comparativaYoY.Count > 0)
+                {
+                    <div class="nexo-section">
+                        <div class="nexo-section__dot" style="background:#6366f1"></div>
+                        <span class="nexo-section__label">Comparativa vs año anterior</span>
+                        <div class="nexo-section__line"></div>
+                    </div>
+                    <div style="overflow-x:auto;margin-bottom:1.5rem">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+                            <thead>
+                                <tr style="color:var(--mud-palette-text-secondary)">
+                                    <th style="text-align:left;padding:6px 8px">Mes</th>
+                                    <th style="text-align:right;padding:6px 8px">Este año</th>
+                                    <th style="text-align:right;padding:6px 8px">Año anterior</th>
+                                    <th style="text-align:right;padding:6px 8px">Variación</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var m in _comparativaYoY)
+                                {
+                                    var pct  = m.VariacionPct;
+                                    var color = pct > 0 ? "#10B981" : pct < 0 ? "#EF4444" : "var(--mud-palette-text-secondary)";
+                                    var signo = pct > 0 ? "▲" : pct < 0 ? "▼" : "—";
+                                    <tr style="border-top:1px solid var(--mud-palette-lines-default)">
+                                        <td style="padding:6px 8px;font-weight:500">@m.NombreMes @m.Anio</td>
+                                        <td style="text-align:right;padding:6px 8px;font-weight:600">@m.TotalActual.ToString("C0")</td>
+                                        <td style="text-align:right;padding:6px 8px;color:var(--mud-palette-text-secondary)">@m.TotalAnterior.ToString("C0")</td>
+                                        <td style="text-align:right;padding:6px 8px;font-weight:700;color:@color">
+                                            @signo @Math.Abs(pct).ToString("N1")%
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                <div class="nexo-section"><div class="nexo-section__dot" style="background:#10B981"></div><span class="nexo-section__label">Rankings</span><div class="nexo-section__line"></div></div>
+                <MudGrid Class="mb-4">
+                    <MudItem xs="12" md="6">
+                        <MudPaper Class="pa-5 nexo-chart-card">
+                            <div class="nexo-chart-header nexo-chart-card__header">
+                                <MudIcon Icon="@Icons.Material.Outlined.People" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                <div>
+                                    <div class="nexo-chart-header__title">Top 10 Clientes</div>
+                                    <div class="nexo-chart-header__sub">Por monto facturado en el período</div>
+                                </div>
+                            </div>
+                            <div class="nexo-chart-card__body">
+                                @if (_topClientes.Count == 0)
+                                {
+                                    <div class="nexo-empty-state">
+                                        <MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" />
+                                        <p class="nexo-empty-state__text">Sin facturas en el período.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <MudTable Items="_topClientes" Dense="true" Hover="true" Elevation="0">
+                                        <HeaderContent>
+                                            <MudTh>#</MudTh><MudTh>Cliente</MudTh><MudTh Style="text-align:right">Docs</MudTh><MudTh Style="text-align:right">Total</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate>
+                                            @{ var idx = _topClientes.IndexOf(context) + 1; }
+                                            <MudTd Style="font-size:0.8rem;color:#9B9BB4;font-weight:700">@idx</MudTd>
+                                            <MudTd>
+                                                <div style="font-size:0.85rem;font-weight:500">@context.Cliente</div>
+                                                <div style="font-size:0.72rem;color:#9B9BB4">@context.NIT</div>
+                                            </MudTd>
+                                            <MudTd Style="text-align:right;font-size:0.82rem">@context.NumDocumentos</MudTd>
+                                            <MudTd Style="text-align:right;font-weight:700;color:#10B981">@context.TotalFacturado.ToString("C0")</MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                }
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudPaper Class="pa-5 nexo-chart-card">
+                            <div class="nexo-chart-header nexo-chart-card__header">
+                                <MudIcon Icon="@Icons.Material.Outlined.Inventory" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                <div>
+                                    <div class="nexo-chart-header__title">Top 10 Artículos Vendidos</div>
+                                    <div class="nexo-chart-header__sub">Por ingresos en el período</div>
+                                </div>
+                            </div>
+                            <div class="nexo-chart-card__body">
+                                @if (_topArticulos.Count == 0)
+                                {
+                                    <div class="nexo-empty-state">
+                                        <MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" />
+                                        <p class="nexo-empty-state__text">Sin artículos vendidos en el período.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <MudTable Items="_topArticulos" Dense="true" Hover="true" Elevation="0">
+                                        <HeaderContent>
+                                            <MudTh>#</MudTh><MudTh>Artículo</MudTh><MudTh Style="text-align:right">Cant.</MudTh><MudTh Style="text-align:right">Total</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate>
+                                            @{ var idx2 = _topArticulos.IndexOf(context) + 1; }
+                                            <MudTd Style="font-size:0.8rem;color:#9B9BB4;font-weight:700">@idx2</MudTd>
+                                            <MudTd>
+                                                <div style="font-size:0.85rem;font-weight:500">@context.Nombre</div>
+                                                <div style="font-size:0.72rem;color:#9B9BB4">@context.SKU</div>
+                                            </MudTd>
+                                            <MudTd Style="text-align:right;font-size:0.82rem">@context.CantidadVendida.ToString("N0")</MudTd>
+                                            <MudTd Style="text-align:right;font-weight:700;color:#7C5CFF">@context.TotalFacturado.ToString("C0")</MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                }
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            @* ── Sección Devoluciones ── *@
+            @if (_analyticsDevolucion is not null)
+            {
+                <div class="nexo-section mt-4">
+                    <div class="nexo-section__dot" style="background:#F59E0B"></div>
+                    <span class="nexo-section__label">Devoluciones</span>
+                    <div class="nexo-section__line"></div>
+                </div>
+                <div class="nexo-kpi-grid mb-4">
+                    <div class="nexo-kpi nexo-kpi--rose">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.AssignmentReturn" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_analyticsDevolucion.TotalDevoluciones</div>
+                        <div class="nexo-kpi__label">Devoluciones</div>
+                        <div class="nexo-kpi__sub">En el período</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--rose">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.MoneyOff" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_analyticsDevolucion.ValorTotalDevuelto.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Valor devuelto</div>
+                        <div class="nexo-kpi__sub">Costo mercancía restituida</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--rose">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.TrendingDown" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_analyticsDevolucion.TasaDevolucionPct.ToString("N2")%</div>
+                        <div class="nexo-kpi__label">Tasa de devolución</div>
+                        <div class="nexo-kpi__sub">% sobre ventas del período</div>
+                    </div>
+                </div>
+
+                @if (_analyticsDevolucion.TopArticulos.Any())
+                {
+                    <MudGrid Class="mb-4">
+                        <MudItem xs="12" md="6">
+                            <MudPaper Class="pa-4 nexo-chart-card">
+                                <div class="nexo-chart-header nexo-chart-card__header">
+                                    <MudIcon Icon="@Icons.Material.Outlined.BarChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                    <div>
+                                        <div class="nexo-chart-header__title">Artículos más devueltos</div>
+                                        <div class="nexo-chart-header__sub">Top 10 por valor devuelto</div>
+                                    </div>
+                                </div>
+                                <MudTable Items="_analyticsDevolucion.TopArticulos" Dense="true" Hover="true" Elevation="0">
+                                    <HeaderContent>
+                                        <MudTh>#</MudTh><MudTh>Artículo</MudTh>
+                                        <MudTh Style="text-align:right">Veces</MudTh>
+                                        <MudTh Style="text-align:right">Valor</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        @{ var idxD = _analyticsDevolucion.TopArticulos.IndexOf(context) + 1; }
+                                        <MudTd Style="font-size:0.8rem;color:#F59E0B;font-weight:700">@idxD</MudTd>
+                                        <MudTd>
+                                            <div style="font-size:0.85rem;font-weight:500">@context.Articulo</div>
+                                            <div style="font-size:0.72rem;opacity:.6">@context.SKU</div>
+                                        </MudTd>
+                                        <MudTd Style="text-align:right;font-size:0.82rem">@context.VecesDevuelto</MudTd>
+                                        <MudTd Style="text-align:right;font-weight:700;color:#F59E0B">@context.ValorTotal.ToString("C0")</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudPaper Class="pa-4 nexo-chart-card" Style="height:100%">
+                                <div class="nexo-chart-header nexo-chart-card__header mb-3">
+                                    <MudIcon Icon="@Icons.Material.Outlined.BarChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                    <div>
+                                        <div class="nexo-chart-header__title">Devoluciones por mes</div>
+                                        <div class="nexo-chart-header__sub">Valor devuelto mensual</div>
+                                    </div>
+                                </div>
+                                @if (_analyticsDevolucion.PorMes.Any())
+                                {
+                                    <MudChart ChartType="ChartType.Bar"
+                                              ChartSeries="@(new List<ChartSeries> { new() { Name = "Valor devuelto", Data = _analyticsDevolucion.PorMes.Select(m => (double)m.ValorDevuelto).ToArray() } })"
+                                              XAxisLabels="@(_analyticsDevolucion.PorMes.Select(m => m.Mes[5..]).ToArray())"
+                                              ChartOptions="@_opcionesGrafico" Width="100%" Height="200px" />
+                                }
+                                else
+                                {
+                                    <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" /><p>Sin devoluciones en el período.</p></div>
+                                }
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+                }
+
+            @if (_horariosPico.Count > 0 || _paresComplementarios.Count > 0)
+            {
+                <div class="nexo-section mt-4"><div class="nexo-section__dot" style="background:#6366F1"></div><span class="nexo-section__label">Inteligencia de ventas</span><div class="nexo-section__line"></div></div>
+                <MudGrid>
+                    @if (_paresComplementarios.Count > 0)
+                    {
+                        <MudItem xs="12" md="6">
+                            <MudPaper Class="pa-5 nexo-chart-card">
+                                <div class="nexo-chart-header nexo-chart-card__header">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Recommend" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                    <div class="flex-grow-1">
+                                        <div class="nexo-chart-header__title">Productos que se compran juntos</div>
+                                        <div class="nexo-chart-header__sub">Pares más frecuentes en facturas</div>
+                                    </div>
+                                </div>
+                                <MudTable Items="_paresComplementarios" Dense="true" Hover="true" Elevation="0">
+                                    <HeaderContent>
+                                        <MudTh>Artículo A</MudTh>
+                                        <MudTh>Artículo B</MudTh>
+                                        <MudTh Style="text-align:right">Veces</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd Style="font-size:0.82rem">@context.ArticuloANombre</MudTd>
+                                        <MudTd Style="font-size:0.82rem">@context.ArticuloBNombre</MudTd>
+                                        <MudTd Style="text-align:right">
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@context.Veces</MudChip>
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                    @if (_horariosPico.Count > 0)
+                    {
+                        <MudItem xs="12" md="6">
+                            <MudPaper Class="pa-5 nexo-chart-card">
+                                <div class="nexo-chart-header nexo-chart-card__header">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Schedule" Size="Size.Small" Class="nexo-chart-header__icon" />
+                                    <div class="flex-grow-1">
+                                        <div class="nexo-chart-header__title">Horarios pico de ventas</div>
+                                        <div class="nexo-chart-header__sub">Transacciones por hora · últimos 3 meses</div>
+                                    </div>
+                                </div>
+                                <div style="overflow-x:auto;margin-top:0.75rem">
+                                    @{ var maxPico = _horariosPico.Count > 0 ? _horariosPico.Max(h => h.Total) : 1; }
+                                    <table style="border-collapse:collapse;font-size:0.7rem;width:100%">
+                                        <tr>
+                                            <td style="width:28px"></td>
+                                            @foreach (var h in Enumerable.Range(7, 15))
+                                            {
+                                                <th style="text-align:center;padding:1px 2px;font-weight:500;color:var(--mud-palette-text-secondary)">@h</th>
+                                            }
+                                        </tr>
+                                        @foreach (var dia in Enumerable.Range(1, 7))
+                                        {
+                                            <tr>
+                                                <td style="font-weight:600;color:var(--mud-palette-text-secondary);padding:2px 4px;white-space:nowrap">@NombreDia(dia)</td>
+                                                @foreach (var h in Enumerable.Range(7, 15))
+                                                {
+                                                    var total = _horariosPico.FirstOrDefault(x => x.Hora == h && x.DiaSemana == dia)?.Total ?? 0;
+                                                    var opacity = maxPico > 0 && total > 0 ? (double)total / maxPico : 0;
+                                                    var bg = total > 0 ? $"rgba(99,102,241,{opacity:F2})" : "transparent";
+                                                    var fg = opacity > 0.5 ? "white" : "var(--mud-palette-text-secondary)";
+                                                    <td style="text-align:center;padding:1px">
+                                                        <div style="background:@bg;border-radius:3px;padding:3px 1px;min-height:20px;min-width:22px;color:@fg">
+                                                            @(total > 0 ? total.ToString() : "")
+                                                        </div>
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    </table>
+                                </div>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+            }
+            }
+        </MudTabPanel>
+
+        @* ══════════════════════════════════════════════ TAB PRODUCCIÓN ══ *@
+        <MudTabPanel Text="Producción" Icon="@Icons.Material.Outlined.Factory">
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header">
+                            <MudIcon Icon="@Icons.Material.Outlined.BarChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div class="flex-grow-1">
+                                <div class="nexo-chart-header__title">Producción Planificada vs Real</div>
+                                <div class="nexo-chart-header__sub">Comparativo diario</div>
+                            </div>
+                            <MudDatePicker @bind-Date="_planDesde" @bind-Date:after="OnRangoPlanVsRealCambiadoAsync" Label="Desde" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudDatePicker @bind-Date="_planHasta" @bind-Date:after="OnRangoPlanVsRealCambiadoAsync" Label="Hasta" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </div>
+                        <div class="nexo-chart-card__body">
+                            @if (_planVsReal.Count == 0)
+                            {
+                                <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" /><p class="nexo-empty-state__text">Sin producción registrada en este periodo.</p></div>
+                            }
+                            else
+                            {
+                                <MudChart ChartType="ChartType.Bar" ChartSeries="@_seriesPlanVsReal" XAxisLabels="@_labelsPlanVsReal" ChartOptions="@_opcionesGrafico" Width="100%" Height="260px" />
+                                <MudTable Items="_planVsReal" Dense="true" Hover="true" Elevation="0" Class="mt-4">
+                                    <HeaderContent>
+                                        <MudTh>Fecha</MudTh><MudTh Style="text-align:right">Planificado</MudTh><MudTh Style="text-align:right">Real</MudTh><MudTh Style="text-align:right">Cumplimiento</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+                                        <MudTd Style="text-align:right">@context.TotalPlanificado.ToString("N2")</MudTd>
+                                        <MudTd Style="text-align:right">@context.TotalReal.ToString("N2")</MudTd>
+                                        <MudTd Style="text-align:right">
+                                            <MudChip T="string" Size="Size.Small" Color="@(PorcentajeCumplimientoDia(context) >= 80 ? Color.Success : PorcentajeCumplimientoDia(context) >= 50 ? Color.Warning : Color.Error)">@PorcentajeCumplimientoDia(context).ToString("N0")%</MudChip>
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header">
+                            <MudIcon Icon="@Icons.Material.Outlined.Insights" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div class="flex-grow-1">
+                                <div class="nexo-chart-header__title">Variación de Producción vs Plan</div>
+                                <div class="nexo-chart-header__sub">Verde: supera el plan · Rojo: por debajo</div>
+                            </div>
+                            <MudDatePicker @bind-Date="_varDesde" @bind-Date:after="OnRangoVariacionCambiadoAsync" Label="Desde" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudDatePicker @bind-Date="_varHasta" @bind-Date:after="OnRangoVariacionCambiadoAsync" Label="Hasta" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </div>
+                        <div class="nexo-chart-card__body">
+                            @if (_variacionProduccion.Count == 0)
+                            {
+                                <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" /><p class="nexo-empty-state__text">Sin datos suficientes para calcular la variación.</p></div>
+                            }
+                            else
+                            {
+                                <div class="nexo-variacion-chart" style="overflow-x:auto;">
+                                    <svg viewBox="@($"0 0 {AnchoSvgVariacion} 240")" preserveAspectRatio="none"
+                                         class="nexo-variacion-chart__svg" style="min-width:@(AnchoSvgVariacion)px;width:@(AnchoSvgVariacion)px;">
+                                        <line x1="0" y1="120" x2="@AnchoSvgVariacion" y2="120" class="nexo-variacion-chart__zero" />
+                                        @((MarkupString)ConstruirSvgVariacion())
+                                    </svg>
+                                    <div class="nexo-variacion-chart__axis" style="min-width:@(AnchoSvgVariacion)px;">
+                                        @foreach (var p in _variacionProduccion) { <span>@p.Fecha.ToString("dd/MM")</span> }
+                                    </div>
+                                    <div class="nexo-variacion-chart__legend">
+                                        <span class="nexo-variacion-chart__legend-dot nexo-variacion-chart__legend-dot--up"></span> Sobre lo planificado
+                                        <span class="nexo-variacion-chart__legend-dot nexo-variacion-chart__legend-dot--down"></span> Bajo lo planificado
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header">
+                            <MudIcon Icon="@Icons.Material.Outlined.DonutLarge" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div><div class="nexo-chart-header__title">Distribución por Centro de Costo</div><div class="nexo-chart-header__sub">Unidades producidas (histórico)</div></div>
+                        </div>
+                        <div class="nexo-chart-card__body">
+                            @if (_distribucion.Count == 0)
+                            {
+                                <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" /><p class="nexo-empty-state__text">Sin órdenes finalizadas aún.</p></div>
+                            }
+                            else
+                            {
+                                <MudChart ChartType="ChartType.Donut" InputData="@_dataDistribucion" InputLabels="@_labelsDistribucion" ChartOptions="@_opcionesGrafico" Width="100%" Height="260px" />
+                                <MudTable Items="_distribucion" Dense="true" Hover="true" Elevation="0" Class="mt-4">
+                                    <HeaderContent>
+                                        <MudTh>Centro</MudTh><MudTh Style="text-align:right">Órdenes</MudTh><MudTh Style="text-align:right">Unidades</MudTh><MudTh Style="text-align:right">Inversión</MudTh><MudTh Style="text-align:right">%</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>@context.CentroCosto</MudTd>
+                                        <MudTd Style="text-align:right">@context.TotalOrdenes</MudTd>
+                                        <MudTd Style="text-align:right">@context.TotalUnidadesProducidas.ToString("N2")</MudTd>
+                                        <MudTd Style="text-align:right">@context.InversionTotal.ToString("C2")</MudTd>
+                                        <MudTd Style="text-align:right">@PorcentajeDistribucion(context).ToString("N0")%</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header">
+                            <MudIcon Icon="@Icons.Material.Outlined.PieChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div class="flex-grow-1">
+                                <div class="nexo-chart-header__title">Pérdidas y Mermas por Motivo</div>
+                                <div class="nexo-chart-header__sub">Detalle por motivo</div>
+                            </div>
+                            <MudDatePicker @bind-Date="_perdDesde" @bind-Date:after="OnRangoPerdidasCambiadoAsync" Label="Desde" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudDatePicker @bind-Date="_perdHasta" @bind-Date:after="OnRangoPerdidasCambiadoAsync" Label="Hasta" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </div>
+                        <div class="nexo-chart-card__body">
+                            @if (_perdidas.Count == 0)
+                            {
+                                <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.CheckCircle" Class="nexo-empty-state__icon nexo-empty-state__icon--success" /><p class="nexo-empty-state__text">Sin pérdidas registradas en este periodo.</p></div>
+                            }
+                            else
+                            {
+                                <MudChart ChartType="ChartType.Pie" InputData="@_dataPerdidas" InputLabels="@_labelsPerdidas" ChartOptions="@_opcionesGrafico" Width="100%" Height="260px" />
+                                <MudTable Items="_perdidas" Dense="true" Hover="true" Elevation="0" Class="mt-4">
+                                    <HeaderContent>
+                                        <MudTh>Motivo</MudTh><MudTh Style="text-align:right">Cantidad</MudTh><MudTh Style="text-align:right">Valor</MudTh><MudTh Style="text-align:right">%</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>@context.Motivo</MudTd>
+                                        <MudTd Style="text-align:right">@context.CantidadTotalPerdida.ToString("N2")</MudTd>
+                                        <MudTd Style="text-align:right">@context.ValorTotalPerdido.ToString("C2")</MudTd>
+                                        <MudTd Style="text-align:right">@PorcentajePerdida(context).ToString("N0")%</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header">
+                            <MudIcon Icon="@Icons.Material.Outlined.ShowChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div><div class="nexo-chart-header__title">Tendencia de Costo Unitario</div><div class="nexo-chart-header__sub">Por producto terminado</div></div>
+                        </div>
+                        <div class="nexo-chart-card__body">
+                            <AppSelect TValue="int" Value="_articuloSeleccionadoId" ValueChanged="OnProductoCambiadoAsync"
+                                       Label="Seleccionar producto" Class="mb-4"
+                                       Items="@(_productosTerminados.Select(producto => new AppSelectItem<int>($"{producto.SKU} - {producto.Nombre} ({producto.TipoArticulo})", producto.ArticuloID)))" />
+                            @if (_articuloSeleccionadoId == 0)
+                            {
+                                <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.TouchApp" Class="nexo-empty-state__icon" /><p class="nexo-empty-state__text">Elige un producto para ver su tendencia de costo.</p></div>
+                            }
+                            else if (_tendencia.Count == 0)
+                            {
+                                <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.HourglassEmpty" Class="nexo-empty-state__icon" /><p class="nexo-empty-state__text">Este producto aún no tiene órdenes finalizadas.</p></div>
+                            }
+                            else
+                            {
+                                @if (_tendencia.Count == 1) { <MudAlert Severity="Severity.Info" Class="mb-3">Solo hay una orden finalizada. La tendencia se verá con más órdenes.</MudAlert> }
+                                <MudChart ChartType="@(_tendencia.Count >= 2 ? ChartType.Line : ChartType.Bar)" ChartSeries="@_seriesTendencia" XAxisLabels="@_labelsTendencia" ChartOptions="@_opcionesGrafico" Width="100%" Height="220px" />
+                                <MudTable Items="_tendencia" Dense="true" Hover="true" Elevation="0" Class="mt-4">
+                                    <HeaderContent><MudTh>Fecha</MudTh><MudTh Style="text-align:right">Costo Unitario</MudTh></HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+                                        <MudTd Style="text-align:right">@context.CostoUnitarioReal.ToString("C2")</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header mb-4">
+                            <MudIcon Icon="@Icons.Material.Outlined.TableChart" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div><div class="nexo-chart-header__title">Cumplimiento de Planificación</div><div class="nexo-chart-header__sub">Por centro de costo</div></div>
+                        </div>
+                        <div class="nexo-chart-card__body">
+                            @if (_cumplimiento.Count == 0)
+                            {
+                                <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" /><p class="nexo-empty-state__text">Sin órdenes finalizadas aún.</p></div>
+                            }
+                            else
+                            {
+                                <MudTable Items="_cumplimiento" Dense="true" Hover="true" Elevation="0">
+                                    <HeaderContent>
+                                        <MudTh>Centro de Costo</MudTh><MudTh Style="text-align:right">Finalizadas</MudTh><MudTh Style="text-align:right">A Tiempo</MudTh><MudTh Style="text-align:right">Cumplimiento</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd><span class="font-semibold">@context.CentroCosto</span></MudTd>
+                                        <MudTd Style="text-align:right">@context.TotalOrdenesFinalizadas</MudTd>
+                                        <MudTd Style="text-align:right">@context.OrdenesATiempo</MudTd>
+                                        <MudTd Style="text-align:right">
+                                            <MudChip T="string" Size="Size.Small" Color="@(context.PorcentajeCumplimiento >= 80 ? Color.Success : context.PorcentajeCumplimiento >= 50 ? Color.Warning : Color.Error)">@context.PorcentajeCumplimiento.ToString("N1")%</MudChip>
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        @* ═══════════════════════════════════════════════════ TAB CRM ══ *@
+        <MudTabPanel Text="CRM" Icon="@Icons.Material.Outlined.People">
+            <MudGrid>
+                <MudItem xs="12" md="3">
+                    <div class="nexo-kpi nexo-kpi--indigo mb-4">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_resumenCrm.ClientesNuevos</div>
+                        <div class="nexo-kpi__label">Clientes Nuevos</div>
+                        <div class="nexo-kpi__sub">Últimos 30 días</div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <div class="nexo-kpi nexo-kpi--teal mb-4">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_resumenCrm.Interacciones</div>
+                        <div class="nexo-kpi__label">Interacciones</div>
+                        <div class="nexo-kpi__sub">Últimos 30 días</div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <div class="nexo-kpi nexo-kpi--red mb-4">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.AcUnit" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_clientesFrios.Count</div>
+                        <div class="nexo-kpi__label">Clientes Fríos</div>
+                        <div class="nexo-kpi__sub">Sin contacto hace +30 días</div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    @{
+                        var tasa = _resumenCrm.TasaConversion;
+                        var tasaColor = tasa >= 50 ? "green" : tasa >= 25 ? "primary" : "red";
+                    }
+                    <div class="nexo-kpi nexo-kpi--@tasaColor mb-4">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@tasa.ToString("0.#")%</div>
+                        <div class="nexo-kpi__label">Tasa de conversión</div>
+                        <div class="nexo-kpi__sub">@_resumenCrm.Convertidas de @_resumenCrm.CotizacionesTotal cot. → factura</div>
+                    </div>
+                </MudItem>
+
+                <MudItem xs="12" md="8">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header">
+                            <MudIcon Icon="@Icons.Material.Outlined.AcUnit" Size="Size.Small" Class="nexo-chart-header__icon" Style="color:#6366F1!important" />
+                            <div class="flex-grow-1">
+                                <div class="nexo-chart-header__title">Clientes Fríos</div>
+                                <div class="nexo-chart-header__sub">@_clientesFrios.Count clientes sin interacción reciente</div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                           StartIcon="@Icons.Material.Filled.Map"
+                                           OnClick="AbrirMapaClientesAsync">Ver Mapa</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                           OnClick="@(() => Navigation.NavigateTo("/crm/clientes"))">Ir al CRM</MudButton>
+                            </div>
+                        </div>
+                        <div class="nexo-chart-card__body">
+                            @if (_clientesFrios.Count == 0)
+                            {
+                                <div class="nexo-empty-state">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Whatshot" Class="nexo-empty-state__icon nexo-empty-state__icon--success" />
+                                    <p class="nexo-empty-state__text">Todos los clientes han tenido contacto reciente.</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <MudTable Items="@ClientesFriosPaginados" Dense="true" Hover="true" Elevation="0">
+                                    <HeaderContent>
+                                        <MudTh>Cliente</MudTh><MudTh>Responsable</MudTh><MudTh>Última interacción</MudTh><MudTh>Próximo contacto</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>
+                                            <MudLink OnClick="@(() => Navigation.NavigateTo($"/crm/clientes/{context.ExternalId}"))" Style="cursor:pointer;font-weight:500">@context.Nombre</MudLink>
+                                        </MudTd>
+                                        <MudTd Style="font-size:0.82rem">@(context.Responsable ?? "-")</MudTd>
+                                        <MudTd Style="font-size:0.82rem">
+                                            @if (context.UltimaInteraccion is null)
+                                            { <MudChip T="string" Size="Size.Small" Color="Color.Error">Nunca</MudChip> }
+                                            else
+                                            {
+                                                var dias = (int)(DateTime.UtcNow - context.UltimaInteraccion.Value).TotalDays;
+                                                <span style="color:@(dias > 60 ? "#EF4444" : dias > 30 ? "#F59E0B" : "inherit")">hace @dias días</span>
+                                            }
+                                        </MudTd>
+                                        <MudTd Style="font-size:0.82rem">@(context.ProximoContacto?.ToString("dd/MM/yyyy") ?? "-")</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                                @if (_totalPaginasFrios > 1)
+                                {
+                                    <div class="d-flex justify-center align-center gap-2 mt-3">
+                                        <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                                                       Disabled="@(_paginaFrios <= 1)"
+                                                       OnClick="@(() => { _paginaFrios--; StateHasChanged(); })" />
+                                        <MudText Typo="Typo.body2">@_paginaFrios / @_totalPaginasFrios</MudText>
+                                        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                                                       Disabled="@(_paginaFrios >= _totalPaginasFrios)"
+                                                       OnClick="@(() => { _paginaFrios++; StateHasChanged(); })" />
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header">
+                            <MudIcon Icon="@Icons.Material.Outlined.Badge" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div><div class="nexo-chart-header__title">Empleados por Centro</div><div class="nexo-chart-header__sub">Activos · @_totalEmpleadosActivos total</div></div>
+                        </div>
+                        <div class="nexo-chart-card__body">
+                            @if (_empleadosPorCentroCosto.Count == 0)
+                            {
+                                <div class="nexo-empty-state"><MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" /><p class="nexo-empty-state__text">Sin empleados registrados.</p></div>
+                            }
+                            else
+                            {
+                                @if (_empleadosPorCentroCosto.Count > 0)
+                                {
+                                    <MudChart ChartType="ChartType.Donut"
+                                              InputData="@(_empleadosPorCentroCosto.Select(e => (double)e.TotalEmpleados).ToArray())"
+                                              InputLabels="@(_empleadosPorCentroCosto.Select(e => e.CentroCosto).ToArray())"
+                                              ChartOptions="@_opcionesGrafico" Width="100%" Height="200px" />
+                                }
+                                <MudTable Items="_empleadosPorCentroCosto" Dense="true" Hover="true" Elevation="0" Class="mt-4">
+                                    <HeaderContent><MudTh>Centro</MudTh><MudTh Style="text-align:right">Empleados</MudTh></HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>@context.CentroCosto</MudTd>
+                                        <MudTd Style="text-align:right;font-weight:700">@context.TotalEmpleados</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        </div>
+                    </MudPaper>
+                </MudItem>
+
+                @* ── Ventas por departamento ─────────────────────────────── *@
+                <MudItem xs="12">
+                    <MudPaper Class="pa-5 nexo-chart-card">
+                        <div class="nexo-chart-header nexo-chart-card__header mb-3">
+                            <MudIcon Icon="@Icons.Material.Outlined.Map" Size="Size.Small" Class="nexo-chart-header__icon" />
+                            <div>
+                                <div class="nexo-chart-header__title">Ventas por departamento</div>
+                                <div class="nexo-chart-header__sub">Últimos 12 meses · por ubicación de cliente</div>
+                            </div>
+                        </div>
+                        @if (_ventasDept.Count == 0)
+                        {
+                            <div class="nexo-empty-state">
+                                <MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" />
+                                <p class="nexo-empty-state__text">Sin datos de ventas por departamento.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            var maxVentasDept = (double)_ventasDept.Max(d => d.TotalVentas);
+                            <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+                                @foreach (var dept in _ventasDept.Take(10))
+                                {
+                                    var pctD = maxVentasDept > 0 ? (double)dept.TotalVentas / maxVentasDept * 100 : 0;
+                                    var hue = (int)(220 + (_ventasDept.IndexOf(dept) * 15) % 120);
+                                    <div>
+                                        <div class="d-flex justify-space-between mb-1">
+                                            <span style="font-size:0.85rem;font-weight:500">@dept.Departamento</span>
+                                            <span style="font-size:0.82rem;color:var(--mud-palette-text-secondary)">
+                                                @dept.TotalVentas.ToString("C0") · @dept.CantidadClientes cliente(s)
+                                            </span>
+                                        </div>
+                                        <div style="height:8px;border-radius:4px;background:var(--mud-palette-background-grey);overflow:hidden">
+                                            <div style="height:100%;border-radius:4px;width:@pctD.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%;background:hsl(@hue,60%,55%);transition:width .4s ease"></div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </MudPaper>
+                </MudItem>
+
+            </MudGrid>
+        </MudTabPanel>
+
+        @* ══════════════════════════════════════════════ TAB INVENTARIO ══ *@
+        <MudTabPanel Text="Inventario" Icon="@Icons.Material.Outlined.Inventory2">
+            @if (_tabInvCargando)
+            {
+                <div class="d-flex justify-center py-12"><MudProgressCircular Indeterminate="true" /></div>
+            }
+            else
+            {
+                <div class="nexo-kpi-grid mb-4" style="grid-template-columns: repeat(2,1fr)">
+                    <div class="nexo-kpi nexo-kpi--teal">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_resumenInventario.ValorTotalStock.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Valor Total de Stock</div>
+                        <div class="nexo-kpi__sub">Valorización al costo</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--@(_resumenInventario.ArticulosConAlerta > 0 ? "red" : "green")">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_resumenInventario.ArticulosConAlerta</div>
+                        <div class="nexo-kpi__label">Artículos con Alerta</div>
+                        <div class="nexo-kpi__sub">@(_resumenInventario.ArticulosConAlerta == 0 ? "Sin artículos por debajo del mínimo" : "Requieren pedido urgente")</div>
+                    </div>
+                </div>
+
+                @if (_alertasStock.Count > 0)
+                {
+                    <div class="nexo-section"><div class="nexo-section__dot" style="background:#EF4444"></div><span class="nexo-section__label">Artículos bajo el mínimo</span><div class="nexo-section__line"></div></div>
+                    <MudPaper Class="pa-4 mb-4">
+                        <MudTable Items="_alertasStock" Dense="true" Hover="true" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>SKU</MudTh>
+                                <MudTh>Artículo</MudTh>
+                                <MudTh>Centro / Bodega</MudTh>
+                                <MudTh Style="text-align:right">Stock actual</MudTh>
+                                <MudTh Style="text-align:right">Mínimo</MudTh>
+                                <MudTh Style="text-align:right">Déficit</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd Style="font-size:0.78rem;color:#9B9BB4;font-weight:600">@context.SKU</MudTd>
+                                <MudTd Style="font-size:0.85rem;font-weight:500">@context.Articulo</MudTd>
+                                <MudTd Style="font-size:0.78rem">@context.CentroCosto · @context.Bodega</MudTd>
+                                <MudTd Style="text-align:right;color:#F59E0B;font-weight:600">@context.CantidadActual.ToString("N2")</MudTd>
+                                <MudTd Style="text-align:right">@context.StockMinimo.ToString("N2")</MudTd>
+                                <MudTd Style="text-align:right;color:#EF4444;font-weight:700">-@context.Deficit.ToString("N2")</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                        <div style="margin-top:8px;text-align:right">
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => Navigation.NavigateTo("/inventario/stock"))">Ver stock completo</MudButton>
+                        </div>
+                    </MudPaper>
+                }
+                else if (_resumenInventario.ArticulosConAlerta == 0)
+                {
+                    <div class="nexo-empty-state">
+                        <MudIcon Icon="@Icons.Material.Outlined.CheckCircle" Class="nexo-empty-state__icon nexo-empty-state__icon--success" />
+                        <p class="nexo-empty-state__text">Todos los artículos están sobre el stock mínimo.</p>
+                    </div>
+                }
+
+                @if (ConfiguracionEmpresa.ManejarVencimientos)
+                {
+                    <div class="nexo-section mt-4">
+                        <div class="nexo-section__dot" style="background:#F59E0B"></div>
+                        <span class="nexo-section__label">Lotes por vencer (próximos @ConfiguracionEmpresa.DiasAlertaVencimiento días)</span>
+                        <div class="nexo-section__line"></div>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                   OnClick="@(() => Navigation.NavigateTo("/inventario/stock"))">Ver stock</MudButton>
+                    </div>
+                    @if (_lotesVencer.Count == 0)
+                    {
+                        <div class="nexo-empty-state mb-4">
+                            <MudIcon Icon="@Icons.Material.Outlined.CheckCircle" Class="nexo-empty-state__icon nexo-empty-state__icon--success" />
+                            <p class="nexo-empty-state__text">Sin lotes por vencer en los próximos @ConfiguracionEmpresa.DiasAlertaVencimiento días.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudPaper Class="pa-4 mb-4">
+                            <MudTable Items="_lotesVencer" Dense="true" Hover="true" Elevation="0">
+                                <HeaderContent>
+                                    <MudTh>SKU</MudTh>
+                                    <MudTh>Artículo</MudTh>
+                                    <MudTh>Bodega</MudTh>
+                                    <MudTh>Lote</MudTh>
+                                    <MudTh Style="text-align:right">Vence</MudTh>
+                                    <MudTh Style="text-align:right">Días</MudTh>
+                                    <MudTh Style="text-align:right">Cantidad</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    @{
+                                        var esVencido  = context.DiasParaVencer < 0;
+                                        var color = esVencido ? "color:#EF4444" : "color:#F59E0B";
+                                    }
+                                    <MudTd Style="font-size:0.78rem;color:#9B9BB4;font-weight:600">@context.SKU</MudTd>
+                                    <MudTd Style="font-size:0.85rem;font-weight:500">@context.Articulo</MudTd>
+                                    <MudTd Style="font-size:0.78rem">@context.Bodega</MudTd>
+                                    <MudTd Style="font-size:0.78rem">@(context.NumeroLote ?? "—")</MudTd>
+                                    <MudTd Style="@($"text-align:right;font-size:0.82rem;{color}")">@context.FechaVencimiento.ToString("dd/MM/yyyy")</MudTd>
+                                    <MudTd Style="@($"text-align:right;font-weight:700;{color}")">
+                                        @(esVencido ? $"⚠ {Math.Abs(context.DiasParaVencer)} días" : $"⚡ {context.DiasParaVencer} días")
+                                    </MudTd>
+                                    <MudTd Style="text-align:right">@context.CantidadActual.ToString("N2")</MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </MudPaper>
+                    }
+                }
+            }
+        </MudTabPanel>
+
+        @* ══════════════════════════════════════════════ TAB FINANCIERO ══ *@
+        <MudTabPanel Text="Financiero" Icon="@Icons.Material.Outlined.AccountBalance">
+            @if (_tabFinCargando)
+            {
+                <div class="d-flex justify-center py-12"><MudProgressCircular Indeterminate="true" /></div>
+            }
+            else
+            {
+                <div class="nexo-section" style="margin-top:0.25rem">
+                    <div class="nexo-section__dot" style="background:#7C5CFF"></div>
+                    <span class="nexo-section__label">Análisis de márgenes</span>
+                    <div class="nexo-section__line"></div>
+                    <MudDatePicker @bind-Date="_finDesde" @bind-Date:after="OnRangoFinCambiadoAsync" Label="Desde" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudDatePicker @bind-Date="_finHasta" @bind-Date:after="OnRangoFinCambiadoAsync" Label="Hasta" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </div>
+
+                @* KPIs financieros *@
+                <div class="nexo-kpi-grid mb-4">
+                    <div class="nexo-kpi nexo-kpi--green">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@FinTotalVentas.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Ingresos (artículos)</div>
+                        <div class="nexo-kpi__sub">Total facturado en el período</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--rose">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.ShoppingCart" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@FinTotalCosto.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Costo Estimado</div>
+                        <div class="nexo-kpi__sub">CostoPromedio × cantidad vendida</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--@(FinPctMargen >= 30 ? "green" : FinPctMargen >= 15 ? "amber" : "red")">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Percent" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@FinPctMargen.ToString("N1")%</div>
+                        <div class="nexo-kpi__label">Margen Bruto Global</div>
+                        <div class="nexo-kpi__sub">@FinTotalMargen.ToString("C0") de utilidad estimada</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--indigo">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@_margenArticulos.Count</div>
+                        <div class="nexo-kpi__label">Artículos analizados</div>
+                        <div class="nexo-kpi__sub">Con ventas en el período</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--amber">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.Receipt" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@FinTotalGastos.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Gastos Operativos</div>
+                        <div class="nexo-kpi__sub">@_gastosCategoria.Count categoría(s) registradas</div>
+                    </div>
+                    <div class="nexo-kpi nexo-kpi--@(FinUtilidadNeta >= 0 ? (FinPctUtilidadNeta >= 15 ? "green" : "amber") : "red")">
+                        <div class="nexo-kpi__icon"><MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" /></div>
+                        <div class="nexo-kpi__value">@FinUtilidadNeta.ToString("C0")</div>
+                        <div class="nexo-kpi__label">Utilidad Neta</div>
+                        <div class="nexo-kpi__sub">@FinPctUtilidadNeta.ToString("N1")% sobre ventas · Margen − Gastos Op.</div>
+                    </div>
+                </div>
+
+                <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-4">
+                    El margen usa el <strong>CostoPromedio</strong> del catálogo. Para costos exactos por producción, revisa la tendencia de costo unitario en el tab Producción.
+                </MudAlert>
+
+                <div class="nexo-section"><div class="nexo-section__dot" style="background:#7C5CFF"></div><span class="nexo-section__label">Rentabilidad por artículo</span><div class="nexo-section__line"></div></div>
+                <MudPaper Class="pa-5 mb-4">
+                    @if (_margenArticulos.Count == 0)
+                    {
+                        <div class="nexo-empty-state">
+                            <MudIcon Icon="@Icons.Material.Outlined.Inbox" Class="nexo-empty-state__icon" />
+                            <p class="nexo-empty-state__text">Sin ventas registradas en este período.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudTable Items="_margenArticulos" Dense="true" Hover="true" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>#</MudTh>
+                                <MudTh>Artículo</MudTh>
+                                <MudTh Style="text-align:right">Vendido</MudTh>
+                                <MudTh Style="text-align:right">Ingresos</MudTh>
+                                <MudTh Style="text-align:right">Costo</MudTh>
+                                <MudTh Style="text-align:right">Margen $</MudTh>
+                                <MudTh Style="text-align:right">Margen %</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                @{ var idx3 = _margenArticulos.IndexOf(context) + 1; }
+                                <MudTd Style="font-size:0.78rem;color:#9B9BB4;font-weight:700">@idx3</MudTd>
+                                <MudTd>
+                                    <div style="font-size:0.85rem;font-weight:500">@context.Nombre</div>
+                                    <div style="font-size:0.72rem;color:#9B9BB4">@context.SKU</div>
+                                </MudTd>
+                                <MudTd Style="text-align:right;font-size:0.82rem">@context.CantidadVendida.ToString("N0")</MudTd>
+                                <MudTd Style="text-align:right;font-weight:600;color:#10B981">@context.TotalFacturado.ToString("C0")</MudTd>
+                                <MudTd Style="text-align:right;font-size:0.82rem;color:#F43F5E">@context.CostoEstimado.ToString("C0")</MudTd>
+                                <MudTd Style="text-align:right"><span style="@($"font-weight:700;color:{(context.MargenBruto >= 0 ? "#10B981" : "#EF4444")}")">@context.MargenBruto.ToString("C0")</span></MudTd>
+                                <MudTd Style="text-align:right">
+                                    <MudChip T="string" Size="Size.Small"
+                                             Color="@(context.PorcentajeMargen >= 30 ? Color.Success : context.PorcentajeMargen >= 15 ? Color.Warning : Color.Error)">
+                                        @context.PorcentajeMargen.ToString("N1")%
+                                    </MudChip>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudPaper>
+
+                @if (_gastosCategoria.Count > 0)
+                {
+                    <div class="nexo-section"><div class="nexo-section__dot" style="background:#F59E0B"></div><span class="nexo-section__label">Gastos operativos por categoría</span><div class="nexo-section__line"></div></div>
+                    <MudPaper Class="pa-5 mb-4">
+                        <MudTable Items="_gastosCategoria" Dense="true" Hover="true" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>Categoría</MudTh>
+                                <MudTh Style="text-align:right">Registros</MudTh>
+                                <MudTh Style="text-align:right">Total</MudTh>
+                                <MudTh Style="text-align:right">% del gasto</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Categoria</MudTd>
+                                <MudTd Style="text-align:right;font-size:0.82rem;color:#9B9BB4">@context.Cantidad</MudTd>
+                                <MudTd Style="text-align:right;font-weight:600;color:#F59E0B">@context.Total.ToString("C0")</MudTd>
+                                <MudTd Style="text-align:right">
+                                    @{ var pctGasto = FinTotalGastos > 0 ? (context.Total / FinTotalGastos * 100) : 0; }
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">@pctGasto.ToString("N1")%</MudChip>
+                                </MudTd>
+                            </RowTemplate>
+                            <FooterContent>
+                                <MudTd colspan="2" Style="font-weight:700">Total gastos operativos</MudTd>
+                                <MudTd Style="text-align:right;font-weight:700;color:#F59E0B">@FinTotalGastos.ToString("C0")</MudTd>
+                                <MudTd></MudTd>
+                            </FooterContent>
+                        </MudTable>
+                    </MudPaper>
+                }
+            }
+        </MudTabPanel>
+
+        @* ══════════════════════════════════════════════ TAB REPORTES ══ *@
+        <MudTabPanel Text="Reportes" Icon="@Icons.Material.Outlined.Assessment">
+
+            <div class="nexo-section" style="margin-top:0.25rem">
+                <div class="nexo-section__dot" style="background:#8B5CF6"></div>
+                <span class="nexo-section__label">Centro de Reportes</span>
+                <div class="nexo-section__line"></div>
+            </div>
+            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary)" Class="mb-4">
+                Ejecuta reportes predefinidos y exporta los datos a Excel con el rango de fechas que necesites.
+            </MudText>
+
+            @* Controles *@
+            <MudPaper Class="pa-4 mb-4" Elevation="0" Style="border:1px solid var(--mud-palette-lines-default);border-radius:12px">
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="4">
+                        <AppSelect TValue="string" @bind-Value="_rptTipo" Label="Tipo de reporte"
+                                   Items="@(_rptLista.Select(r => new AppSelectItem<string>(r.Nombre, r.Tipo)))" />
+                    </MudItem>
+                    <MudItem xs="6" sm="2">
+                        <MudDatePicker @bind-Date="_rptDesde" Label="Desde" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6" sm="2">
+                        <MudDatePicker @bind-Date="_rptHasta" Label="Hasta" Variant="Variant.Outlined" />
+                    </MudItem>
+                    @if (_rptTipo == "kardex_individual")
+                    {
+                        <MudItem xs="12" sm="4">
+                            <MudTextField @bind-Value="_rptFiltro" Label="Referencia o nombre del artículo"
+                                          Variant="Variant.Outlined" Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Outlined.Search" />
+                        </MudItem>
+                    }
+                </MudGrid>
+                <div class="d-flex mt-3" style="gap:8px">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Outlined.PlayArrow"
+                               OnClick="EjecutarReporteAsync" Disabled="_rptCargando">
+                        @(_rptCargando ? "Ejecutando…" : "Ejecutar reporte")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.GridOn"
+                               OnClick="ExportarReporteExcelAsync"
+                               Disabled="@(_rptCargando || _rptFilas.Count == 0)">
+                        Excel
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                               OnClick="ExportarReportePdfAsync"
+                               Disabled="@(_rptCargando || _rptFilas.Count == 0)">
+                        PDF
+                    </MudButton>
+                    @if (_rptFilas.Count > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Style="align-self:center">
+                            @_rptFilas.Count filas
+                        </MudChip>
+                    }
+                </div>
+                @if (_rptTipo is not null)
+                {
+                    var desc = _rptLista.FirstOrDefault(r => r.Tipo == _rptTipo)?.Descripcion;
+                    if (!string.IsNullOrEmpty(desc))
+                    {
+                        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)" Class="mt-2">@desc</MudText>
+                    }
+                }
+            </MudPaper>
+
+            @* Resultado *@
+            @if (_rptCargando)
+            {
+                <div class="d-flex justify-center pa-8"><MudProgressCircular Indeterminate="true" /></div>
+            }
+            else if (_rptFilas.Count > 0)
+            {
+                var columnas = _rptFilas[0].Keys.ToList();
+                <MudPaper Class="pa-0" Style="overflow:hidden;border:1px solid var(--mud-palette-lines-default);border-radius:12px">
+                    <div class="d-flex align-center pa-4 pb-3" style="border-bottom:1px solid var(--mud-palette-lines-default);gap:10px">
+                        <MudIcon Icon="@Icons.Material.Outlined.TableChart" Size="Size.Small" Style="color:var(--mud-palette-primary)" />
+                        <div class="flex-grow-1">
+                            <div style="font-weight:700;font-size:0.95rem">@(_rptLista.FirstOrDefault(r => r.Tipo == _rptTipo)?.Nombre)</div>
+                            <div style="font-size:0.78rem;color:var(--mud-palette-text-secondary)">
+                                @_rptDesde?.ToString("dd/MM/yyyy") — @_rptHasta?.ToString("dd/MM/yyyy")
+                                @if (!string.IsNullOrEmpty(_rptFiltro) && _rptTipo == "kardex_individual")
+                                { <span> · Filtro: <strong>@_rptFiltro</strong></span> }
+                            </div>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto">
+                        <MudTable Items="_rptFilas" Dense="true" Hover="true" Elevation="0" FixedHeader="true" Height="460px"
+                                  Style="--mud-table-striped-background:rgba(99,102,241,0.04)">
+                            <HeaderContent>
+                                @foreach (var col in columnas)
+                                {
+                                    var isNum = EsColumnaNumerica(col);
+                                    <MudTh Style="@(isNum ? "text-align:right;white-space:nowrap" : "white-space:nowrap")">
+                                        @LabelColumna(col)
+                                    </MudTh>
+                                }
+                            </HeaderContent>
+                            <RowTemplate>
+                                @foreach (var col in columnas)
+                                {
+                                    var val  = context.TryGetValue(col, out var v) ? v : null;
+                                    var fmt  = FormatValReporte(val, col);
+                                    var isNum = EsColumnaNumerica(col);
+                                    var esNeg = isNum && fmt.StartsWith("-");
+                                    var esPos = col.ToUpperInvariant().Contains("MARGEN") || col.ToUpperInvariant().Contains("UTILIDAD");
+                                    <MudTd DataLabel="@LabelColumna(col)"
+                                           Style="@(isNum ? "text-align:right;font-variant-numeric:tabular-nums" : "")">
+                                        @if (esNeg)
+                                        {
+                                            <span style="color:#EF4444">@fmt</span>
+                                        }
+                                        else if (esPos && isNum && fmt != "-" && fmt != "0 %")
+                                        {
+                                            <span style="color:#10B981;font-weight:600">@fmt</span>
+                                        }
+                                        else
+                                        {
+                                            @fmt
+                                        }
+                                    </MudTd>
+                                }
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+                </MudPaper>
+            }
+            else if (!_rptCargando && _rptEjecutado)
+            {
+                <div class="nexo-empty-state">
+                    <MudIcon Icon="@Icons.Material.Outlined.SearchOff" Class="nexo-empty-state__icon" />
+                    <p class="nexo-empty-state__text">Sin datos para el período y filtros seleccionados.</p>
+                </div>
+            }
+            else if (!_rptEjecutado)
+            {
+                <MudPaper Class="pa-10 d-flex flex-column align-center justify-center" style="min-height:220px;border:1px dashed var(--mud-palette-lines-default);border-radius:12px;opacity:.75">
+                    <MudIcon Icon="@Icons.Material.Outlined.Assessment" Style="font-size:3.5rem;color:var(--mud-palette-primary);margin-bottom:16px" />
+                    <MudText Typo="Typo.h6" Style="font-weight:600;margin-bottom:4px">Centro de Reportes</MudText>
+                    <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary)">Selecciona un reporte y haz clic en <strong>Ejecutar reporte</strong>.</MudText>
+                </MudPaper>
+            }
+
+        </MudTabPanel>
+
+    </MudTabs>
+}
+
+@code {
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    // ── Actividad, sparklines y estado del agente ──────────────────────
+    private List<ActividadFeedItem>        _actividad    = new();
+    private SparklinesDashboard?       _sparklines;
+    private EstadoIntegracionResponse? _estadoAgente;
+    private System.Timers.Timer?       _timerActividad;
+
+    // ── Computed: gráficos tab General ────────────────────────────────
+    private List<ChartSeries> _seriesGeneralLinea => new()
+    {
+        new ChartSeries { Name = "Facturas",     Data = _sparklines?.Facturas.Select(x => (double)x.Valor).ToArray()    ?? Array.Empty<double>() },
+        new ChartSeries { Name = "OPs",          Data = _sparklines?.Ordenes.Select(x => (double)x.Valor).ToArray()     ?? Array.Empty<double>() },
+        new ChartSeries { Name = "Cotizaciones", Data = _sparklines?.Cotizaciones.Select(x => (double)x.Valor).ToArray() ?? Array.Empty<double>() },
+    };
+    private string[] _labelsGeneralLinea =>
+        _sparklines?.Facturas.Select(x => x.Fecha.ToString("dd/MM")).ToArray() ?? Array.Empty<string>();
+    private double[] _dataGeneralDonut => new double[]
+    {
+        (double)(_sparklines?.Facturas.Sum(x => x.Valor)     ?? 0),
+        (double)(_sparklines?.Ordenes.Sum(x => x.Valor)      ?? 0),
+        (double)(_sparklines?.Cotizaciones.Sum(x => x.Valor) ?? 0),
+    };
+    private string[] _labelsGeneralDonut => new[] { "Facturas", "OPs", "Cotizaciones" };
+
+    private static readonly ChartOptions _opcionesGrafico = new()
+    {
+        ChartPalette = new[] { "#7C5CFF", "#14B8A6", "#F59E0B", "#0EA5E9", "#10B981", "#EF4444", "#6366F1", "#EC4899" }
+    };
+
+    // ── Producción ───────────────────────────────────────────────────
+    private List<PlanVsRealPunto> _planVsReal = new();
+    private List<ChartSeries> _seriesPlanVsReal = new();
+    private string[] _labelsPlanVsReal = Array.Empty<string>();
+    private DateTime? _planDesde = NexoWeb.Common.ColombiaClock.Today.AddDays(-14);
+    private DateTime? _planHasta = NexoWeb.Common.ColombiaClock.Today;
+    private List<(DateTime Fecha, double Porcentaje, bool SinPlan)> _variacionProduccion = new();
+    private DateTime? _varDesde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+    private DateTime? _varHasta = NexoWeb.Common.ColombiaClock.Today;
+    private List<DistribucionCentroCostoItem> _distribucion = new();
+    private double[] _dataDistribucion = Array.Empty<double>();
+    private string[] _labelsDistribucion = Array.Empty<string>();
+    private List<PerdidaPorMotivoItem> _perdidas = new();
+    private double[] _dataPerdidas = Array.Empty<double>();
+    private string[] _labelsPerdidas = Array.Empty<string>();
+    private DateTime? _perdDesde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+    private DateTime? _perdHasta = NexoWeb.Common.ColombiaClock.Today;
+    private List<ArticuloItem> _productosTerminados = new();
+    private int _totalArticulosActivos;
+    private int _articuloSeleccionadoId;
+    private List<TendenciaCostoPunto> _tendencia = new();
+    private List<ChartSeries> _seriesTendencia = new() { new ChartSeries { Name = "Costo Unitario", Data = Array.Empty<double>() } };
+    private string[] _labelsTendencia = Array.Empty<string>();
+    private List<CumplimientoCentroCostoItem> _cumplimiento = new();
+    private int _totalOrdenesFinalizadas;
+    private int _totalOrdenesATiempo;
+    private double _cumplimientoPromedio;
+    private double _totalRealProducido;
+
+    // ── Maquinaria ──────────────────────────────────────────────────
+    private ResumenMaquinariaItem? _resumenMaquinaria;
+
+    // ── General / Resumen ────────────────────────────────────────────
+    private ResumenCrmItem _resumenCrm = new(0, 0);
+    private List<VentasPorDepartamentoItem> _ventasDept = new();
+    private List<ClienteFrioItem> _clientesFrios = new();
+    private int _paginaFrios = 1;
+    private const int TamanoFrios = 20;
+    private int _totalPaginasFrios => (int)Math.Ceiling((double)_clientesFrios.Count / TamanoFrios);
+    private IEnumerable<ClienteFrioItem> ClientesFriosPaginados =>
+        _clientesFrios.Skip((_paginaFrios - 1) * TamanoFrios).Take(TamanoFrios);
+    private List<FacturaItem> _cartera = new();
+    private decimal _totalSaldoCartera;
+    private List<DesviacionItem> _desviaciones = new();
+    private List<ProyectoAlertaItem> _alertasProyectos = new();
+    private List<EmpleadosPorCentroCostoItem> _empleadosPorCentroCosto = new();
+    private int _totalEmpleadosActivos;
+    private ResumenPlanificacionItem _resumenPlanificacion = new(0, 0);
+
+    // ── Charts canales (Visions) ─────────────────────────────────────────
+    private bool _cargandoChartsVisions;
+    private bool _chartsVisionesPendientes;
+    private List<ChartSeries> _seriesVentasDia     = new();
+    private string[]          _labelsVentasDia      = Array.Empty<string>();
+    private List<ChartSeries> _seriesNexoVsVisions  = new();
+    private string[]          _labelsNexoVsVisions  = Array.Empty<string>();
+    private record TopArtVendido(string Nombre, string SKU, double CantTotal, string Canal);
+    private List<TopArtVendido> _topArtVendidos = new();
+    private double[] DataStockEstado  => new double[] { Math.Max(_totalArticulosActivos - _resumenInventario.ArticulosConAlerta, 0), (double)_resumenInventario.ArticulosConAlerta };
+    private static readonly string[] LabelsStockEstado = { "Sobre mínimo", "Bajo mínimo" };
+    private ResumenInventarioItem _resumenInventario = new(0, 0);
+    private EventoCalendarioItem? _proximoEvento;
+    private List<ComboItem> _combosActivos = new();
+
+    // ── Tab Facturación (lazy) ───────────────────────────────────────
+    private bool _tabFactCargando;
+    private bool _tabFactCargado;
+    private ResumenFacturacionItem _resumenFact = new(0, 0, 0, 0);
+    private List<IngresoPorMesPunto> _ingresosMes = new();
+    private List<ChartSeries> _seriesIngresosMes = new();
+    private string[] _labelsIngresosMes = Array.Empty<string>();
+    private List<TopClienteItem> _topClientes = new();
+    private List<TopArticuloItem> _topArticulos = new();
+    private DevolucionesAnalytics? _analyticsDevolucion;
+    private DateTime? _factDesde = NexoWeb.Common.ColombiaClock.Today.AddMonths(-1);
+    private DateTime? _factHasta = NexoWeb.Common.ColombiaClock.Today;
+    private int _mesesFact = 12;
+    private List<HorarioPicoItem> _horariosPico = new();
+    private List<ParComplementarioItem> _paresComplementarios = new();
+    private List<ComparativaMesItem> _comparativaYoY = new();
+
+
+    // ── Tab Inventario (lazy) ────────────────────────────────────────
+    private bool _tabInvCargando;
+    private bool _tabInvCargado;
+    private List<AlertaStockItem> _alertasStock = new();
+    private List<LoteProximoVencerItem> _lotesVencer = new();
+
+    // ── Tab Financiero (lazy) ────────────────────────────────────────
+    private bool _tabFinCargando;
+    private bool _tabFinCargado;
+    private List<MargenArticuloItem> _margenArticulos = new();
+    private List<ResumenGastoCategoria> _gastosCategoria = new();
+    private DateTime? _finDesde = NexoWeb.Common.ColombiaClock.Today.AddMonths(-3);
+    private DateTime? _finHasta = NexoWeb.Common.ColombiaClock.Today;
+
+    // Propiedades computadas para KPIs financieros (evitan @{} inline en Razor)
+    private decimal FinTotalVentas     => _margenArticulos.Sum(m => m.TotalFacturado);
+    private decimal FinTotalCosto      => _margenArticulos.Sum(m => m.CostoEstimado);
+    private decimal FinTotalMargen     => _margenArticulos.Sum(m => m.MargenBruto);
+    private decimal FinPctMargen       => FinTotalVentas > 0 ? (FinTotalMargen / FinTotalVentas * 100) : 0;
+    private decimal FinTotalGastos     => _gastosCategoria.Sum(g => g.Total);
+    private decimal FinUtilidadNeta    => FinTotalMargen - FinTotalGastos;
+    private decimal FinPctUtilidadNeta => FinTotalVentas > 0 ? (FinUtilidadNeta / FinTotalVentas * 100) : 0;
+
+    // ── Rutas alternativas cuando BI no es visible ───────────────────
+    private static readonly (string Codigo, string Ruta)[] _rutasAlternativas =
+    [
+        ("PRODUCCION.ORDENES",     "/produccion/ordenes"),
+        ("PRODUCCION.RECETAS",     "/produccion/recetas"),
+        ("INVENTARIO.STOCK",       "/inventario/stock"),
+        ("INVENTARIO.KARDEX",      "/inventario/kardex"),
+("OPERACIONES.COMPRAS",    "/compras/ordenes"),
+        ("OPERACIONES.DESPACHOS",  "/logistica/despachos"),
+        ("OPERACIONES.FACTURACION","/facturacion"),
+        ("CATALOGO.ARTICULOS",     "/catalogo/articulos"),
+        ("CRM.CLIENTES",           "/crm/clientes"),
+        ("PLANIFICACION.DEMANDA",  "/planificacion/demanda"),
+    ];
+
+    protected override void OnInitialized()
+    {
+        Modulos.OnCambio += VerificarAccesoBI;
+        VerificarAccesoBI();
+    }
+
+    private async Task AbrirMapaClientesAsync()
+    {
+        await DialogService.ShowAsync<MapaClientesDialog>("Mapa de Clientes",
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+    }
+
+    public void Dispose()
+    {
+        Modulos.OnCambio -= VerificarAccesoBI;
+        _timerActividad?.Stop();
+        _timerActividad?.Dispose();
+    }
+
+    private void VerificarAccesoBI()
+    {
+        if (!Modulos.Cargado || Modulos.EsAdmin) return;
+        if (Modulos.EsVisible("BI")) return;
+        foreach (var (codigo, ruta) in _rutasAlternativas)
+        {
+            if (Modulos.EsVisible(codigo))
+            {
+                Navigation.NavigateTo(ruta, replace: true);
+                return;
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaPlanVsReal    = ApiClient.GetAsync<List<PlanVsRealPunto>>(
+                $"api/dashboard/plan-vs-real?desde={_planDesde:yyyy-MM-dd}&hasta={_planHasta:yyyy-MM-dd}");
+            var tareaVariacion     = ApiClient.GetAsync<List<PlanVsRealPunto>>(
+                $"api/dashboard/plan-vs-real?desde={_varDesde:yyyy-MM-dd}&hasta={_varHasta:yyyy-MM-dd}");
+            var tareaDistribucion  = ApiClient.GetAsync<List<DistribucionCentroCostoItem>>("api/dashboard/distribucion-centro-costo");
+            var tareaPerdidas      = ApiClient.GetAsync<List<PerdidaPorMotivoItem>>(
+                $"api/dashboard/perdidas-por-motivo?desde={_perdDesde:yyyy-MM-dd}&hasta={_perdHasta:yyyy-MM-dd}");
+            var tareaConteoArticulos = ApiClient.GetAsync<int>("api/catalogo/articulos/count?estado=true");
+            var tareaCumplimiento    = ApiClient.GetAsync<List<CumplimientoCentroCostoItem>>("api/dashboard/cumplimiento-planificacion");
+
+            await Task.WhenAll(tareaPlanVsReal, tareaVariacion, tareaDistribucion, tareaPerdidas, tareaConteoArticulos, tareaCumplimiento);
+
+            // Cargar articulos en segundo plano — no bloquea el render inicial del Dashboard
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var todos = await ApiClient.GetAsync<List<ArticuloItem>>("api/catalogo/articulos/todos?estado=true") ?? new();
+                    _productosTerminados = todos.Where(a => a.TipoArticulo == "Producto Terminado").ToList();
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch { }
+            });
+
+            _planVsReal = await tareaPlanVsReal ?? new();
+            ActualizarGraficoPlanVsReal();
+
+            var variacionDatos = await tareaVariacion ?? new();
+            _variacionProduccion = variacionDatos
+                .Select(p => (p.Fecha,
+                    Porcentaje: p.TotalPlanificado > 0 ? (double)((p.TotalReal - p.TotalPlanificado) / p.TotalPlanificado * 100) : 0d,
+                    SinPlan: p.TotalPlanificado == 0 && p.TotalReal > 0))
+                .ToList();
+
+            _distribucion = await tareaDistribucion ?? new();
+            _labelsDistribucion = _distribucion.Select(d => d.CentroCosto).ToArray();
+            _dataDistribucion   = _distribucion.Select(d => (double)d.TotalUnidadesProducidas).ToArray();
+
+            _perdidas = await tareaPerdidas ?? new();
+            ActualizarGraficoPerdidas();
+
+            _totalArticulosActivos  = await tareaConteoArticulos;
+            _cumplimiento = await tareaCumplimiento ?? new();
+
+            _totalOrdenesFinalizadas = _cumplimiento.Sum(c => c.TotalOrdenesFinalizadas);
+            _totalOrdenesATiempo     = _cumplimiento.Sum(c => c.OrdenesATiempo);
+            _cumplimientoPromedio    = _cumplimiento.Count > 0 ? (double)_cumplimiento.Average(c => c.PorcentajeCumplimiento) : 0;
+            _totalRealProducido      = _seriesPlanVsReal.FirstOrDefault(s => s.Name == "Real")?.Data.Sum() ?? 0;
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+
+        await CargarResumenGeneralAsync();
+
+        try { _combosActivos = await ApiClient.GetAsync<List<ComboItem>>("api/marketing/combos/activos") ?? new(); }
+        catch { }
+
+        if (ConfiguracionEmpresa.UsaVisions)
+        {
+            await CargarChartsVisionsAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task CargarResumenGeneralAsync()
+    {
+        // Todas las llamadas en paralelo — sin esperas secuenciales
+        var tCrm         = ApiClient.GetAsync<ResumenCrmItem>($"api/dashboard/resumen-crm?desde={NexoWeb.Common.ColombiaClock.Today.AddDays(-30):yyyy-MM-dd}&hasta={NexoWeb.Common.ColombiaClock.Today:yyyy-MM-dd}");
+        var tFrios        = ApiClient.GetAsync<List<ClienteFrioItem>>("api/crm/clientes-frios?diasSinContacto=30");
+        var tVentasDept   = ApiClient.GetAsync<List<VentasPorDepartamentoItem>>("api/dashboard/ventas-por-departamento");
+        var tEmpleados    = ApiClient.GetAsync<List<EmpleadosPorCentroCostoItem>>("api/dashboard/empleados-por-centro-costo");
+        var tCartera      = ApiClient.GetAsync<FacturasPaginadasResponse>("api/facturacion/facturas?soloNoPagadas=true&pagina=1&tamano=200");
+        var tPlanif       = ApiClient.GetAsync<ResumenPlanificacionItem>("api/dashboard/resumen-planificacion");
+        var tInventario   = ApiClient.GetAsync<ResumenInventarioItem>("api/dashboard/resumen-inventario");
+        var tDesviaciones = ApiClient.GetAsync<List<DesviacionItem>>("api/planificacion/desviaciones?umbral=70");
+        var tAlertas      = ApiClient.GetAsync<List<ProyectoAlertaItem>>("api/proyectos/alertas");
+        var tEvento       = ApiClient.GetAsync<EventoCalendarioItem>("api/calendario/eventos/proximo");
+        var tMaquinaria   = ApiClient.GetAsync<ResumenMaquinariaItem>("api/dashboard/resumen-maquinaria");
+
+        try { await Task.WhenAll(tCrm, tFrios, tVentasDept, tEmpleados, tCartera,
+                                 tPlanif, tInventario, tDesviaciones, tAlertas, tEvento, tMaquinaria); }
+        catch { /* individual awaits below manejan cada fallo */ }
+
+        try
+        {
+            _resumenCrm              = await tCrm        ?? new(0, 0);
+            _clientesFrios           = await tFrios       ?? new();
+            _ventasDept              = await tVentasDept  ?? new();
+            _empleadosPorCentroCosto = await tEmpleados   ?? new();
+            _totalEmpleadosActivos   = _empleadosPorCentroCosto.Sum(e => e.TotalEmpleados);
+            var carteraItems         = (await tCartera)?.Items ?? new();
+            _cartera                 = carteraItems.Take(5).ToList();
+            _totalSaldoCartera       = carteraItems.Sum(f => f.SaldoPendiente);
+        }
+        catch (HttpRequestException) { }
+
+        try
+        {
+            _resumenPlanificacion = await tPlanif       ?? new(0, 0);
+            _resumenInventario    = await tInventario   ?? new(0, 0);
+            _desviaciones         = await tDesviaciones ?? new();
+            _alertasProyectos     = await tAlertas      ?? new();
+        }
+        catch { }
+
+        try { _proximoEvento   = await tEvento;    } catch { }
+        try { _resumenMaquinaria = await tMaquinaria; } catch { }
+
+        // ── Actividad, sparklines y estado del agente ──────────────────────
+        try
+        {
+            var tareaActividad  = ApiClient.GetAsync<List<ActividadFeedItem>>("api/dashboard/actividad?n=15");
+            var tareaSparklines = ApiClient.GetAsync<SparklinesDashboard>("api/dashboard/sparklines");
+            if (ConfiguracionEmpresa.UsaVisions)
+            {
+                var tareaAgente = ApiClient.GetAsync<List<EstadoIntegracionResponse>>("api/integracion/estado");
+                await Task.WhenAll(tareaActividad, tareaSparklines, tareaAgente);
+                _estadoAgente = (await tareaAgente)?.OrderByDescending(a => a.UltimoLatido).FirstOrDefault();
+            }
+            else
+            {
+                await Task.WhenAll(tareaActividad, tareaSparklines);
+            }
+            _actividad  = await tareaActividad  ?? new();
+            _sparklines = await tareaSparklines;
+        }
+        catch { }
+
+        // Timer para refrescar actividad cada 60 s
+        _timerActividad = new System.Timers.Timer(60_000);
+        _timerActividad.Elapsed += async (_, _) =>
+        {
+            try { _actividad = await ApiClient.GetAsync<List<ActividadFeedItem>>("api/dashboard/actividad?n=15") ?? new(); }
+            catch { }
+            await InvokeAsync(StateHasChanged);
+        };
+        _timerActividad.AutoReset = true;
+        _timerActividad.Start();
+    }
+
+    private async Task CargarTabFacturacionAsync()
+    {
+        _tabFactCargando = true;
+        StateHasChanged();
+        try
+        {
+            var tareaResumen = ApiClient.GetAsync<ResumenFacturacionItem>(
+                $"api/dashboard/resumen-facturacion?desde={_factDesde:yyyy-MM-dd}&hasta={_factHasta:yyyy-MM-dd}");
+            var tareaIngresos = ApiClient.GetAsync<List<IngresoPorMesPunto>>(
+                $"api/dashboard/ingresos-por-mes?meses={_mesesFact}");
+            var tareaClientes = ApiClient.GetAsync<List<TopClienteItem>>(
+                $"api/dashboard/top-clientes?desde={_factDesde:yyyy-MM-dd}&hasta={_factHasta:yyyy-MM-dd}&top=10");
+            var tareaArticulos = ApiClient.GetAsync<List<TopArticuloItem>>(
+                $"api/dashboard/top-articulos?desde={_factDesde:yyyy-MM-dd}&hasta={_factHasta:yyyy-MM-dd}&top=10");
+            var tareaYoY = ApiClient.GetAsync<List<ComparativaMesItem>>(
+                $"api/dashboard/comparativa-yoy?meses={_mesesFact}");
+            var tareaDevolucion = ApiClient.GetAsync<DevolucionesAnalytics>(
+                $"api/facturacion/devoluciones/analytics?meses={_mesesFact}");
+            var tareaHorarios = ApiClient.GetAsync<List<HorarioPicoItem>>("api/dashboard/horarios-pico?meses=3");
+            var tareaComplementarios = ApiClient.GetAsync<List<ParComplementarioItem>>("api/dashboard/pares-complementarios?top=10");
+
+            await Task.WhenAll(tareaResumen, tareaIngresos, tareaClientes, tareaArticulos, tareaYoY, tareaDevolucion, tareaHorarios, tareaComplementarios);
+
+            _resumenFact         = await tareaResumen    ?? new(0, 0, 0, 0);
+            _ingresosMes         = await tareaIngresos   ?? new();
+            _topClientes         = await tareaClientes   ?? new();
+            _topArticulos        = await tareaArticulos  ?? new();
+            _comparativaYoY       = await tareaYoY            ?? new();
+            _analyticsDevolucion  = await tareaDevolucion;
+            _horariosPico         = await tareaHorarios        ?? new();
+            _paresComplementarios = await tareaComplementarios ?? new();
+            ActualizarGraficoIngresos();
+            _tabFactCargado = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar tab Facturación: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _tabFactCargando = false;
+        }
+    }
+
+    private async Task OnTabChangedAsync(int index)
+    {
+        if (index == 1 && !_tabFactCargado)
+            await CargarTabFacturacionAsync();
+        else if (index == 4 && !_tabInvCargado)
+            await CargarTabInventarioAsync();
+        else if (index == 5 && !_tabFinCargado)
+            await CargarTabFinancieroAsync();
+        else if (index == 6 && _rptLista.Count == 0)
+            await CargarListaReportesAsync();
+    }
+
+    private async Task OnRangoFactCambiadoAsync()
+    {
+        if (_factDesde is null || _factHasta is null) return;
+        _tabFactCargado = false;
+        await CargarTabFacturacionAsync();
+    }
+
+    private async Task OnMesesFactCambiadoAsync(int meses)
+    {
+        _mesesFact = meses;
+        _ingresosMes = await ApiClient.GetAsync<List<IngresoPorMesPunto>>(
+            $"api/dashboard/ingresos-por-mes?meses={meses}") ?? new();
+        ActualizarGraficoIngresos();
+        StateHasChanged();
+    }
+
+    private void ActualizarGraficoIngresos()
+    {
+        _labelsIngresosMes = _ingresosMes.Select(p => p.NombreMes.Length > 3 ? p.NombreMes[..3] : p.NombreMes).ToArray();
+        // Dividir por 1 000 000 para que el eje Y muestre "24.9" en vez de "24903680".
+        // El subtítulo aclara la unidad: "millones COP".
+        _seriesIngresosMes = new List<ChartSeries>
+        {
+            new() { Name = "Facturado", Data = _ingresosMes.Select(p => Math.Round((double)p.TotalFacturado / 1_000_000, 1)).ToArray() },
+            new() { Name = "Cobrado",   Data = _ingresosMes.Select(p => Math.Round((double)p.TotalCobrado   / 1_000_000, 1)).ToArray() },
+        };
+    }
+
+    private void ActualizarGraficoPlanVsReal()
+    {
+        _labelsPlanVsReal = _planVsReal.Select(p => p.Fecha.ToString("dd/MM")).ToArray();
+        _seriesPlanVsReal = new List<ChartSeries>
+        {
+            new() { Name = "Planificado", Data = _planVsReal.Select(p => (double)p.TotalPlanificado).ToArray() },
+            new() { Name = "Real",        Data = _planVsReal.Select(p => (double)p.TotalReal).ToArray() }
+        };
+    }
+
+    private MarkupString SparklineSvg(List<SparklineItem> data)
+    {
+        if (data.Count == 0) return (MarkupString)"";
+        var max = (double)data.Max(x => x.Valor);
+        if (max == 0) max = 1;
+        const int w = 80; const int h = 24;
+        var pts = data.Select((x, i) =>
+            $"{i * w / Math.Max(data.Count - 1, 1)},{h - (double)x.Valor / max * h}");
+        return (MarkupString)$"""
+            <svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">
+              <polyline points="{string.Join(" ", pts)}" fill="none" stroke="currentColor"
+                        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+            </svg>
+            """;
+    }
+
+    private static string NombreDia(int dia) => dia switch
+    {
+        1 => "Dom", 2 => "Lun", 3 => "Mar", 4 => "Mié",
+        5 => "Jue", 6 => "Vie", 7 => "Sáb", _ => ""
+    };
+
+    private static string TiempoAtras(DateTime utc)
+    {
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalMinutes < 1)  return "ahora";
+        if (diff.TotalMinutes < 60) return $"hace {(int)diff.TotalMinutes} min";
+        if (diff.TotalHours   < 24) return $"hace {(int)diff.TotalHours} h";
+        return $"hace {(int)diff.TotalDays} d";
+    }
+
+    private static string Inv(double valor) => valor.ToString("0.##", CultureInfo.InvariantCulture);
+    private sealed record BarraVariacion(double X, double Y, double Width, double Height, string Color, string FechaLabel, double Porcentaje, bool SinPlan = false);
+    private const double AnchoMinimoPorBarra = 44;
+    private double AnchoSvgVariacion => Math.Max(1000, _variacionProduccion.Count * AnchoMinimoPorBarra);
+
+    private List<BarraVariacion> ObtenerBarrasVariacion()
+    {
+        var resultado = new List<BarraVariacion>();
+        var n = _variacionProduccion.Count;
+        if (n == 0) return resultado;
+        var svgWidth = AnchoSvgVariacion;
+        const double zeroY = 120, amplitud = 90;
+        var maxAbs = _variacionProduccion.Where(v => !v.SinPlan).Select(v => Math.Abs(v.Porcentaje)).DefaultIfEmpty(5).Max();
+        if (maxAbs < 5) maxAbs = 5;
+        var slot = svgWidth / n;
+        var anchoBarra = Math.Min(slot * 0.55, 40);
+        for (var i = 0; i < n; i++)
+        {
+            var punto = _variacionProduccion[i];
+            double altura, x, y; string color;
+            if (punto.SinPlan)
+            {
+                altura = 30; x = i * slot + (slot - anchoBarra) / 2; y = zeroY - altura; color = "#F59E0B";
+            }
+            else
+            {
+                altura = Math.Max(Math.Abs(punto.Porcentaje) / maxAbs * amplitud, 3);
+                x = i * slot + (slot - anchoBarra) / 2;
+                y = punto.Porcentaje >= 0 ? zeroY - altura : zeroY;
+                color = punto.Porcentaje >= 0 ? "#10B981" : "#EF4444";
+            }
+            resultado.Add(new BarraVariacion(x, y, anchoBarra, altura, color, punto.Fecha.ToString("dd MMM"), punto.Porcentaje, punto.SinPlan));
+        }
+        return resultado;
+    }
+
+    private string ConstruirSvgVariacion()
+    {
+        var sb = new System.Text.StringBuilder();
+        const double svgH = 240;
+        foreach (var b in ObtenerBarrasVariacion())
+        {
+            var signo = b.Porcentaje >= 0 ? "+" : "";
+            var texto = b.SinPlan ? "Sin plan" : $"{signo}{b.Porcentaje.ToString("N1", CultureInfo.InvariantCulture)}%";
+            var tooltip = b.SinPlan ? $"{b.FechaLabel}: producción sin orden planificada" : $"{b.FechaLabel}: {texto}";
+            sb.Append($"<rect x=\"{Inv(b.X)}\" y=\"{Inv(b.Y)}\" width=\"{Inv(b.Width)}\" height=\"{Inv(b.Height)}\" rx=\"2\" fill=\"{b.Color}\" class=\"nexo-variacion-chart__bar\"><title>{tooltip}</title></rect>");
+            var yLabel = b.SinPlan || b.Porcentaje >= 0 ? Math.Max(b.Y - 5, 12) : Math.Min(b.Y + b.Height + 14, svgH - 4);
+            sb.Append($"<text x=\"{Inv(b.X + b.Width / 2)}\" y=\"{Inv(yLabel)}\" text-anchor=\"middle\" class=\"nexo-variacion-chart__label\">{texto}</text>");
+        }
+        return sb.ToString();
+    }
+
+    private void ActualizarGraficoPerdidas()
+    {
+        _labelsPerdidas = _perdidas.Select(p => p.Motivo).ToArray();
+        _dataPerdidas   = _perdidas.Select(p => (double)p.ValorTotalPerdido).ToArray();
+    }
+
+    private async Task OnRangoVariacionCambiadoAsync()
+    {
+        if (_varDesde is null || _varHasta is null) return;
+        var datos = await ApiClient.GetAsync<List<PlanVsRealPunto>>(
+            $"api/dashboard/plan-vs-real?desde={_varDesde:yyyy-MM-dd}&hasta={_varHasta:yyyy-MM-dd}") ?? new();
+        _variacionProduccion = datos.Select(p => (p.Fecha,
+            Porcentaje: p.TotalPlanificado > 0 ? (double)((p.TotalReal - p.TotalPlanificado) / p.TotalPlanificado * 100) : 0d,
+            SinPlan: p.TotalPlanificado == 0 && p.TotalReal > 0)).ToList();
+    }
+
+    private async Task OnRangoPlanVsRealCambiadoAsync()
+    {
+        if (_planDesde is null || _planHasta is null) return;
+        _planVsReal = await ApiClient.GetAsync<List<PlanVsRealPunto>>(
+            $"api/dashboard/plan-vs-real?desde={_planDesde:yyyy-MM-dd}&hasta={_planHasta:yyyy-MM-dd}") ?? new();
+        ActualizarGraficoPlanVsReal();
+        _totalRealProducido = _seriesPlanVsReal.FirstOrDefault(s => s.Name == "Real")?.Data.Sum() ?? 0;
+    }
+
+    private async Task OnRangoPerdidasCambiadoAsync()
+    {
+        if (_perdDesde is null || _perdHasta is null) return;
+        _perdidas = await ApiClient.GetAsync<List<PerdidaPorMotivoItem>>(
+            $"api/dashboard/perdidas-por-motivo?desde={_perdDesde:yyyy-MM-dd}&hasta={_perdHasta:yyyy-MM-dd}") ?? new();
+        ActualizarGraficoPerdidas();
+    }
+
+    private decimal PorcentajeCumplimientoDia(PlanVsRealPunto p) =>
+        p.TotalPlanificado > 0 ? (p.TotalReal / p.TotalPlanificado * 100) : 0;
+
+    private decimal PorcentajeDistribucion(DistribucionCentroCostoItem d)
+    {
+        var total = _distribucion.Sum(x => x.TotalUnidadesProducidas);
+        return total > 0 ? (d.TotalUnidadesProducidas / total * 100) : 0;
+    }
+
+    private decimal PorcentajePerdida(PerdidaPorMotivoItem p)
+    {
+        var total = _perdidas.Sum(x => x.ValorTotalPerdido);
+        return total > 0 ? (p.ValorTotalPerdido / total * 100) : 0;
+    }
+
+    private async Task OnProductoCambiadoAsync(int nuevoArticuloId)
+    {
+        _articuloSeleccionadoId = nuevoArticuloId;
+        _tendencia = await ApiClient.GetAsync<List<TendenciaCostoPunto>>(
+            $"api/dashboard/tendencia-costo?articuloId={nuevoArticuloId}") ?? new();
+        _labelsTendencia = _tendencia.Select(t => t.Fecha.ToString("dd/MM")).ToArray();
+        _seriesTendencia = new List<ChartSeries> { new() { Name = "Costo Unitario", Data = _tendencia.Select(t => (double)t.CostoUnitarioReal).ToArray() } };
+    }
+
+    private async Task CargarTabInventarioAsync()
+    {
+        _tabInvCargando = true;
+        StateHasChanged();
+        try
+        {
+            var t1 = ApiClient.GetAsync<List<AlertaStockItem>>("api/dashboard/alertas-stock");
+            var t2 = ConfiguracionEmpresa.ManejarVencimientos
+                ? ApiClient.GetAsync<List<LoteProximoVencerItem>>($"api/inventario/lotes-por-vencer?diasAlerta={ConfiguracionEmpresa.DiasAlertaVencimiento}")
+                : Task.FromResult<List<LoteProximoVencerItem>?>(new());
+            await Task.WhenAll(t1, t2);
+            _alertasStock = await t1 ?? new();
+            _lotesVencer  = await t2 ?? new();
+            _tabInvCargado = true;
+        }
+        catch (Exception ex) { Snackbar.Add($"Error al cargar alertas: {ex.Message}", Severity.Warning); }
+        finally { _tabInvCargando = false; }
+    }
+
+    private async Task CargarTabFinancieroAsync()
+    {
+        _tabFinCargando = true;
+        StateHasChanged();
+        try
+        {
+            var tareaMargen  = ApiClient.GetAsync<List<MargenArticuloItem>>(
+                $"api/dashboard/margen-articulos?desde={_finDesde:yyyy-MM-dd}&hasta={_finHasta:yyyy-MM-dd}&top=30");
+            var tareaGastos  = ApiClient.GetAsync<List<ResumenGastoCategoria>>(
+                $"api/finanzas/gastos/resumen-categoria?desde={_finDesde:yyyy-MM-dd}&hasta={_finHasta:yyyy-MM-dd}");
+            await Task.WhenAll(tareaMargen, tareaGastos);
+            _margenArticulos  = await tareaMargen  ?? new();
+            _gastosCategoria  = await tareaGastos  ?? new();
+            _tabFinCargado = true;
+        }
+        catch (Exception ex) { Snackbar.Add($"Error al cargar margen: {ex.Message}", Severity.Warning); }
+        finally { _tabFinCargando = false; }
+    }
+
+    private async Task OnRangoFinCambiadoAsync()
+    {
+        if (_finDesde is null || _finHasta is null) return;
+        _tabFinCargado = false;
+        await CargarTabFinancieroAsync();
+    }
+
+    private async Task CargarChartsVisionsAsync()
+    {
+        _cargandoChartsVisions = true;
+        StateHasChanged();
+        try
+        {
+            var desde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+            var hasta = NexoWeb.Common.ColombiaClock.Today;
+            var reqPeriodo = new { Tipo = "ventas_por_periodo", Desde = desde, Hasta = hasta, Limite = 100 };
+            var reqTop     = new { Tipo = "top_articulos",      Desde = desde, Hasta = hasta, Limite = 20 };
+            var t1 = ApiClient.PostAsync<object, List<Dictionary<string, object?>>>("api/reportes/ejecutar", reqPeriodo);
+            var t2 = ApiClient.PostAsync<object, List<Dictionary<string, object?>>>("api/reportes/ejecutar", reqTop);
+            await Task.WhenAll(t1, t2);
+
+            var rowsPeriodo = await t1 ?? new();
+            var rowsTop     = await t2 ?? new();
+
+            static double Num(Dictionary<string, object?> r, string k)
+            {
+                if (!r.TryGetValue(k, out var v) || v is null) return 0d;
+                if (v is JsonElement je) return je.ValueKind == JsonValueKind.Number ? je.GetDouble() : 0d;
+                return Convert.ToDouble(v);
+            }
+            static string Str(Dictionary<string, object?> r, string k)
+            {
+                if (!r.TryGetValue(k, out var v) || v is null) return "";
+                if (v is JsonElement je) return je.GetString() ?? je.ToString();
+                return v.ToString() ?? "";
+            }
+            static DateTime FechaD(Dictionary<string, object?> r)
+            {
+                if (r.TryGetValue("Fecha", out var v))
+                {
+                    if (v is DateTime dt) return dt;
+                    if (v is JsonElement je && je.TryGetDateTime(out var d)) return d;
+                    if (v is string s && DateTime.TryParse(s, out var d2)) return d2;
+                }
+                return DateTime.MinValue;
+            }
+
+            // Gráfica 1: ventas por día
+            _labelsVentasDia = rowsPeriodo.Select(r => FechaD(r).ToString("dd/MM")).ToArray();
+            _seriesVentasDia = new List<ChartSeries>
+            {
+                new() { Name = "NEXO",    Data = rowsPeriodo.Select(r => Num(r, "TotalNEXO")).ToArray() },
+                new() { Name = "Visions", Data = rowsPeriodo.Select(r => Num(r, "TotalVisions")).ToArray() },
+            };
+
+            // Gráfica 3: top artículos vendidos
+            _topArtVendidos = rowsTop.Select(r => new TopArtVendido(
+                Str(r, "Articulo"), Str(r, "SKU"),
+                Num(r, "CantidadTotal"),  Str(r, "CanalPrincipal")
+            )).ToList();
+
+            // Gráfica 4: ventas por semana apiladas
+            var semanas = rowsPeriodo
+                .GroupBy(r => { var d = FechaD(r); return d == DateTime.MinValue ? d : d.AddDays(-(int)d.DayOfWeek); })
+                .Where(g => g.Key != DateTime.MinValue)
+                .OrderBy(g => g.Key)
+                .ToList();
+            _labelsNexoVsVisions = semanas.Select(g => g.Key.ToString("dd/MM")).ToArray();
+            _seriesNexoVsVisions = new List<ChartSeries>
+            {
+                new() { Name = "NEXO",    Data = semanas.Select(g => g.Sum(r => Num(r, "TotalNEXO"))).ToArray() },
+                new() { Name = "Visions", Data = semanas.Select(g => g.Sum(r => Num(r, "TotalVisions"))).ToArray() },
+            };
+        }
+        catch { }
+        finally
+        {
+            _cargandoChartsVisions = false;
+            _chartsVisionesPendientes = true;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_chartsVisionesPendientes)
+        {
+            _chartsVisionesPendientes = false;
+            await DibujarChartsVisionsAsync();
+        }
+    }
+
+    private async Task DibujarChartsVisionsAsync()
+    {
+        if (_seriesVentasDia.Count > 0 && _seriesVentasDia.Any(s => s.Data.Length > 0))
+        {
+            var series = _seriesVentasDia.Select(s => new { name = s.Name, data = s.Data }).ToArray();
+            await JS.InvokeVoidAsync("nexoCharts.render", "chart-ventas-dia", "line", _labelsVentasDia, series, 8);
+        }
+        if (_seriesNexoVsVisions.Count > 0 && _seriesNexoVsVisions.Any(s => s.Data.Length > 0))
+        {
+            var series = _seriesNexoVsVisions.Select(s => new { name = s.Name, data = s.Data }).ToArray();
+            await JS.InvokeVoidAsync("nexoCharts.render", "chart-nexo-semana", "bar", _labelsNexoVsVisions, series, 6);
+        }
+    }
+
+    private async Task ExportarExcelAsync() =>
+        await ExportarAsync("api/dashboard/exportar/excel", "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+    private async Task ExportarPdfAsync() =>
+        await ExportarAsync("api/dashboard/exportar/pdf", "pdf", "application/pdf");
+
+    private async Task ExportarAsync(string ruta, string extension, string tipoContenido)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync(ruta);
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", $"NEXO-Reporte-{NexoWeb.Common.ColombiaClock.Now:yyyyMMdd-HHmm}.{extension}", tipoContenido, streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo generar el reporte: {ex.Message}", Severity.Error);
+        }
+        finally { }
+    }
+
+    // ── Reportes (pestaña BI) ─────────────────────────────────────────────
+    private sealed record RptInfo(string Tipo, string Nombre, string Descripcion);
+    private List<RptInfo>                       _rptLista     = new();
+    private string?                             _rptTipo;
+    private string?                             _rptFiltro;
+    private DateTime?                           _rptDesde     = NexoWeb.Common.ColombiaClock.Today.AddMonths(-3);
+    private DateTime?                           _rptHasta     = NexoWeb.Common.ColombiaClock.Today;
+    private bool                                _rptCargando;
+    private bool                                _rptEjecutado;
+    private List<Dictionary<string, object?>>   _rptFilas     = new();
+
+    private static readonly Dictionary<string, string> _colLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["SKU"]               = "Referencia",
+        ["Articulo"]          = "Artículo",
+        ["NombreArticulo"]    = "Artículo",
+        ["Stock"]             = "Stock",
+        ["StockMinimo"]       = "Stock Mín.",
+        ["Estado"]            = "Estado",
+        ["Fecha"]             = "Fecha",
+        ["TotalNEXO"]         = "Ventas NEXO",
+        ["FacturasNEXO"]      = "# Facturas",
+        ["TotalVisions"]      = "Ventas Visions",
+        ["UnidadesVisions"]   = "Uds. POS",
+        ["CantidadNEXO"]      = "Cant. NEXO",
+        ["CantidadVisions"]   = "Cant. Visions",
+        ["CantidadTotal"]     = "Cant. Total",
+        ["TotalFacturado"]    = "Total Facturado",
+        ["CanalPrincipal"]    = "Canal",
+        ["Cliente"]           = "Cliente",
+        ["NIT"]               = "NIT / CC",
+        ["NumDocumentos"]     = "# Docs",
+        ["UltimaFactura"]     = "Última Factura",
+        ["UltimoMovimiento"]  = "Último Mov.",
+        ["DiasParado"]        = "Días sin Mov.",
+        ["CantidadVendida"]   = "Cant. Vendida",
+        ["Rotacion"]          = "Rotación",
+        ["DiasInventario"]    = "Días Inv.",
+        ["Tipo"]              = "Tipo",
+        ["Ciudad"]            = "Ciudad",
+        ["Responsable"]       = "Responsable",
+        ["FechaRegistro"]     = "Fecha Registro",
+        ["Prioridad"]         = "Prioridad",
+        ["Total"]             = "Total",
+        ["Etapa"]             = "Etapa",
+        ["ValorEstimado"]     = "Valor Estimado",
+        ["Mes"]               = "Mes",
+        ["Anio"]              = "Año",
+        ["Promedio"]          = "NPS Promedio",
+        ["Promotores"]        = "Promotores",
+        ["Detractores"]       = "Detractores",
+        ["CostoPromedio"]     = "Costo Prom.",
+        ["ValorTotal"]        = "Valor Bodega",
+        ["PrecioVenta"]       = "Precio Venta",
+        ["Costo"]             = "Costo",
+        ["UtilidadBruta"]     = "Utilidad Bruta",
+        ["MargenPct"]         = "Margen %",
+        ["TipoMovimiento"]    = "Tipo Movimiento",
+        ["Entrada"]           = "Entrada",
+        ["Salida"]            = "Salida",
+        ["Saldo"]             = "Saldo",
+        ["CostoUnitario"]     = "Costo Unit.",
+        ["Observacion"]       = "Observación",
+        ["Usuario"]           = "Usuario",
+        ["OP"]                = "Orden Prod.",
+        ["Producto"]          = "Producto",
+        ["CantidadProgramada"]= "Cant. Programada",
+        ["CantidadProducida"] = "Cant. Producida",
+        ["Insumo"]            = "Insumo",
+        ["CantidadTeorica"]   = "Cant. Teórica",
+        ["CantidadReal"]      = "Cant. Real",
+        ["Desviacion"]        = "Desviación",
+        ["DesviacionPct"]     = "Desv. %",
+    };
+
+    private static string LabelColumna(string col) =>
+        _colLabels.TryGetValue(col, out var label) ? label : col;
+
+    private static bool EsColumnaNumerica(string col)
+    {
+        var u = col.ToUpperInvariant();
+        return u is "STOCK" or "STOCKMINIMO" or "CANTIDAD" or "CANTIDADNEXO" or "CANTIDADVISIONS"
+                or "CANTIDADTOTAL" or "CANTIDADVENDIDA" or "CANTIDADPROGRAMADA" or "CANTIDADPRODUCIDA"
+                or "CANTIDADTEORICA" or "CANTIDADREAL" or "ENTRADA" or "SALIDA" or "SALDO"
+                or "NUMDOCUMENTOS" or "DIASPARADO" or "DIASINVENTARIO" or "TOTAL" or "PROMOTORES"
+                or "DETRACTORES" or "MES" or "ANIO"
+            || u.StartsWith("TOTAL") || u.StartsWith("VALOR") || u.StartsWith("COSTO")
+            || u.StartsWith("PRECIO") || u.StartsWith("UTILIDAD") || u.Contains("PCT")
+            || u.Contains("MARGEN") || u.Contains("DESVIACION") || u.Contains("ROTACION")
+            || u.Contains("UNIDADES") || u.Contains("FACTURAS");
+    }
+
+    private static string FormatValReporte(object? val, string col)
+    {
+        if (val is null) return "-";
+        double? num = null;
+        DateTime? dt = null;
+        string? str = null;
+
+        if (val is JsonElement je)
+        {
+            switch (je.ValueKind)
+            {
+                case JsonValueKind.Number: num = je.GetDouble(); break;
+                case JsonValueKind.String:
+                    var s = je.GetString() ?? "";
+                    if (DateTime.TryParse(s, out var d)) dt = d;
+                    else str = s;
+                    break;
+                case JsonValueKind.Null: return "-";
+                default: str = je.ToString(); break;
+            }
+        }
+        else if (val is decimal dec) num = (double)dec;
+        else if (val is double dbl)  num = dbl;
+        else if (val is int  i)      num = i;
+        else if (val is long l)      num = l;
+        else if (val is DateTime datetime) dt = datetime;
+        else str = val.ToString();
+
+        if (dt.HasValue) return dt.Value.ToString("dd/MM/yyyy");
+        if (num.HasValue)
+        {
+            var u = col.ToUpperInvariant();
+            if (u.Contains("PCT") || u.Contains("MARGEN") || u.Contains("DESVIACION"))
+                return num.Value.ToString("N1") + " %";
+            if (u.Contains("ROTACION"))
+                return num.Value.ToString("N2");
+            if (u is "DIASPARADO" or "DIASINVENTARIO" or "NUMDOCUMENTOS" or "MES" or "ANIO"
+                  or "TOTAL" or "PROMOTORES" or "DETRACTORES")
+                return num.Value.ToString("N0");
+            if (u.StartsWith("TOTAL") || u.StartsWith("VALOR") || u.StartsWith("COSTO")
+                || u.StartsWith("PRECIO") || u.StartsWith("UTILIDAD") || u.Contains("VENTA"))
+                return "$ " + num.Value.ToString("N0");
+            return num.Value.ToString("N2");
+        }
+        return str ?? "-";
+    }
+
+    private async Task CargarListaReportesAsync()
+    {
+        try
+        {
+            var lista = await ApiClient.GetAsync<List<RptInfo>>("api/reportes") ?? new();
+            _rptLista = lista;
+            if (_rptLista.Count > 0 && _rptTipo is null)
+                _rptTipo = _rptLista[0].Tipo;
+        }
+        catch { }
+    }
+
+    private async Task EjecutarReporteAsync()
+    {
+        if (_rptTipo is null) return;
+        _rptCargando = true;
+        _rptFilas    = new();
+        StateHasChanged();
+        try
+        {
+            var req = new { Tipo = _rptTipo, Desde = _rptDesde, Hasta = _rptHasta, Limite = 500, Filtro = _rptFiltro };
+            _rptFilas = await ApiClient.PostAsync<object, List<Dictionary<string, object?>>>("api/reportes/ejecutar", req) ?? new();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _rptCargando = false; _rptEjecutado = true; }
+    }
+
+    private async Task ExportarReporteExcelAsync()
+    {
+        if (_rptTipo is null) return;
+        try
+        {
+            var req    = new { Tipo = _rptTipo, Desde = _rptDesde, Hasta = _rptHasta, Limite = 500, Filtro = _rptFiltro };
+            var bytes  = await ApiClient.PostBytesAsync<object>("api/reportes/exportar", req);
+            var nombre = $"reporte_{_rptTipo}_{NexoWeb.Common.ColombiaClock.Today:yyyy-MM-dd}.xlsx";
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", nombre,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { Snackbar.Add($"Error al exportar: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task ExportarReportePdfAsync()
+    {
+        if (_rptTipo is null) return;
+        try
+        {
+            var req    = new { Tipo = _rptTipo, Desde = _rptDesde, Hasta = _rptHasta, Limite = 500, Filtro = _rptFiltro };
+            var bytes  = await ApiClient.PostBytesAsync<object>("api/reportes/exportar-pdf", req);
+            var nombre = $"reporte_{_rptTipo}_{NexoWeb.Common.ColombiaClock.Today:yyyy-MM-dd}.pdf";
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", nombre, "application/pdf",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { Snackbar.Add($"Error al exportar PDF: {ex.Message}", Severity.Error); }
+    }
+}

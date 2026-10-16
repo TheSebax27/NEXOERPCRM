@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CS8669;MUD0001;MUD0002</NoWarn>
+    <!-- Fuerza rebuild del bundle CSS (*.razor.css → NexoWeb.styles.css) cuando
+         cualquier archivo de estilos cambia, incluso durante hot reload.
+         Sin esto, los cambios en *.razor.css no se ven hasta un reinicio completo. -->
+    <DisableScopedCssBundling>false</DisableScopedCssBundling>
+    <ScopedCssEnabled>true</ScopedCssEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="7.15.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Shared\" />
+  </ItemGroup>
+
+  <!-- Excluir carpeta de publicacion para que VS no la trate como assets -->
+  <ItemGroup>
+    <Content Remove="publish\**" />
+    <None Remove="publish\**" />
+    <Compile Remove="publish\**" />
+  </ItemGroup>
+
+  <!-- ── Tailwind CSS (Standalone CLI, sin Node.js) ──────────────────
+       Genera wwwroot/tailwind.css escaneando todos los archivos .razor.
+       Corre antes de la compilación de .NET para que el archivo esté
+       disponible cuando Blazor procesa los assets estáticos.
+       ──────────────────────────────────────────────────────────────── -->
+  <Target Name="BuildTailwindCSS" BeforeTargets="Build">
+    <PropertyGroup>
+      <TailwindCLI>$(MSBuildProjectDirectory)\tailwindcss.exe</TailwindCLI>
+      <TailwindInput>$(MSBuildProjectDirectory)\wwwroot\tailwind.input.css</TailwindInput>
+      <TailwindOutput>$(MSBuildProjectDirectory)\wwwroot\tailwind.css</TailwindOutput>
+      <TailwindConfig>$(MSBuildProjectDirectory)\tailwind.config.js</TailwindConfig>
+      <TailwindFlags Condition="'$(Configuration)' == 'Release'">--minify</TailwindFlags>
+    </PropertyGroup>
+
+    <Exec
+      Command="&quot;$(TailwindCLI)&quot; -i &quot;$(TailwindInput)&quot; -o &quot;$(TailwindOutput)&quot; --config &quot;$(TailwindConfig)&quot; $(TailwindFlags)"
+      ConsoleToMsBuild="true"
+      Condition="Exists('$(TailwindCLI)')" />
+  </Target>
+
+</Project>

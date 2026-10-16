@@ -1,0 +1,213 @@
+﻿@page "/inventario/mermas"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Análisis de Mermas — NEXO</PageTitle>
+
+<div class="nexo-page-header">
+    <div class="nexo-page-header__body">
+        <div>
+            <h1 class="nexo-page-header__title">Análisis de Mermas</h1>
+            <p class="nexo-page-header__sub">Pérdidas de inventario por bajas y excesos de consumo en producción.</p>
+        </div>
+    </div>
+</div>
+
+@* ── Filtros ── *@
+<div class="nexo-section mb-3">
+    <div class="nexo-section__body" style="display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap; padding:0.75rem 1rem;">
+        <MudDatePicker @bind-Date="_desde" Label="Desde" Variant="Variant.Outlined"
+                       Editable="true" DateFormat="dd/MM/yyyy" Style="max-width:170px;" />
+        <MudDatePicker @bind-Date="_hasta" Label="Hasta" Variant="Variant.Outlined"
+                       Editable="true" DateFormat="dd/MM/yyyy" Style="max-width:170px;" />
+        <MudSelect T="string?" @bind-Value="_tipo" Label="Tipo" Variant="Variant.Outlined"
+                   Style="max-width:200px;" Clearable="true">
+            <MudSelectItem T="string?" Value="@("BAJA")">Baja Inventario</MudSelectItem>
+            <MudSelectItem T="string?" Value="@("PRODUCCION")">Exceso Producción</MudSelectItem>
+        </MudSelect>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search"
+                   OnClick="ConsultarAsync" Disabled="_cargando">Consultar</MudButton>
+    </div>
+</div>
+
+@if (_cargando)
+{
+    <div class="d-flex justify-center pa-8"><MudProgressCircular Indeterminate="true" /></div>
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error">@_error</MudAlert>
+}
+else if (_resumen is not null)
+{
+    @* ── Tarjetas resumen ── *@
+    <div style="display:flex; gap:1rem; margin-bottom:1rem; flex-wrap:wrap;">
+        <div class="nexo-section" style="flex:1; min-width:180px; padding:0.75rem 1rem;">
+            <div style="font-size:0.72rem; color:var(--n-text-2); text-transform:uppercase; letter-spacing:.05em;">Bajas de inventario</div>
+            <div style="font-size:1.4rem; font-weight:700; color:#EF4444; font-family:monospace;">
+                @_resumen.TotalValorBajas.ToString("C0")
+            </div>
+            <div style="font-size:0.75rem; color:var(--n-text-2);">valor perdido por bajas</div>
+        </div>
+        <div class="nexo-section" style="flex:1; min-width:180px; padding:0.75rem 1rem;">
+            <div style="font-size:0.72rem; color:var(--n-text-2); text-transform:uppercase; letter-spacing:.05em;">Exceso en producción</div>
+            <div style="font-size:1.4rem; font-weight:700; color:#F59E0B; font-family:monospace;">
+                @_resumen.TotalValorProduccion.ToString("C0")
+            </div>
+            <div style="font-size:0.75rem; color:var(--n-text-2);">consumo real sobre teórico</div>
+        </div>
+        <div class="nexo-section" style="flex:1; min-width:180px; padding:0.75rem 1rem; border-left:3px solid #EF4444;">
+            <div style="font-size:0.72rem; color:var(--n-text-2); text-transform:uppercase; letter-spacing:.05em;">Total merma</div>
+            <div style="font-size:1.6rem; font-weight:700; color:#EF4444; font-family:monospace;">
+                @_resumen.TotalValor.ToString("C0")
+            </div>
+            <div style="font-size:0.75rem; color:var(--n-text-2);">@_resumen.TotalEventos eventos</div>
+        </div>
+    </div>
+
+    @if (!_resumen.Detalle.Any())
+    {
+        <div class="nexo-section" style="padding:2rem; text-align:center;">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Style="color:var(--n-green); font-size:2.5rem;" />
+            <p style="margin-top:0.5rem; color:var(--n-text-2);">Sin mermas en el período seleccionado.</p>
+        </div>
+    }
+    else
+    {
+        @* ── Top artículos ── *@
+        <div class="nexo-section mb-3">
+            <div class="nexo-section__header">
+                <span class="nexo-section__title">Top 5 artículos con mayor pérdida</span>
+            </div>
+            <div class="nexo-section__body" style="padding:0;">
+                @foreach (var art in ObtenerTopArticulos())
+                {
+                    var pct = _resumen.TotalValor == 0 ? 0m : art.ValorTotal / _resumen.TotalValor * 100m;
+                    <div style="padding:0.5rem 1rem; border-top:1px solid var(--n-border); display:flex; align-items:center; gap:0.75rem;">
+                        <div style="flex:1;">
+                            <span style="font-weight:600; font-size:0.88rem;">@art.Referencia</span>
+                            <span style="color:var(--n-text-2); font-size:0.8rem; margin-left:6px;">@art.Articulo</span>
+                        </div>
+                        <div style="font-family:monospace; font-weight:700; color:#EF4444; font-size:0.9rem;">
+                            @art.ValorTotal.ToString("C0")
+                        </div>
+                        <div style="font-size:0.75rem; color:var(--n-text-2); width:40px; text-align:right;">
+                            @pct.ToString("N1")%
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* ── Detalle completo ── *@
+        <div class="nexo-section">
+            <div class="nexo-section__header">
+                <span class="nexo-section__title">Detalle de mermas</span>
+            </div>
+            <div class="nexo-section__body" style="padding:0;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.83rem;">
+                    <thead>
+                        <tr style="background:var(--n-bg-2); color:var(--n-text-2); font-size:0.71rem; text-transform:uppercase; letter-spacing:.04em;">
+                            <th style="padding:0.5rem 1rem; text-align:left;">Fecha</th>
+                            <th style="padding:0.5rem 0.5rem; text-align:left;">Tipo</th>
+                            <th style="padding:0.5rem 0.5rem; text-align:left;">Artículo</th>
+                            <th style="padding:0.5rem 0.5rem; text-align:right;">Cantidad</th>
+                            <th style="padding:0.5rem 0.5rem; text-align:right;">Costo unit.</th>
+                            <th style="padding:0.5rem 1rem; text-align:right;">Valor perdido</th>
+                            <th style="padding:0.5rem 0.5rem; text-align:left;">Motivo / OP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var linea in _resumen.Detalle)
+                        {
+                            var esBaja = linea.TipoMerma == "Baja Inventario";
+                            var colorTipo = esBaja ? "#EF4444" : "#F59E0B";
+                            <tr style="border-top:1px solid var(--n-border);">
+                                <td style="padding:0.4rem 1rem; font-size:0.78rem; color:var(--n-text-2);">
+                                    @linea.Fecha?.ToLocalTime().ToString("dd/MM/yy")
+                                </td>
+                                <td style="padding:0.4rem 0.5rem;">
+                                    <span style="font-size:0.72rem; padding:2px 6px; border-radius:4px;
+                                                 background:@(colorTipo)22; color:@colorTipo; font-weight:600;">
+                                        @linea.TipoMerma
+                                    </span>
+                                </td>
+                                <td style="padding:0.4rem 0.5rem;">
+                                    <span style="font-family:monospace; font-size:0.78rem;">@linea.Referencia</span>
+                                    <span style="display:block; font-size:0.72rem; color:var(--n-text-2);
+                                                 max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                        @linea.Articulo
+                                    </span>
+                                </td>
+                                <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace;">
+                                    @linea.Cantidad.ToString("N3") @linea.Unidad
+                                </td>
+                                <td style="padding:0.4rem 0.5rem; text-align:right; font-family:monospace; color:var(--n-text-2);">
+                                    @linea.CostoUnitario.ToString("C2")
+                                </td>
+                                <td style="padding:0.4rem 1rem; text-align:right; font-family:monospace; font-weight:700; color:@colorTipo;">
+                                    @linea.ValorPerdido.ToString("C0")
+                                </td>
+                                <td style="padding:0.4rem 0.5rem; font-size:0.78rem; color:var(--n-text-2);">
+                                    @if (!string.IsNullOrEmpty(linea.OrdenOP))
+                                    {
+                                        <span style="font-family:monospace;">@linea.OrdenOP</span>
+                                        @if (!string.IsNullOrEmpty(linea.Motivo))
+                                        {
+                                            <span> — @linea.Motivo</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        @(linea.Motivo ?? "—")
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private bool _cargando;
+    private string? _error;
+    private ResumenMermasResponse? _resumen;
+    private DateTime? _desde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+    private DateTime? _hasta = NexoWeb.Common.ColombiaClock.Today;
+    private string? _tipo;
+
+    protected override async Task OnInitializedAsync()
+        => await ConsultarAsync();
+
+    private async Task ConsultarAsync()
+    {
+        _cargando = true;
+        _error = null;
+        try
+        {
+            var q = new List<string>();
+            if (_desde.HasValue) q.Add($"desde={_desde.Value:yyyy-MM-dd}");
+            if (_hasta.HasValue) q.Add($"hasta={_hasta.Value:yyyy-MM-dd}");
+            if (!string.IsNullOrEmpty(_tipo)) q.Add($"tipo={_tipo}");
+            var url = "api/inventario/mermas" + (q.Any() ? "?" + string.Join("&", q) : "");
+            _resumen = await ApiClient.GetAsync<ResumenMermasResponse>(url);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private List<(string Referencia, string Articulo, decimal ValorTotal, int Eventos)> ObtenerTopArticulos()
+    {
+        if (_resumen is null) return [];
+        return _resumen.Detalle
+            .GroupBy(d => new { d.ArticuloID, d.Articulo, d.Referencia })
+            .Select(g => (g.Key.Referencia, g.Key.Articulo, ValorTotal: g.Sum(x => x.ValorPerdido), Eventos: g.Count()))
+            .OrderByDescending(x => x.ValorTotal)
+            .Take(5)
+            .ToList();
+    }
+}

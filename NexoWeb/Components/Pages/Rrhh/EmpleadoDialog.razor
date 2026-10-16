@@ -1,0 +1,220 @@
+﻿@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:10px">
+            <MudIcon Icon="@(EsEdicion ? Icons.Material.Outlined.Edit : Icons.Material.Outlined.PersonAdd)"
+                     Style="color:var(--mud-palette-primary)" />
+            <div>
+                <div style="font-weight:700; font-size:1.05rem">@(EsEdicion ? "Editar Empleado" : "Nuevo Empleado")</div>
+                <div style="font-size:0.75rem; opacity:.65; font-weight:400">
+                    @(EsEdicion ? "Actualiza la informacion del empleado." : "Completa la informacion del nuevo empleado.")
+                </div>
+            </div>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        <MudForm @ref="_form" Model="@this">
+            <div style="display:grid; grid-template-columns:clamp(120px,200px,28%) 1fr; gap:0; min-height:320px">
+
+                @* â”€â”€ Columna foto â”€â”€ *@
+                <div style="padding:20px 16px; border-right:1px solid var(--mud-palette-lines-default);
+                            display:flex; flex-direction:column; align-items:center; gap:14px;
+                            background:color-mix(in srgb, var(--mud-palette-primary) 5%, transparent)">
+
+                    @* Avatar / foto *@
+                    @if (_fotoPreviewUrl is not null)
+                    {
+                        <div style="width:88px; height:88px; border-radius:50%; overflow:hidden;
+                                    border:3px solid var(--mud-palette-primary); flex-shrink:0">
+                            <img src="@_fotoPreviewUrl" alt="" style="width:100%; height:100%; object-fit:cover" />
+                        </div>
+                    }
+                    else if (EsEdicion && Empleado!.TieneFoto)
+                    {
+                        <div style="width:88px; height:88px; border-radius:50%; overflow:hidden;
+                                    border:3px solid var(--mud-palette-primary); flex-shrink:0">
+                            <img src="@($"api/rrhh/empleados/{Empleado!.EmpleadoID}/foto?v={_cacheBust}")"
+                                 alt="" style="width:100%; height:100%; object-fit:cover" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="width:88px; height:88px; border-radius:50%;
+                                    background:var(--mud-palette-primary); color:#fff;
+                                    display:flex; align-items:center; justify-content:center;
+                                    font-size:2rem; font-weight:700; flex-shrink:0">
+                            @(_nombres.Length > 0 ? _nombres[0].ToString() : "?")@(_apellidos.Length > 0 ? _apellidos[0].ToString() : "")
+                        </div>
+                    }
+
+                    @if (EsEdicion)
+                    {
+                        <div style="font-weight:600; font-size:0.82rem; text-align:center; word-break:break-word; line-height:1.3">
+                            @_nombres @_apellidos
+                        </div>
+                    }
+
+                    <div style="display:flex; flex-direction:column; gap:6px; width:100%">
+                        <InputFile id="nexo-emp-foto-input" OnChange="OnFotoSeleccionadaAsync"
+                                   accept="image/png,image/jpeg,image/webp" style="display:none;" />
+                        <label for="nexo-emp-foto-input" class="nexo-perfil-panel__btn-archivo"
+                               style="text-align:center; cursor:pointer; font-size:0.8rem">
+                            @((_fotoPreviewUrl is not null || (EsEdicion && Empleado!.TieneFoto)) ? "Cambiar foto" : "Subir foto")
+                        </label>
+                    </div>
+                    <div style="font-size:0.68rem; opacity:.5; text-align:center">Maximo 1 MB.</div>
+
+                    <div style="background:color-mix(in srgb, var(--mud-palette-primary) 10%, transparent);
+                                border-radius:8px; padding:10px 12px; font-size:0.72rem;
+                                color:var(--n-text-2); line-height:1.4; margin-top:auto">
+                        <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small"
+                                 Style="vertical-align:middle; margin-right:4px; opacity:.7" />
+                        Esta informacion se utilizara para fines administrativos.
+                    </div>
+                </div>
+
+                @* â”€â”€ Columna campos â”€â”€ *@
+                <div style="padding:20px 20px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; max-height:480px">
+
+                    <MudTextField @bind-Value="_nombres" Label="Nombres" Required="true"
+                                  RequiredError="Los nombres son obligatorios"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+                    <MudTextField @bind-Value="_apellidos" Label="Apellidos" Required="true"
+                                  RequiredError="Los apellidos son obligatorios"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+                    <AppSelect TValue="int?" @bind-Value="_cargoId" Label="Cargo"
+                               Items="@(Cargos.Where(c => c.Estado).Select(c => new AppSelectItem<int?>($"{c.Nombre}{(c.Departamento is not null ? $" ({c.Departamento})" : "")}", (int?)c.CargoID)))" />
+
+                    <AppSelect TValue="int?" @bind-Value="_centroCostoId" Label="Centro de Costo"
+                               Items="@(CentrosCosto.Select(cc => new AppSelectItem<int?>(cc.Nombre, (int?)cc.CentroCostoID)))" />
+
+                    <AppSelect TValue="int?" @bind-Value="_jefeDirectoId" Label="Jefe Directo"
+                               Items="@(Empleados.Where(e => !EsEdicion || e.EmpleadoID != Empleado!.EmpleadoID).Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+
+                    <MudDatePicker @bind-Date="_fechaIngreso" Label="Fecha de Ingreso"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense"
+                                   DateFormat="dd/MM/yyyy" Editable="true" />
+
+                    <MudTextField @bind-Value="_telefono" Label="Telefono"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+                    <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+                    <div>
+                        <MudNumericField T="decimal?" @bind-Value="_tarifaHora"
+                                         Label="Tarifa por hora (opcional)"
+                                         Format="N2" Adornment="Adornment.Start" AdornmentText="$"
+                                         Min="0m" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <div style="font-size:0.72rem; opacity:.6; margin-top:3px; padding-left:2px">
+                            Se usa para calcular el costo de mano de obra en produccion.
+                        </div>
+                    </div>
+
+                    <AppSelect TValue="string?" @bind-Value="_tipoSangre" Label="Tipo de Sangre (opcional)"
+                               Placeholder="— No especificado —"
+                               Items="@(new AppSelectItem<string?>[]{ new("A+","A+"), new("A-","A-"), new("B+","B+"), new("B-","B-"), new("AB+","AB+"), new("AB-","AB-"), new("O+","O+"), new("O-","O-") })" />
+
+                    @if (EsEdicion)
+                    {
+                        <MudSwitch T="bool" @bind-Value="_estado" Color="Color.Success" Label="Activo" />
+                    }
+                </div>
+            </div>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   StartIcon="@(EsEdicion ? Icons.Material.Filled.Save : Icons.Material.Filled.PersonAdd)"
+                   OnClick="GuardarAsync">
+            @(EsEdicion ? "Guardar cambios" : "Crear empleado")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public EmpleadoItem? Empleado { get; set; }
+    [Parameter] public List<CentroCostoItem> CentrosCosto { get; set; } = new();
+    [Parameter] public List<CargoItem> Cargos { get; set; } = new();
+    [Parameter] public List<EmpleadoItem> Empleados { get; set; } = new();
+
+    private bool EsEdicion => Empleado is not null;
+
+    private MudForm _form = default!;
+    private string _nombres = string.Empty;
+    private string _apellidos = string.Empty;
+    private int? _cargoId;
+    private int? _centroCostoId;
+    private int? _jefeDirectoId;
+    private DateTime? _fechaIngreso;
+    private string? _telefono;
+    private string? _email;
+    private bool _estado = true;
+    private decimal? _tarifaHora;
+    private string? _tipoSangre;
+    private string? _fotoBase64;
+    private string? _fotoContentType;
+    private string? _fotoPreviewUrl;
+    private readonly long _cacheBust = DateTime.UtcNow.Ticks;
+
+    protected override void OnInitialized()
+    {
+        if (Empleado is not null)
+        {
+            _nombres       = Empleado.Nombres;
+            _apellidos     = Empleado.Apellidos;
+            _cargoId       = Empleado.CargoID;
+            _centroCostoId = Empleado.CentroCostoID;
+            _jefeDirectoId = Empleado.JefeDirectoID;
+            _fechaIngreso  = Empleado.FechaIngreso;
+            _telefono      = Empleado.Telefono;
+            _email         = Empleado.Email;
+            _estado        = Empleado.Estado;
+            _tarifaHora    = Empleado.TarifaHora;
+            _tipoSangre    = Empleado.TipoSangre;
+        }
+    }
+
+    private async Task OnFotoSeleccionadaAsync(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 1_000_000;
+        if (e.File.Size > maxBytes) { _fotoBase64 = null; return; }
+
+        using var stream = e.File.OpenReadStream(maxBytes);
+        using var memoria = new MemoryStream();
+        await stream.CopyToAsync(memoria);
+        _fotoBase64     = Convert.ToBase64String(memoria.ToArray());
+        _fotoContentType = e.File.ContentType;
+        _fotoPreviewUrl  = $"data:{_fotoContentType};base64,{_fotoBase64}";
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid) return;
+
+        if (EsEdicion)
+        {
+            var request = new ActualizarEmpleadoRequest(
+                _nombres, _apellidos, _cargoId, _centroCostoId, _fechaIngreso, _telefono, _email, _estado, _jefeDirectoId, _tarifaHora, _tipoSangre);
+            MudDialog.Close(DialogResult.Ok(new EmpleadoDialogResultado(request, _fotoBase64, _fotoContentType)));
+        }
+        else
+        {
+            var request = new CrearEmpleadoRequest(
+                _nombres, _apellidos, _cargoId, _centroCostoId, _fechaIngreso, _telefono, _email, _jefeDirectoId, _tarifaHora, _tipoSangre);
+            MudDialog.Close(DialogResult.Ok(new EmpleadoDialogResultado(request, _fotoBase64, _fotoContentType)));
+        }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}
+

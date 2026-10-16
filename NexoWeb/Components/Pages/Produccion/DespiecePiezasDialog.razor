@@ -1,0 +1,186 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.subtitle2" Class="mb-1">
+            Insumo: <strong>@NombreInsumo</strong>
+        </MudText>
+        <MudText Typo="Typo.caption" Class="mb-3" Style="color:var(--n-text-3);">
+            Define las piezas que se cortan de este material. Unidad recomendada: mm.
+        </MudText>
+
+        @* Formulario nueva pieza *@
+        <MudGrid>
+            <MudItem xs="12" sm="5">
+                <MudTextField @bind-Value="_nombre" Label="Nombre pieza" Variant="Variant.Outlined"
+                              Placeholder="Ej: Lateral izquierdo" />
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudNumericField T="decimal?" @bind-Value="_largo" Label="Largo"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudNumericField T="decimal?" @bind-Value="_ancho" Label="Ancho"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudNumericField T="decimal?" @bind-Value="_espesor" Label="Espesor"
+                                 Variant="Variant.Outlined" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="1">
+                <MudNumericField T="decimal" @bind-Value="_cantidad" Label="Cant."
+                                 Variant="Variant.Outlined" HideSpinButtons="true" Min="1" />
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudSelect T="string" @bind-Value="_unidad" Label="Unidad" Variant="Variant.Outlined">
+                    <MudSelectItem Value=@("mm")>mm</MudSelectItem>
+                    <MudSelectItem Value=@("cm")>cm</MudSelectItem>
+                    <MudSelectItem Value=@("in")>in</MudSelectItem>
+                    <MudSelectItem Value=@("m")>m</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="7">
+                <MudTextField @bind-Value="_notas" Label="Notas (opcional)" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Outlined.Add"
+                           OnClick="AgregarAsync" Disabled="_guardando" FullWidth="true">
+                    Agregar
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+
+        @* Calculadora live *@
+        @{
+            var areaM2 = _largo > 0 && _ancho > 0 ? CalcArea(_largo!.Value, _ancho!.Value, _unidad) : 0;
+        }
+        @if (areaM2 > 0)
+        {
+            <div class="d-flex align-center mt-1 mb-2" style="gap:0.5rem; font-size:0.8rem; color:var(--n-text-3);">
+                <MudIcon Icon="@Icons.Material.Outlined.Calculate" Size="Size.Small" />
+                Área pieza: <strong>@areaM2.ToString("N4") m²</strong>
+                &nbsp;×&nbsp;@_cantidad.ToString("N0") = <strong>@((areaM2 * _cantidad).ToString("N4")) m²</strong>
+            </div>
+        }
+
+        <MudDivider Class="my-3" />
+
+        @* Lista de piezas *@
+        @if (_piezas.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Style="color:var(--n-text-3);">Sin piezas definidas todavía.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_piezas" Dense="true" Hover="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Pieza</MudTh>
+                    <MudTh>Largo</MudTh>
+                    <MudTh>Ancho</MudTh>
+                    <MudTh>Esp.</MudTh>
+                    <MudTh>Cant.</MudTh>
+                    <MudTh>Área total (m²)</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Pieza">@context.NombrePieza</MudTd>
+                    <MudTd DataLabel="Largo">@(context.Largo?.ToString("N1") ?? "-") @context.UnidadMedida</MudTd>
+                    <MudTd DataLabel="Ancho">@(context.Ancho?.ToString("N1") ?? "-") @context.UnidadMedida</MudTd>
+                    <MudTd DataLabel="Esp.">@(context.Espesor?.ToString("N1") ?? "-") @context.UnidadMedida</MudTd>
+                    <MudTd DataLabel="Cant.">@context.Cantidad.ToString("N0")</MudTd>
+                    <MudTd DataLabel="Área">
+                        @(context.Largo > 0 && context.Ancho > 0
+                            ? (CalcArea(context.Largo!.Value, context.Ancho!.Value, context.UnidadMedida) * context.Cantidad).ToString("N4")
+                            : "-")
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline"
+                                       Size="Size.Small" Color="Color.Error"
+                                       OnClick="() => EliminarAsync(context.PiezaID)" />
+                    </MudTd>
+                </RowTemplate>
+                <FooterContent>
+                    <MudTd colspan="5" Style="font-weight:600;">Total área</MudTd>
+                    <MudTd Style="font-weight:600;">
+                        @(_piezas.Where(p => p.Largo > 0 && p.Ancho > 0)
+                            .Sum(p => CalcArea(p.Largo!.Value, p.Ancho!.Value, p.UnidadMedida) * p.Cantidad)
+                            .ToString("N4")) m²
+                    </MudTd>
+                    <MudTd></MudTd>
+                </FooterContent>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Close()">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int RecetaDetalleID { get; set; }
+    [Parameter] public string NombreInsumo { get; set; } = "";
+
+    private List<DespiecePiezaItem> _piezas = new();
+    private string  _nombre   = "";
+    private decimal? _largo, _ancho, _espesor;
+    private decimal  _cantidad = 1;
+    private string   _unidad   = "mm";
+    private string?  _notas;
+    private bool     _guardando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _piezas = await ApiClient.GetAsync<List<DespiecePiezaItem>>(
+                $"api/produccion/recetas/detalle/{RecetaDetalleID}/despiece") ?? new();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AgregarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre))
+        {
+            Snackbar.Add("Escribe el nombre de la pieza.", Severity.Warning);
+            return;
+        }
+        _guardando = true;
+        try
+        {
+            var req = new CrearDespiecePiezaRequest(_nombre.Trim(), _largo, _ancho, _espesor, _unidad, _cantidad, _notas);
+            await ApiClient.PostAsync<CrearDespiecePiezaRequest, object?>(
+                $"api/produccion/recetas/detalle/{RecetaDetalleID}/despiece", req);
+            _nombre = ""; _largo = null; _ancho = null; _espesor = null; _cantidad = 1; _notas = null;
+            _piezas = await ApiClient.GetAsync<List<DespiecePiezaItem>>(
+                $"api/produccion/recetas/detalle/{RecetaDetalleID}/despiece") ?? new();
+            Snackbar.Add("Pieza agregada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private async Task EliminarAsync(int piezaId)
+    {
+        try
+        {
+            await ApiClient.DeleteAsync($"api/produccion/despiece/{piezaId}");
+            _piezas = _piezas.Where(p => p.PiezaID != piezaId).ToList();
+            Snackbar.Add("Pieza eliminada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private static decimal CalcArea(decimal largo, decimal ancho, string unidad)
+    {
+        decimal factor = unidad == "mm" ? 1_000_000m
+                       : unidad == "cm" ? 10_000m
+                       : unidad == "in" ? 1_550.003m
+                       : 1m;
+        return Math.Round(largo * ancho / factor, 6);
+    }
+}

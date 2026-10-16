@@ -1,0 +1,158 @@
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Configurar Comisiones por Empleado</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_cargando)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mb-3">
+                Las comisiones se calculan sobre el total facturado (excluye facturas anuladas).
+            </MudText>
+
+            @if (_configs.Any())
+            {
+                <MudTable Items="_configs" Dense="true" Hover="true" Class="mb-4">
+                    <HeaderContent>
+                        <MudTh>Empleado</MudTh>
+                        <MudTh>% Comisión</MudTh>
+                        <MudTh>Meta mensual</MudTh>
+                        <MudTh>Bono por meta</MudTh>
+                        <MudTh>Activo</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.NombreEmpleado</MudTd>
+                        <MudTd>@context.PorcentajeBase %</MudTd>
+                        <MudTd>@context.MetaMensual.ToString("C0")</MudTd>
+                        <MudTd>@context.BonoPorMeta.ToString("C0")</MudTd>
+                        <MudTd>
+                            <MudIcon Icon="@(context.Activo ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                     Color="@(context.Activo ? Color.Success : Color.Default)" Size="Size.Small" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            <MudDivider Class="mb-4" />
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Agregar / Actualizar empleado</MudText>
+
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudSelect T="int?" Value="_form.EmpleadoID"
+                               ValueChanged="OnEmpleadoChanged"
+                               Label="Empleado"
+                               Placeholder="Seleccionar empleado"
+                               AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var e in _empleados)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)e.EmpleadoID)">@e.NombreCompleto</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudNumericField T="decimal" @bind-Value="_form.PorcentajeBase"
+                                     Label="% Comisión" Min="0" Max="100"
+                                     Adornment="Adornment.End" AdornmentText="%" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudNumericField T="decimal" @bind-Value="_form.MetaMensual"
+                                     Label="Meta mensual" Min="0"
+                                     Adornment="Adornment.Start" AdornmentText="$" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudNumericField T="decimal" @bind-Value="_form.BonoPorMeta"
+                                     Label="Bono por meta" Min="0"
+                                     Adornment="Adornment.Start" AdornmentText="$" />
+                </MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   Disabled="@(_form.EmpleadoID is null)"
+                   OnClick="GuardarAsync">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    private record ConfigComisionItem(int ConfigID, int EmpleadoID, string NombreEmpleado,
+        decimal PorcentajeBase, decimal MetaMensual, decimal BonoPorMeta, bool Activo);
+    private record EmpleadoSimple(int EmpleadoID, string Nombres, string Apellidos)
+    {
+        public string NombreCompleto => $"{Nombres} {Apellidos}";
+    }
+
+    private List<ConfigComisionItem> _configs = [];
+    private List<EmpleadoSimple> _empleados = [];
+    private FormData _form = new();
+    private bool _cargando = true;
+
+    private class FormData
+    {
+        public int? EmpleadoID { get; set; }
+        public decimal PorcentajeBase { get; set; }
+        public decimal MetaMensual { get; set; }
+        public decimal BonoPorMeta { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var cfgs = await Api.GetAsync<IEnumerable<ConfigComisionItem>>("api/comisiones/config");
+            _configs = cfgs?.ToList() ?? [];
+
+            var emps = await Api.GetAsync<IEnumerable<EmpleadoSimple>>("api/rrhh/empleados?soloActivos=true");
+            _empleados = emps?.ToList() ?? [];
+        }
+        finally { _cargando = false; }
+    }
+
+    private void OnEmpleadoChanged(int? id)
+    {
+        _form.EmpleadoID = id;
+        var existente = _configs.FirstOrDefault(c => c.EmpleadoID == id);
+        if (existente is not null)
+        {
+            _form.PorcentajeBase = existente.PorcentajeBase;
+            _form.MetaMensual    = existente.MetaMensual;
+            _form.BonoPorMeta    = existente.BonoPorMeta;
+        }
+        else
+        {
+            _form.PorcentajeBase = 0;
+            _form.MetaMensual    = 0;
+            _form.BonoPorMeta    = 0;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form.EmpleadoID is null) return;
+        var req = new
+        {
+            EmpleadoID    = _form.EmpleadoID.Value,
+            PorcentajeBase = _form.PorcentajeBase,
+            MetaMensual    = _form.MetaMensual,
+            BonoPorMeta    = _form.BonoPorMeta,
+        };
+        await Api.PostAsync<object, object?>("api/comisiones/config", req);
+        Snackbar.Add("Configuración guardada", Severity.Success);
+
+        var cfgs = await Api.GetAsync<IEnumerable<ConfigComisionItem>>("api/comisiones/config");
+        _configs = cfgs?.ToList() ?? [];
+        _form = new();
+    }
+
+    private void Cerrar() => MudDialog.Close(DialogResult.Ok(true));
+}

@@ -1,0 +1,467 @@
+@page "/settings/email"
+@implements IDisposable
+@attribute [Authorize(Roles = "Administracion")]
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Email transaccional - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Configuración</p>
+            <h1 class="nexo-page-hero__title">Email transaccional</h1>
+        </div>
+    </div>
+    <a href="/settings" style="text-decoration:none">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" Size="Size.Small">
+            Volver a Settings
+        </MudButton>
+    </a>
+</div>
+
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else
+{
+    @* ── Guía paso a paso ─────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-1">
+            <MudIcon Icon="@Icons.Material.Outlined.ListAlt" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Cómo activarlo — 5 pasos</div>
+                <div class="nexo-chart-header__sub">Usa tu cuenta de Gmail · Gratis · Sin registrarse en ningún otro servicio</div>
+            </div>
+        </div>
+
+        <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3 mb-2" Icon="@Icons.Material.Outlined.CheckCircle">
+            <strong>Solo necesitas una cuenta de Gmail.</strong> NEXO enviará los emails directamente desde esa cuenta — hasta 500 emails por día, completamente gratis.
+        </MudAlert>
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4" Icon="@Icons.Material.Outlined.ReportProblem">
+            <strong>Ten en cuenta: los correos pueden llegar a spam.</strong> Cuando se envía desde un Gmail personal hacia clientes que no te tienen agregado, es normal que algunos proveedores (Hotmail, Yahoo, correos corporativos) los filtren a spam o correo no deseado. Para minimizarlo, pídele a tus clientes que la primera vez busquen el email en spam y lo marquen como "No es spam" — con eso, los siguientes llegarán normalmente a la bandeja de entrada.
+        </MudAlert>
+
+        @* Paso 1 *@
+        <div class="nexo-email-paso">
+            <div class="nexo-email-paso__num">1</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Entra a tu cuenta de Gmail en el navegador</div>
+                <div class="nexo-email-paso__desc">
+                    Abre <strong>gmail.com</strong> e inicia sesión con el email que quieres usar para
+                    enviar los correos de tu negocio (puede ser el mismo que ya usas normalmente).
+                </div>
+            </div>
+        </div>
+
+        @* Paso 2 *@
+        <div class="nexo-email-paso">
+            <div class="nexo-email-paso__num">2</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Activa la verificación en dos pasos (si no la tienes)</div>
+                <div class="nexo-email-paso__desc">
+                    Google solo permite contraseñas de aplicación cuando tienes activada la verificación en dos pasos.
+                    <br /><br />
+                    Para activarla: haz clic en tu foto de perfil (arriba a la derecha en Gmail) →
+                    <strong>Gestionar tu cuenta de Google</strong> → pestaña <strong>Seguridad</strong> →
+                    busca <strong>"Verificación en dos pasos"</strong> → actívala siguiendo los pasos.
+                    <br /><br />
+                    <em>Si ya la tienes activa, salta directo al paso 3.</em>
+                </div>
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2" Icon="@Icons.Material.Outlined.PhoneAndroid">
+                    Google te pedirá confirmar con tu teléfono cada vez que inicies sesión desde un lugar nuevo. Es una medida de seguridad normal — no afecta el envío de emails desde NEXO.
+                </MudAlert>
+            </div>
+        </div>
+
+        @* Paso 3 *@
+        <div class="nexo-email-paso">
+            <div class="nexo-email-paso__num">3</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Crea una "Contraseña de aplicación"</div>
+                <div class="nexo-email-paso__desc">
+                    Esta es una clave especial que Google genera para que aplicaciones externas (como NEXO)
+                    puedan enviar emails en tu nombre, <strong>sin revelar tu contraseña real de Gmail</strong>.
+                    <br /><br />
+                    Para crearla, entra directamente a este enlace con tu cuenta abierta:
+                </div>
+                <MudLink Href="https://myaccount.google.com/apppasswords" Target="_blank" Typo="Typo.body2"
+                         Class="d-flex align-center mt-2 mb-3" Style="gap:4px; color:var(--mud-palette-primary); font-weight:600;">
+                    <MudIcon Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" />
+                    myaccount.google.com/apppasswords
+                </MudLink>
+
+                <div class="nexo-email-instruccion">
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.LooksOne" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span>En el campo que dice <strong>"Nombre de la app"</strong> escribe: <code>NEXO ERP</code></span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.LooksTwo" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span>Haz clic en el botón <strong>"Crear"</strong></span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.Looks3" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span>Google muestra una clave de <strong>16 letras</strong> en una caja amarilla. <strong>Cópiala ahora</strong> — solo se muestra una vez</span>
+                    </div>
+                </div>
+
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3" Icon="@Icons.Material.Outlined.Warning">
+                    La clave se ve así: <code style="letter-spacing:2px; font-size:1rem;">abcd efgh ijkl mnop</code><br />
+                    Cópiala con o sin espacios — los dos funcionan igual.
+                </MudAlert>
+            </div>
+        </div>
+
+        @* Paso 4 *@
+        <div class="nexo-email-paso">
+            <div class="nexo-email-paso__num">4</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Completa el formulario aquí abajo</div>
+                <div class="nexo-email-paso__desc">
+                    Con la clave copiada, llena los tres campos del formulario de abajo:
+                </div>
+                <div class="nexo-email-instruccion mt-2">
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.AlternateEmail" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span><strong>Email de Gmail:</strong> el correo que usaste para crear la contraseña de aplicación (ej. <em>minegocio@gmail.com</em>)</span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.Key" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span><strong>Contraseña de aplicación:</strong> la clave de 16 letras que copiaste en el paso 3</span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.Business" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span><strong>Nombre del remitente:</strong> el nombre que verán tus clientes en su bandeja (ej. <em>Mi Empresa</em>)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* Paso 5 *@
+        <div class="nexo-email-paso" style="border-bottom:none; padding-bottom:0; margin-bottom:0;">
+            <div class="nexo-email-paso__num">5</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Activa el switch, guarda y envía un email de prueba</div>
+                <div class="nexo-email-paso__desc">
+                    Activa el interruptor de "Envío activado", haz clic en <strong>Guardar</strong> y luego
+                    usa la sección de <strong>Email de prueba</strong> para enviarte un correo a ti mismo
+                    y confirmar que todo funciona antes de que llegue a tus clientes.
+                </div>
+            </div>
+        </div>
+    </MudPaper>
+
+    @* ── Contador diario ──────────────────────────────────────────────── *@
+    @if (_contador is not null)
+    {
+        var pct = _contador.LimiteGmail > 0 ? (double)_contador.EmailsHoy / _contador.LimiteGmail * 100 : 0;
+        var colorContador = pct >= 90 ? Color.Error : pct >= 70 ? Color.Warning : Color.Success;
+        <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+            <div class="nexo-chart-header mb-3">
+                <MudIcon Icon="@Icons.Material.Outlined.Speed" Size="Size.Small" Class="nexo-chart-header__icon" />
+                <div>
+                    <div class="nexo-chart-header__title">Emails enviados hoy</div>
+                    <div class="nexo-chart-header__sub">El límite de Gmail es 500 emails por día. Se reinicia a medianoche UTC.</div>
+                </div>
+            </div>
+            <div class="d-flex justify-space-between mb-1">
+                <MudText Typo="Typo.body2">@_contador.EmailsHoy de @_contador.LimiteGmail enviados</MudText>
+                <MudText Typo="Typo.body2" Color="@colorContador">@pct.ToString("0")%</MudText>
+            </div>
+            <MudProgressLinear Value="@pct" Color="@colorContador" Rounded Class="mb-2" />
+            @if (pct >= 90)
+            {
+                <MudAlert Severity="Severity.Error" Dense>Límite casi alcanzado. Evita enviar más emails hoy para no bloquear la cuenta.</MudAlert>
+            }
+            else if (pct >= 70)
+            {
+                <MudAlert Severity="Severity.Warning" Dense>Ya usaste el @pct.ToString("0")% del límite diario. Procede con precaución.</MudAlert>
+            }
+        </MudPaper>
+    }
+
+    @* ── Formulario ───────────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-4">
+            <MudIcon Icon="@Icons.Material.Outlined.Settings" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Configuración</div>
+                <div class="nexo-chart-header__sub">Envío vía Gmail SMTP · Sin servicios externos</div>
+            </div>
+        </div>
+
+        <div class="d-flex align-center justify-space-between py-2 mb-4"
+             style="border-bottom:1px solid var(--mud-palette-lines-default);">
+            <div>
+                <div style="font-weight:600; font-size:0.93rem;">Envío de emails activado</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                    Cuando está apagado no se envía ningún email aunque el resto esté configurado.
+                </div>
+            </div>
+            <MudSwitch T="bool" @bind-Value="_activo" Color="Color.Success" />
+        </div>
+
+        <MudGrid Spacing="3">
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="_emailFrom"
+                              Label="Email de Gmail"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Placeholder="minegocio@gmail.com"
+                              HelperText="El mismo Gmail donde creaste la contraseña de aplicación" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="_apiKey"
+                              Label="Contraseña de aplicación (16 letras)"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              InputType="@(_mostrarApiKey ? InputType.Text : InputType.Password)"
+                              HelperText="La clave que generaste en myaccount.google.com/apppasswords"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_mostrarApiKey ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="@(() => _mostrarApiKey = !_mostrarApiKey)" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="_nombreFrom"
+                              Label="Nombre que verán tus clientes"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Placeholder="Mi Empresa"
+                              HelperText="Aparece como «De:» en la bandeja del cliente — puede ser el nombre de tu negocio" />
+            </MudItem>
+        </MudGrid>
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                   Class="mt-4" OnClick="GuardarAsync" Disabled="_guardando"
+                   StartIcon="@Icons.Material.Outlined.Save">
+            @(_guardando ? "Guardando..." : "Guardar configuración")
+        </MudButton>
+    </MudPaper>
+
+    @* ── Email de prueba ──────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-3">
+            <MudIcon Icon="@Icons.Material.Outlined.Science" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Email de prueba</div>
+                <div class="nexo-chart-header__sub">Primero guarda la configuración, después envía una prueba para confirmar que funciona</div>
+            </div>
+        </div>
+
+        <div class="d-flex" style="gap:12px; align-items:flex-start;">
+            <MudTextField T="string" @bind-Value="_emailPrueba"
+                          Label="Enviar prueba a este email"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Placeholder="tuemail@gmail.com"
+                          Style="flex:1;"
+                          HelperText="Ponle tu propio email para ver exactamente cómo lo recibirá el cliente" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Outlined.Send" Style="margin-top:2px;"
+                       OnClick="EnviarPruebaAsync"
+                       Disabled="@(_enviandoPrueba || string.IsNullOrWhiteSpace(_emailPrueba))">
+                @(_enviandoPrueba ? "Enviando..." : "Enviar prueba")
+            </MudButton>
+        </div>
+
+        @if (_resultadoPrueba is not null)
+        {
+            <MudAlert Severity="@_severidadPrueba" Class="mt-3" Dense="true">@_resultadoPrueba</MudAlert>
+        }
+    </MudPaper>
+
+    @* ── Qué emails envía NEXO ────────────────────────────────────────── *@
+    <MudPaper Class="pa-5" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-3">
+            <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">¿Qué emails envía NEXO automáticamente?</div>
+            </div>
+        </div>
+
+        <div class="nexo-email-caso">
+            <MudIcon Icon="@Icons.Material.Outlined.PersonAdd" Color="Color.Secondary" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.9rem;">Bienvenida al nuevo cliente</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">Automático al registrar un cliente que tenga email.</div>
+            </div>
+        </div>
+        <div class="nexo-email-caso">
+            <MudIcon Icon="@Icons.Material.Outlined.Description" Color="Color.Primary" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.9rem;">Cotización al cliente</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                    Desde <MudLink Href="/crm/cotizaciones" Typo="Typo.body2">CRM → Cotizaciones</MudLink>,
+                    botón ✉ en cada fila. Solo si el cliente tiene email.
+                </div>
+            </div>
+        </div>
+        <div class="nexo-email-caso">
+            <MudIcon Icon="@Icons.Material.Outlined.Schedule" Color="Color.Warning" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.9rem;">Recordatorio: cotización por vencer</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                    Aviso automático al cliente X días antes del vencimiento.
+                    Configura en <MudLink Href="/settings/automatizacion" Typo="Typo.body2">Automatización CRM</MudLink>.
+                </div>
+            </div>
+        </div>
+        <div class="nexo-email-caso" style="border-bottom:none; padding-bottom:0; margin-bottom:0;">
+            <MudIcon Icon="@Icons.Material.Outlined.Inventory" Color="Color.Success" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.9rem;">Orden de producción lista</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                    Al cerrar una orden con cliente asignado (con email), se le notifica que su pedido está listo.
+                </div>
+            </div>
+        </div>
+    </MudPaper>
+}
+
+<style>
+    .nexo-email-paso {
+        display: flex;
+        gap: 16px;
+        padding: 20px 0;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+    }
+    .nexo-email-paso__num {
+        flex-shrink: 0;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: var(--mud-palette-primary);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.95rem;
+        margin-top: 1px;
+    }
+    .nexo-email-paso__titulo {
+        font-weight: 700;
+        font-size: 0.95rem;
+        margin-bottom: 6px;
+    }
+    .nexo-email-paso__desc {
+        font-size: 0.85rem;
+        color: var(--n-text-3);
+        line-height: 1.65;
+    }
+    .nexo-email-instruccion {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: var(--mud-palette-background-grey);
+        border-radius: 8px;
+        padding: 12px 14px;
+    }
+    .nexo-email-instruccion__linea {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+    .nexo-email-caso {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+    }
+    code {
+        background: var(--mud-palette-background-grey);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.85em;
+    }
+</style>
+
+@code {
+    private bool _cargando      = true;
+    private bool _guardando;
+    private bool _activo;
+    private bool _mostrarApiKey;
+    private string? _apiKey;
+    private string? _emailFrom;
+    private string? _nombreFrom;
+    private EmailContadorItem? _contador;
+    private System.Timers.Timer? _timerContador;
+
+    private bool     _enviandoPrueba;
+    private string?  _emailPrueba;
+    private string?  _resultadoPrueba;
+    private Severity _severidadPrueba = Severity.Success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaConfig   = ApiClient.GetAsync<EmailConfigItem>("api/email/config");
+            var tareaContador = ApiClient.GetAsync<EmailContadorItem>("api/email/contador");
+            await Task.WhenAll(tareaConfig, tareaContador);
+
+            var config = await tareaConfig;
+            if (config is not null)
+            {
+                _activo     = config.Activo;
+                _apiKey     = config.ApiKey;
+                _emailFrom  = config.EmailFrom;
+                _nombreFrom = config.NombreFrom;
+            }
+            _contador = await tareaContador;
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _cargando = false; }
+
+        _timerContador = new System.Timers.Timer(120_000);
+        _timerContador.Elapsed += async (_, _) =>
+        {
+            try { _contador = await ApiClient.GetAsync<EmailContadorItem>("api/email/contador"); }
+            catch { }
+            await InvokeAsync(StateHasChanged);
+        };
+        _timerContador.AutoReset = true;
+        _timerContador.Start();
+    }
+
+    private async Task GuardarAsync()
+    {
+        _guardando = true;
+        try
+        {
+            var req = new EmailConfigItem("Gmail", _apiKey, _emailFrom, _nombreFrom, _activo);
+            await ApiClient.PutAsync<EmailConfigItem, object?>("api/email/config", req);
+            Snackbar.Add("Configuración guardada correctamente.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private async Task EnviarPruebaAsync()
+    {
+        _enviandoPrueba  = true;
+        _resultadoPrueba = null;
+        try
+        {
+            await ApiClient.PostAsync<object?, object?>(
+                $"api/email/test?to={Uri.EscapeDataString(_emailPrueba!)}", null);
+            _resultadoPrueba = $"✅ Email enviado a {_emailPrueba}. Revisa tu bandeja — puede tardar 1-2 minutos. Si no llega, revisa la carpeta de spam.";
+            _severidadPrueba = Severity.Success;
+        }
+        catch (HttpRequestException ex)
+        {
+            _resultadoPrueba = $"❌ {ex.Message}";
+            _severidadPrueba = Severity.Error;
+        }
+        finally { _enviandoPrueba = false; }
+    }
+
+    public void Dispose()
+    {
+        _timerContador?.Stop();
+        _timerContador?.Dispose();
+    }
+}

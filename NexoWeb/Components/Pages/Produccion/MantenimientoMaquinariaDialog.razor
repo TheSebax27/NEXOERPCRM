@@ -1,0 +1,103 @@
+﻿@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Build" Class="mr-2" />
+            Registrar mantenimiento
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <AppSelect TValue="string" @bind-Value="_tipo" Label="Tipo de mantenimiento *"
+                           Items="@(new AppSelectItem<string>[]{ new("Preventivo","Preventivo"), new("Correctivo","Correctivo"), new("Predictivo","Predictivo") })" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_fechaDt" Label="Fecha realizado *"
+                               DateFormat="dd/MM/yyyy" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_descripcion" Label="Descripción *" Required
+                              Lines="3" AutoGrow Placeholder="Detalle del trabajo realizado" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_costo" T="decimal?" Label="Costo ($)"
+                                 Format="0.00" Min="0" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_horas" T="decimal?" Label="Horas fuera de servicio"
+                                 Format="0.##" Min="0" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_tecnico" Label="Técnico / empresa" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_proximoDt" Label="Próximo mantenimiento"
+                               DateFormat="dd/MM/yyyy" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_obs" Label="Observaciones" Lines="2" AutoGrow />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudDivider Class="my-1" />
+                <AppSelect TValue="string?" @bind-Value="_nuevoEstado" Label="Cambiar estado de la máquina"
+                           Placeholder="No cambiar"
+                           Items="@(new AppSelectItem<string?>[]{ new("Activa","Activa"), new("En Mantenimiento","EnMantenimiento"), new("Inactiva","Inactiva"), new("Baja Definitiva","BajaDefinitiva") })" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Opcional — si quieres actualizar el estado de la máquina junto con el registro.
+                </MudText>
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                   Disabled="@(!Valido || _guardando)" OnClick="GuardarAsync">
+            @(_guardando ? "Guardando..." : "Registrar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int MaquinariaID { get; set; }
+    [Parameter] public string NombreMaquina { get; set; } = "";
+
+    string _tipo = "Preventivo";
+    DateTime? _fechaDt = NexoWeb.Common.ColombiaClock.Today;
+    string _descripcion = "";
+    decimal? _costo, _horas;
+    string? _tecnico, _obs, _nuevoEstado;
+    DateTime? _proximoDt;
+    bool _guardando;
+
+    bool Valido => !string.IsNullOrWhiteSpace(_descripcion) && _fechaDt.HasValue;
+
+    async Task GuardarAsync()
+    {
+        if (!Valido) return;
+        _guardando = true;
+        var req = new CrearMantenimientoRequest(
+            _tipo,
+            DateOnly.FromDateTime(_fechaDt!.Value),
+            _descripcion.Trim(),
+            _costo, _horas, _tecnico,
+            _proximoDt.HasValue ? DateOnly.FromDateTime(_proximoDt.Value) : null,
+            _obs, _nuevoEstado);
+        try
+        {
+            await Api.PostAsync<CrearMantenimientoRequest>(
+                $"api/produccion/maquinaria/{MaquinariaID}/mantenimientos", req);
+            Snackbar.Add("Mantenimiento registrado.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+}

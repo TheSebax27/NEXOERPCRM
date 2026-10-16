@@ -1,0 +1,653 @@
+@page "/settings/whatsapp"
+@attribute [Authorize(Roles = "Administracion")]
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+
+<PageTitle>WhatsApp - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Configuración</p>
+            <h1 class="nexo-page-hero__title">WhatsApp (Twilio)</h1>
+        </div>
+    </div>
+    <a href="/settings" style="text-decoration:none">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" Size="Size.Small">
+            Volver a Settings
+        </MudButton>
+    </a>
+</div>
+
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else
+{
+    @* ── Guía paso a paso ─────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-1">
+            <MudIcon Icon="@Icons.Material.Outlined.ListAlt" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Cómo activarlo — 5 pasos</div>
+                <div class="nexo-chart-header__sub">Requiere una cuenta de Twilio · Los primeros mensajes son gratis</div>
+            </div>
+        </div>
+
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3 mb-2" Icon="@Icons.Material.Outlined.Info">
+            <strong>¿Qué es Twilio?</strong> Twilio es el servicio que permite a NEXO enviar mensajes de WhatsApp a tus clientes de forma automática
+            (cotizaciones, confirmaciones de pedido, recordatorios). Se paga por mensaje enviado, aunque tienen crédito de prueba gratuito para empezar.
+        </MudAlert>
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4" Icon="@Icons.Material.Outlined.ReportProblem">
+            <strong>Sandbox vs. número propio:</strong> Twilio ofrece un "Sandbox" gratuito para probar. Con el sandbox,
+            cada cliente primero debe enviarle un mensaje a Twilio para activar la conexión. Para uso en producción real
+            necesitas solicitar un número de WhatsApp Business aprobado por Meta (puede tardar varios días).
+        </MudAlert>
+
+        @* Paso 1 *@
+        <div class="nexo-email-paso">
+            <div class="nexo-email-paso__num">1</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Crea una cuenta en Twilio</div>
+                <div class="nexo-email-paso__desc">
+                    Entra a <strong>twilio.com</strong> y regístrate con tu email. No necesitas tarjeta de crédito para empezar —
+                    Twilio da crédito gratuito de prueba al crear la cuenta.
+                </div>
+                <MudLink Href="https://www.twilio.com/try-twilio" Target="_blank" Typo="Typo.body2"
+                         Class="d-flex align-center mt-2" Style="gap:4px; color:var(--mud-palette-primary); font-weight:600;">
+                    <MudIcon Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" />
+                    twilio.com/try-twilio
+                </MudLink>
+            </div>
+        </div>
+
+        @* Paso 2 *@
+        <div class="nexo-email-paso">
+            <div class="nexo-email-paso__num">2</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Copia tu Account SID y Auth Token</div>
+                <div class="nexo-email-paso__desc">
+                    Una vez dentro de Twilio, la primera pantalla que ves es el <strong>Console Dashboard</strong>.
+                    Ahí están visibles directamente:
+                </div>
+                <div class="nexo-email-instruccion mt-2">
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.LooksOne" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span><strong>Account SID</strong> — empieza con <code>AC...</code> y tiene 34 caracteres. Puedes copiarlo directamente.</span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.LooksTwo" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span><strong>Auth Token</strong> — está oculto con asteriscos. Haz clic en el ícono del ojo o en "Show" para revelarlo, luego cópialo.</span>
+                    </div>
+                </div>
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3" Icon="@Icons.Material.Outlined.Security">
+                    El Auth Token es como una contraseña: no lo compartas. Si alguien lo obtiene, puede enviar mensajes desde tu cuenta de Twilio.
+                </MudAlert>
+            </div>
+        </div>
+
+        @* Paso 3 *@
+        <div class="nexo-email-paso">
+            <div class="nexo-email-paso__num">3</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Activa el Sandbox de WhatsApp (para probar gratis)</div>
+                <div class="nexo-email-paso__desc">
+                    En Twilio, ve a <strong>Messaging → Try it out → Send a WhatsApp message</strong>.
+                    Twilio te muestra un número y un mensaje de activación (algo como <em>"join &lt;palabra&gt;"</em>).
+                </div>
+                <div class="nexo-email-instruccion mt-2 mb-2">
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.LooksOne" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span>Desde tu celular, abre WhatsApp y envía ese mensaje al número que indica Twilio (ej. <code>+1 415 523 8886</code>).</span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.LooksTwo" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span>Twilio responde confirmando que el sandbox está activo para tu número.</span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.Looks3" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span>Cada cliente que quieras alcanzar durante la prueba debe hacer lo mismo una vez.</span>
+                    </div>
+                </div>
+                <MudAlert Severity="Severity.Info" Dense="true" Icon="@Icons.Material.Outlined.Info">
+                    El número del sandbox ya está puesto por defecto en el campo "Número remitente" aquí abajo (<code>whatsapp:+14155238886</code>).
+                    No lo cambies si usas el sandbox — solo si ya tienes un número propio aprobado por Meta.
+                </MudAlert>
+            </div>
+        </div>
+
+        @* Paso 4 *@
+        <div class="nexo-email-paso">
+            <div class="nexo-email-paso__num">4</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Completa el formulario aquí abajo</div>
+                <div class="nexo-email-instruccion mt-2">
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.Key" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span><strong>Account SID:</strong> el que copiaste en el paso 2 (empieza con <code>AC</code>)</span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span><strong>Auth Token:</strong> la clave secreta que copiaste en el paso 2</span>
+                    </div>
+                    <div class="nexo-email-instruccion__linea">
+                        <MudIcon Icon="@Icons.Material.Outlined.PhoneAndroid" Size="Size.Small" Style="color:var(--mud-palette-primary); flex-shrink:0;" />
+                        <span><strong>Número remitente:</strong> déjalo como está si usas el sandbox. Si tienes número propio, ponlo en formato <code>whatsapp:+57XXXXXXXXXX</code></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* Paso 5 *@
+        <div class="nexo-email-paso" style="border-bottom:none; padding-bottom:0; margin-bottom:0;">
+            <div class="nexo-email-paso__num">5</div>
+            <div class="nexo-email-paso__body">
+                <div class="nexo-email-paso__titulo">Activa el switch, guarda y envía un mensaje de prueba</div>
+                <div class="nexo-email-paso__desc">
+                    Activa "Envío activado", haz clic en <strong>Guardar</strong> y luego usa la sección de
+                    <strong>Mensaje de prueba</strong> para enviarte un WhatsApp a tu propio celular y confirmar que funciona.
+                </div>
+            </div>
+        </div>
+    </MudPaper>
+
+    @* ── Formulario de configuración ──────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-4">
+            <MudIcon Icon="@Icons.Material.Outlined.Settings" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Configuración</div>
+                <div class="nexo-chart-header__sub">Credenciales de Twilio — se guardan en la base de datos de forma segura</div>
+            </div>
+        </div>
+
+        <div class="d-flex align-center justify-space-between py-2 mb-4"
+             style="border-bottom:1px solid var(--mud-palette-lines-default);">
+            <div>
+                <div style="font-weight:600; font-size:0.93rem;">Envío de WhatsApp activado</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                    Cuando está apagado no se envía ningún mensaje aunque el resto esté configurado.
+                </div>
+            </div>
+            <MudSwitch T="bool" @bind-Value="_activo" Color="Color.Success" />
+        </div>
+
+        <MudGrid Spacing="3">
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="_accountSid"
+                              Label="Account SID"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                              HelperText="34 caracteres, empieza con AC — lo ves en el Console de Twilio" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="_authToken"
+                              Label="Auth Token"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              InputType="@(_mostrarAuthToken ? InputType.Text : InputType.Password)"
+                              HelperText="Clave secreta de Twilio — haz clic en el ojo para revelarla aquí"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_mostrarAuthToken ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="@(() => _mostrarAuthToken = !_mostrarAuthToken)" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="_fromNumber"
+                              Label="Número remitente (WhatsApp)"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              HelperText="Sandbox: whatsapp:+14155238886  |  Número propio: whatsapp:+57XXXXXXXXXX" />
+            </MudItem>
+        </MudGrid>
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                   Class="mt-4" OnClick="GuardarAsync" Disabled="_guardando"
+                   StartIcon="@Icons.Material.Outlined.Save">
+            @(_guardando ? "Guardando..." : "Guardar configuración")
+        </MudButton>
+    </MudPaper>
+
+    @* ── Mensaje de prueba ────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-3">
+            <MudIcon Icon="@Icons.Material.Outlined.Science" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Mensaje de prueba</div>
+                <div class="nexo-chart-header__sub">Primero guarda la configuración, después envía una prueba a tu celular</div>
+            </div>
+        </div>
+
+        <div class="d-flex" style="gap:12px; align-items:flex-start;">
+            <MudTextField T="string" @bind-Value="_telefonoPrueba"
+                          Label="Enviar prueba a este número"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Placeholder="3001234567"
+                          Style="flex:1;"
+                          HelperText="Solo los dígitos, sin indicativo. Ej: 3001234567 (NEXO agrega +57 automáticamente)" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Outlined.Send" Style="margin-top:2px;"
+                       OnClick="EnviarPruebaAsync"
+                       Disabled="@(_enviandoPrueba || string.IsNullOrWhiteSpace(_telefonoPrueba))">
+                @(_enviandoPrueba ? "Enviando..." : "Enviar prueba")
+            </MudButton>
+        </div>
+
+        @if (_resultadoPrueba is not null)
+        {
+            <MudAlert Severity="@_severidadPrueba" Class="mt-3" Dense="true">@_resultadoPrueba</MudAlert>
+        }
+    </MudPaper>
+
+    @* ── Costos y facturación ─────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-3">
+            <MudIcon Icon="@Icons.Material.Outlined.Receipt" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Costos y facturación</div>
+                <div class="nexo-chart-header__sub">Twilio cobra directamente — NEXO no maneja ningún pago</div>
+            </div>
+        </div>
+
+        <MudAlert Severity="Severity.Success" Dense="true" Class="mb-4" Icon="@Icons.Material.Outlined.VerifiedUser">
+            <strong>NEXO no cobra nada por el envío de mensajes.</strong> El costo lo cobra Twilio directamente
+            a la tarjeta o método de pago que registraste en tu cuenta de Twilio. NEXO nunca ve ni procesa ese pago.
+        </MudAlert>
+
+        <div style="font-weight:600; font-size:0.88rem; margin-bottom:10px; color:var(--n-text-2);">
+            Precios referenciales de Twilio (USD por conversación de 24 h)
+        </div>
+        <div style="border:1px solid var(--mud-palette-lines-default); border-radius:10px; overflow:hidden; margin-bottom:16px;">
+            <div class="nexo-wa-precio-fila" style="background:var(--mud-palette-background-grey); font-weight:700; font-size:0.8rem;">
+                <span>Tipo de conversación</span>
+                <span>Precio aprox.</span>
+                <span>Cuándo aplica</span>
+            </div>
+            <div class="nexo-wa-precio-fila">
+                <span>Marketing</span>
+                <span style="color:var(--mud-palette-warning-dark); font-weight:600;">~$0.075 USD</span>
+                <span style="font-size:0.78rem; color:var(--n-text-3);">Promociones, ofertas, campañas</span>
+            </div>
+            <div class="nexo-wa-precio-fila">
+                <span>Utilidad</span>
+                <span style="color:var(--mud-palette-primary); font-weight:600;">~$0.020 USD</span>
+                <span style="font-size:0.78rem; color:var(--n-text-3);">Cotizaciones, confirmaciones, recordatorios</span>
+            </div>
+            <div class="nexo-wa-precio-fila">
+                <span>Autenticación</span>
+                <span style="color:var(--mud-palette-primary); font-weight:600;">~$0.015 USD</span>
+                <span style="font-size:0.78rem; color:var(--n-text-3);">Códigos de verificación</span>
+            </div>
+            <div class="nexo-wa-precio-fila" style="border-bottom:none;">
+                <span>Sandbox (pruebas)</span>
+                <span style="color:var(--mud-palette-success-dark); font-weight:600;">Gratis</span>
+                <span style="font-size:0.78rem; color:var(--n-text-3);">Solo para pruebas — requiere activación por cliente</span>
+            </div>
+        </div>
+
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4" Icon="@Icons.Material.Outlined.Info">
+            Una <strong>"conversación"</strong> dura <strong>24 horas</strong>. Si le envías varios mensajes al mismo cliente
+            en menos de 24 h, se cobra como <strong>una sola conversación</strong>. Pasadas las 24 h, comienza una nueva.
+        </MudAlert>
+
+        <div style="font-weight:600; font-size:0.88rem; margin-bottom:8px; color:var(--n-text-2);">Calculadora estimada</div>
+        <div style="background:var(--mud-palette-background-grey); border-radius:10px; padding:16px;">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="int" @bind-Value="_clientesMes"
+                                     Label="Conversaciones por mes"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Min="0" Max="100000"
+                                     HelperText="Número de clientes distintos contactados en el mes" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <AppSelect TValue="string" @bind-Value="_tipoCosto" Label="Tipo de mensaje predominante"
+                               Items="@(new AppSelectItem<string>[]{ new("Utilidad (cotizaciones, pedidos)","utilidad"), new("Marketing (promociones)","marketing"), new("Mixto (ambos)","mixto") })" />
+                </MudItem>
+            </MudGrid>
+
+            @{
+                var precioPorConversacion = _tipoCosto switch
+                {
+                    "marketing" => 0.075m,
+                    "mixto"     => 0.048m,
+                    _           => 0.020m
+                };
+                var costoUsd = _clientesMes * precioPorConversacion;
+                var costoCop = costoUsd * 4200m;
+            }
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px;">
+                <div style="background:var(--mud-palette-surface); border-radius:8px; padding:14px; text-align:center;
+                            border:1px solid var(--mud-palette-lines-default);">
+                    <div style="font-size:0.75rem; color:var(--n-text-3); margin-bottom:4px;">Costo mensual estimado</div>
+                    <div style="font-size:1.5rem; font-weight:700; color:var(--mud-palette-primary);">
+                        $@costoUsd.ToString("F2") USD
+                    </div>
+                </div>
+                <div style="background:var(--mud-palette-surface); border-radius:8px; padding:14px; text-align:center;
+                            border:1px solid var(--mud-palette-lines-default);">
+                    <div style="font-size:0.75rem; color:var(--n-text-3); margin-bottom:4px;">Aprox. en COP (TRM ~$4,200)</div>
+                    <div style="font-size:1.5rem; font-weight:700; color:var(--mud-palette-secondary);">
+                        $@costoCop.ToString("N0")
+                    </div>
+                </div>
+            </div>
+
+            <div style="font-size:0.72rem; color:var(--n-text-3); margin-top:10px; line-height:1.5;">
+                ⚠️ Estimación orientativa. Los precios varían por país y tipo de número.
+                Verifica los precios exactos en
+                <MudLink Href="https://www.twilio.com/en-us/whatsapp/pricing" Target="_blank" Typo="Typo.caption">
+                    twilio.com/en-us/whatsapp/pricing
+                </MudLink>.
+                La TRM puede variar. El cobro de Twilio es siempre en USD.
+            </div>
+        </div>
+
+        <MudDivider Class="my-4" />
+
+        <div style="font-weight:600; font-size:0.88rem; margin-bottom:10px; color:var(--n-text-2);">¿Cómo te cobra Twilio?</div>
+        <div class="nexo-email-caso">
+            <MudIcon Icon="@Icons.Material.Outlined.CreditCard" Color="Color.Primary" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.88rem;">Tarjeta de crédito o débito</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">Twilio cobra automáticamente a la tarjeta registrada en tu cuenta cuando el crédito de prueba se agota, o mensualmente.</div>
+            </div>
+        </div>
+        <div class="nexo-email-caso">
+            <MudIcon Icon="@Icons.Material.Outlined.AccountBalanceWallet" Color="Color.Success" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.88rem;">Saldo prepago (recomendado)</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">Recarga saldo en tu cuenta de Twilio. Cuando se agota, los mensajes se detienen sin cargos sorpresa — tú controlas el gasto.</div>
+            </div>
+        </div>
+        <div class="nexo-email-caso" style="border-bottom:none; padding-bottom:0; margin-bottom:0;">
+            <MudIcon Icon="@Icons.Material.Outlined.NotificationsActive" Color="Color.Warning" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.88rem;">Alertas de saldo bajo</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">Configura alertas en Twilio Console → Billing → Balance Alerts para recibir un email cuando el saldo esté por agotarse.</div>
+            </div>
+        </div>
+    </MudPaper>
+
+    @* ── Números de negocio (wa.me links) ───────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-4" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.PhoneAndroid" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">Números WhatsApp del negocio</div>
+                <div class="nexo-chart-header__sub">Se usan para generar links directos (wa.me) desde facturas y documentos — sin API de pago</div>
+            </div>
+        </div>
+
+        @if (_numerosWa is not null)
+        {
+            <MudTable Items="_numerosWa" Dense="true" Hover="true" Class="mb-3">
+                <HeaderContent>
+                    <MudTh>Descripción</MudTh>
+                    <MudTh>Número</MudTh>
+                    <MudTh>Empleado / CC</MudTh>
+                    <MudTh>Activo</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Descripcion</MudTd>
+                    <MudTd><code>@context.Numero</code></MudTd>
+                    <MudTd>
+                        @if (!string.IsNullOrWhiteSpace(context.NombreEmpleado))
+                        { <span>@context.NombreEmpleado</span> }
+                        else if (!string.IsNullOrWhiteSpace(context.NombreCentroCosto))
+                        { <span>CC: @context.NombreCentroCosto</span> }
+                        else { <span class="mud-text-secondary">—</span> }
+                    </MudTd>
+                    <MudTd>
+                        <MudSwitch T="bool" Value="@context.Activo"
+                                   ValueChanged="@(_ => ToggleNumeroAsync(context.NumeroWAID))"
+                                   Color="Color.Success" />
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => EliminarNumeroAsync(context.NumeroWAID))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+
+        <MudDivider Class="mb-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Agregar número</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4">
+                <MudTextField @bind-Value="_nuevoNumero.Descripcion" Label="Descripción" Placeholder="Ej: Vendedor Norte" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudTextField @bind-Value="_nuevoNumero.Numero" Label="Número" Placeholder="573001234567" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                           Style="margin-top:8px"
+                           Disabled="@(string.IsNullOrWhiteSpace(_nuevoNumero.Descripcion) || string.IsNullOrWhiteSpace(_nuevoNumero.Numero))"
+                           OnClick="AgregarNumeroAsync">Agregar</MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* ── Qué mensajes envía NEXO ──────────────────────────────────────────── *@
+    <MudPaper Class="pa-5" Style="max-width:740px;">
+        <div class="nexo-chart-header mb-3">
+            <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Class="nexo-chart-header__icon" />
+            <div>
+                <div class="nexo-chart-header__title">¿Qué mensajes de WhatsApp envía NEXO automáticamente?</div>
+            </div>
+        </div>
+
+        <div class="nexo-email-caso">
+            <MudIcon Icon="@Icons.Material.Outlined.Description" Color="Color.Primary" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.9rem;">Cotización al cliente</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                    Desde <MudLink Href="/crm/cotizaciones" Typo="Typo.body2">CRM → Cotizaciones</MudLink>,
+                    botón de WhatsApp en cada fila. Solo si el cliente tiene número registrado.
+                </div>
+            </div>
+        </div>
+        <div class="nexo-email-caso">
+            <MudIcon Icon="@Icons.Material.Outlined.Schedule" Color="Color.Warning" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.9rem;">Recordatorio: cotización por vencer</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                    Aviso automático al cliente cuando su cotización está próxima a vencer.
+                    Configura en <MudLink Href="/settings/automatizacion" Typo="Typo.body2">Automatización CRM</MudLink>.
+                </div>
+            </div>
+        </div>
+        <div class="nexo-email-caso" style="border-bottom:none; padding-bottom:0; margin-bottom:0;">
+            <MudIcon Icon="@Icons.Material.Outlined.Inventory" Color="Color.Success" Size="Size.Small" Style="margin-top:2px;" />
+            <div>
+                <div style="font-weight:600; font-size:0.9rem;">Pedido listo</div>
+                <div style="font-size:0.78rem; color:var(--n-text-3);">
+                    Al cerrar una orden de producción con cliente asignado (con número), se le notifica por WhatsApp.
+                </div>
+            </div>
+        </div>
+    </MudPaper>
+}
+
+<style>
+    .nexo-email-paso {
+        display: flex;
+        gap: 16px;
+        padding: 20px 0;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+    }
+    .nexo-email-paso__num {
+        flex-shrink: 0;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: var(--mud-palette-primary);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.95rem;
+        margin-top: 1px;
+    }
+    .nexo-email-paso__titulo {
+        font-weight: 700;
+        font-size: 0.95rem;
+        margin-bottom: 6px;
+    }
+    .nexo-email-paso__desc {
+        font-size: 0.85rem;
+        color: var(--n-text-3);
+        line-height: 1.65;
+    }
+    .nexo-email-instruccion {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: var(--mud-palette-background-grey);
+        border-radius: 8px;
+        padding: 12px 14px;
+    }
+    .nexo-email-instruccion__linea {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+    .nexo-email-caso {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+    }
+    code {
+        background: var(--mud-palette-background-grey);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.85em;
+    }
+    .nexo-wa-precio-fila {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr 2fr;
+        gap: 12px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+        font-size: 0.85rem;
+        align-items: center;
+    }
+</style>
+
+@code {
+    private bool    _cargando = true;
+    private bool    _guardando;
+    private bool    _activo;
+    private bool    _mostrarAuthToken;
+    private string? _accountSid;
+    private string? _authToken;
+    private string  _fromNumber = "whatsapp:+14155238886";
+
+    private bool     _enviandoPrueba;
+    private string?  _telefonoPrueba;
+    private string?  _resultadoPrueba;
+    private Severity _severidadPrueba = Severity.Success;
+
+    // ── Calculadora de costos ──────────────────────────────────────────
+    private int    _clientesMes = 100;
+    private string _tipoCosto   = "utilidad";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var config = await ApiClient.GetAsync<WhatsAppConfigItem>("api/whatsapp/config");
+            if (config is not null)
+            {
+                _activo     = config.Activo;
+                _accountSid = config.AccountSid;
+                _authToken  = config.AuthToken;
+                _fromNumber = config.FromNumber;
+            }
+            await CargarNumerosWaAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _cargando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        _guardando = true;
+        try
+        {
+            var req = new WhatsAppConfigItem(_accountSid, _authToken, _fromNumber, _activo);
+            await ApiClient.PutAsync<WhatsAppConfigItem, object?>("api/whatsapp/config", req);
+            Snackbar.Add("Configuración guardada correctamente.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private async Task EnviarPruebaAsync()
+    {
+        _enviandoPrueba  = true;
+        _resultadoPrueba = null;
+        try
+        {
+            await ApiClient.PostAsync<object?, object?>(
+                $"api/whatsapp/test?telefono={Uri.EscapeDataString(_telefonoPrueba!)}", null);
+            _resultadoPrueba = $"✅ Mensaje enviado al {_telefonoPrueba}. Revisa tu WhatsApp — puede tardar unos segundos.";
+            _severidadPrueba = Severity.Success;
+        }
+        catch (HttpRequestException ex)
+        {
+            _resultadoPrueba = $"❌ {ex.Message}";
+            _severidadPrueba = Severity.Error;
+        }
+        finally { _enviandoPrueba = false; }
+    }
+
+    // ── Números WhatsApp del negocio ──────────────────────────────────────
+    private record NumeroWaItem(int NumeroWAID, string Descripcion, string Numero,
+        int? EmpleadoID, string? NombreEmpleado, int? CentroCostoID, string? NombreCentroCosto, bool Activo);
+
+    private List<NumeroWaItem>? _numerosWa;
+    private NuevoNumeroForm _nuevoNumero = new();
+
+    private class NuevoNumeroForm
+    {
+        public string Descripcion { get; set; } = "";
+        public string Numero { get; set; } = "";
+    }
+
+    private async Task CargarNumerosWaAsync()
+    {
+        var items = await ApiClient.GetAsync<IEnumerable<NumeroWaItem>>("api/whatsapp/numeros");
+        _numerosWa = items?.ToList() ?? [];
+    }
+
+    private async Task AgregarNumeroAsync()
+    {
+        var req = new { _nuevoNumero.Descripcion, _nuevoNumero.Numero, EmpleadoID = (int?)null, CentroCostoID = (int?)null };
+        await ApiClient.PostAsync<object, object?>("api/whatsapp/numeros", req);
+        Snackbar.Add("Número agregado", Severity.Success);
+        _nuevoNumero = new();
+        await CargarNumerosWaAsync();
+    }
+
+    private async Task ToggleNumeroAsync(int id)
+    {
+        await ApiClient.PutAsync<object?, object?>($"api/whatsapp/numeros/{id}/toggle", null);
+        await CargarNumerosWaAsync();
+    }
+
+    private async Task EliminarNumeroAsync(int id)
+    {
+        await ApiClient.DeleteAsync($"api/whatsapp/numeros/{id}");
+        await CargarNumerosWaAsync();
+        Snackbar.Add("Número eliminado", Severity.Info);
+    }
+}

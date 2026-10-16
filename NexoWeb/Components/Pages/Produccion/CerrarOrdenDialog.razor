@@ -1,0 +1,59 @@
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        <MudNumericField @bind-Value="_cantidadProducidaReal" Label="Cantidad producida real" Min="0.01m" Format="N2" Class="mb-3" />
+        <MudHorasField @bind-Value="_horasManoObra" Label="Horas de mano de obra" Class="mb-3" />
+        <MudHorasField @bind-Value="_horasCif" Label="Horas de CIF" Class="mb-3" />
+        <MudTextField @bind-Value="_numeroLotePt" Label="Numero de lote (producto terminado)" Class="mb-3"
+                      HelperText="@(Preferencias.AutoNumeroLote ? "Generado automáticamente — puedes editarlo si lo necesitas." : "")" />
+        @if (ConfiguracionEmpresa.ManejarVencimientos)
+        {
+            <MudDatePicker @bind-Date="_fechaVencimiento" Label="Fecha de vencimiento (opcional)" PickerVariant="PickerVariant.Dialog" DateFormat="dd/MM/yyyy" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirmar"
+                   Disabled="@(string.IsNullOrWhiteSpace(_numeroLotePt) || _cantidadProducidaReal <= 0)">
+            Cerrar Orden
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string? CodigoOP { get; set; }
+
+    private decimal _cantidadProducidaReal;
+    private decimal _horasManoObra;
+    private decimal _horasCif;
+    private string _numeroLotePt = "";
+    private DateTime? _fechaVencimiento;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Preferencias.AutoNumeroLote)
+        {
+            try
+            {
+                _numeroLotePt = await ApiClient.GetAsync<string>(
+                    $"api/produccion/ordenes/siguiente-lote?prefijo={Uri.EscapeDataString(Preferencias.PrefijoLote)}") ?? "";
+            }
+            catch { /* mejor esfuerzo */ }
+        }
+    }
+
+    private void Confirmar()
+    {
+        var request = new CerrarOrdenProduccionRequest(
+            _cantidadProducidaReal, _horasManoObra, _horasCif, _numeroLotePt, _fechaVencimiento);
+
+        MudDialog.Close(DialogResult.Ok(request));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

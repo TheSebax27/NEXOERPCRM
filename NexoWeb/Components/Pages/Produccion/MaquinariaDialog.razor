@@ -1,0 +1,263 @@
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.PrecisionManufacturing" Class="mr-2" />
+            @(Maquina is null ? "Nueva Máquina" : "Editar Máquina")
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @* ── Datos básicos ── *@
+        <MudText Typo="Typo.subtitle2" Class="mb-2" Color="Color.Primary">Datos básicos</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4">
+                <MudTextField @bind-Value="_codigo" Label="Código *" Required
+                              Placeholder="Ej: HOR-001" />
+            </MudItem>
+            <MudItem xs="12" sm="8">
+                <MudTextField @bind-Value="_nombre" Label="Nombre *" Required
+                              Placeholder="Ej: Horno rotativo principal" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <AppSelect TValue="int?" @bind-Value="_tipoId" Label="Tipo *" Placeholder="Selecciona tipo"
+                           Items="@(Tipos.Select(t => new AppSelectItem<int?>(t.Nombre, (int?)t.TipoMaquinariaID)))" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <AppSelect TValue="int?" @bind-Value="_centroTrabajoId" Label="Centro de trabajo" Placeholder="Ninguno"
+                           Items="@(CentrosTrabajo.Select(c => new AppSelectItem<int?>(c.Nombre, (int?)c.CentroTrabajoID)))" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <AppSelect TValue="string" @bind-Value="_estado" Label="Estado"
+                           Items="@(new AppSelectItem<string>[]{ new("Activa","Activa"), new("En Mantenimiento","EnMantenimiento"), new("Inactiva","Inactiva"), new("Baja Definitiva","BajaDefinitiva") })" />
+            </MudItem>
+        </MudGrid>
+
+        @* ── Identificación (opcional) ── *@
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2" Color="Color.Primary">Identificación (opcional)</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4">
+                <MudTextField @bind-Value="_marca" Label="Marca" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudTextField @bind-Value="_modelo" Label="Modelo" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudTextField @bind-Value="_numeroSerie" Label="N.º de serie" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_ubicacion" Label="Ubicación física"
+                              Placeholder="Ej: Nave 2, línea B" />
+            </MudItem>
+        </MudGrid>
+
+        @* ── Capacidad (opcional) ── *@
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2" Color="Color.Primary">Capacidad (opcional)</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_capacidadMaxima" T="decimal?" Label="Capacidad máxima"
+                                 Format="0.##" Min="0" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_unidadCapacidad" Label="Unidad" Placeholder="Ej: kg, L, pzas" />
+            </MudItem>
+        </MudGrid>
+
+        @* ── Costos y vida útil (opcional) ── *@
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2" Color="Color.Primary">Costos y vida útil (opcional)</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_fechaAdquisicionDt" Label="Fecha adquisición"
+                               DateFormat="dd/MM/yyyy" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_vidaUtilAnios" T="int?" Label="Vida útil (años)" Min="0" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_costoAdquisicion" T="decimal?" Label="Costo adquisición ($)"
+                                 Format="0.00" Min="0" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_costoHora" T="decimal?" Label="Costo/hora operación ($)"
+                                 Format="0.0000" Min="0" />
+            </MudItem>
+        </MudGrid>
+
+        @* ── Notas ── *@
+        <MudDivider Class="my-3" />
+        <MudTextField @bind-Value="_notas" Label="Notas" Lines="3" AutoGrow />
+
+        @* ── Foto ── *@
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2" Color="Color.Primary">Foto de la máquina (opcional)</MudText>
+        <div class="d-flex align-center" style="gap:12px; flex-wrap:wrap">
+            @if (_fotoPreviewSrc is not null)
+            {
+                <img src="@_fotoPreviewSrc" alt="Foto"
+                     style="width:96px; height:96px; object-fit:cover; border-radius:8px; border:1px solid var(--mud-palette-lines-default)" />
+            }
+            else if (Maquina?.TieneFoto == true && !_fotoEliminada)
+            {
+                <img src="@($"api/produccion/maquinaria/{Maquina.MaquinariaID}/foto")" alt="Foto actual"
+                     style="width:96px; height:96px; object-fit:cover; border-radius:8px; border:1px solid var(--mud-palette-lines-default)" />
+            }
+            <div class="d-flex flex-column" style="gap:6px">
+                <InputFile id="fotoMaquinaria" OnChange="OnFotoSeleccionadaAsync" accept="image/*" style="display:none" />
+                <MudButton HtmlTag="label" for="fotoMaquinaria"
+                           Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PhotoCamera" Size="Size.Small">
+                    @(_fotoPreviewSrc is not null || (Maquina?.TieneFoto == true && !_fotoEliminada) ? "Cambiar foto" : "Subir foto")
+                </MudButton>
+                @if (_fotoPreviewSrc is not null)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Delete"
+                               OnClick="QuitarFotoSeleccionada">Quitar selección</MudButton>
+                }
+                else if (Maquina?.TieneFoto == true && !_fotoEliminada)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.DeleteForever"
+                               OnClick="@(() => _fotoEliminada = true)">Eliminar foto</MudButton>
+                }
+            </div>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(!Valido || _guardando)" OnClick="GuardarAsync">
+            @(_guardando ? "Guardando..." : (Maquina is null ? "Crear" : "Guardar cambios"))
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public List<TipoMaquinariaItem> Tipos { get; set; } = [];
+    [Parameter] public List<CentroTrabajoItem> CentrosTrabajo { get; set; } = [];
+    [Parameter] public MaquinariaDetalle? Maquina { get; set; }
+
+    string _codigo = "";
+    string _nombre = "";
+    int? _tipoId;
+    int? _centroTrabajoId;
+    string _estado = "Activa";
+    string? _marca, _modelo, _numeroSerie, _ubicacion, _unidadCapacidad, _notas;
+    decimal? _capacidadMaxima, _costoAdquisicion, _costoHora;
+    int? _vidaUtilAnios;
+    DateTime? _fechaAdquisicionDt;
+    bool _guardando;
+
+    string? _fotoBase64;
+    string? _fotoContentType;
+    string? _fotoPreviewSrc;
+    bool _fotoEliminada;
+
+    bool Valido => !string.IsNullOrWhiteSpace(_codigo)
+                && !string.IsNullOrWhiteSpace(_nombre)
+                && _tipoId.HasValue;
+
+    protected override void OnParametersSet()
+    {
+        if (Maquina is null) return;
+        _codigo = Maquina.Codigo;
+        _nombre = Maquina.Nombre;
+        _tipoId = Maquina.TipoMaquinariaID;
+        _centroTrabajoId = Maquina.CentroTrabajoID;
+        _estado = Maquina.Estado;
+        _marca  = Maquina.Marca;
+        _modelo = Maquina.Modelo;
+        _numeroSerie = Maquina.NumeroSerie;
+        _ubicacion   = Maquina.UbicacionFisica;
+        _unidadCapacidad  = Maquina.UnidadCapacidad;
+        _notas            = Maquina.Notas;
+        _capacidadMaxima  = Maquina.CapacidadMaxima;
+        _costoAdquisicion = Maquina.CostoAdquisicion;
+        _costoHora        = Maquina.CostoHoraOperacion;
+        _vidaUtilAnios    = Maquina.VidaUtilAnios;
+        _fechaAdquisicionDt = Maquina.FechaAdquisicion.HasValue
+            ? Maquina.FechaAdquisicion.Value.ToDateTime(TimeOnly.MinValue)
+            : null;
+    }
+
+    async Task OnFotoSeleccionadaAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            Snackbar.Add("La imagen no debe superar 5 MB.", Severity.Warning);
+            return;
+        }
+        using var stream = file.OpenReadStream(5 * 1024 * 1024);
+        using var ms = new System.IO.MemoryStream();
+        await stream.CopyToAsync(ms);
+        _fotoBase64 = Convert.ToBase64String(ms.ToArray());
+        _fotoContentType = file.ContentType;
+        _fotoPreviewSrc = $"data:{_fotoContentType};base64,{_fotoBase64}";
+        _fotoEliminada = false;
+    }
+
+    void QuitarFotoSeleccionada()
+    {
+        _fotoBase64 = null;
+        _fotoContentType = null;
+        _fotoPreviewSrc = null;
+    }
+
+    async Task GuardarAsync()
+    {
+        if (!Valido) return;
+        _guardando = true;
+        var fecha = _fechaAdquisicionDt.HasValue
+            ? DateOnly.FromDateTime(_fechaAdquisicionDt.Value) : (DateOnly?)null;
+        try
+        {
+            int maquinariaId;
+            if (Maquina is null)
+            {
+                var req = new CrearMaquinariaRequest(
+                    _codigo.Trim(), _nombre.Trim(), _tipoId!.Value, _centroTrabajoId,
+                    _marca, _modelo, _numeroSerie,
+                    fecha, _vidaUtilAnios,
+                    _costoAdquisicion, _costoHora,
+                    _capacidadMaxima, _unidadCapacidad, _ubicacion, _notas);
+                maquinariaId = await Api.PostAsync<CrearMaquinariaRequest, int>("api/produccion/maquinaria", req);
+                Snackbar.Add($"Máquina «{_nombre}» creada.", Severity.Success);
+            }
+            else
+            {
+                maquinariaId = Maquina.MaquinariaID;
+                var req = new ActualizarMaquinariaRequest(
+                    _codigo.Trim(), _nombre.Trim(), _tipoId!.Value, _centroTrabajoId, _estado,
+                    _marca, _modelo, _numeroSerie,
+                    fecha, _vidaUtilAnios,
+                    _costoAdquisicion, _costoHora,
+                    _capacidadMaxima, _unidadCapacidad, _ubicacion, _notas);
+                await Api.PutAsync<ActualizarMaquinariaRequest, object>(
+                    $"api/produccion/maquinaria/{maquinariaId}", req);
+                Snackbar.Add($"Máquina «{_nombre}» actualizada.", Severity.Success);
+            }
+
+            if (_fotoBase64 is not null)
+            {
+                await Api.PutAsync<ActualizarFotoMaquinariaRequest, object?>(
+                    $"api/produccion/maquinaria/{maquinariaId}/foto",
+                    new ActualizarFotoMaquinariaRequest(_fotoBase64, _fotoContentType ?? "image/jpeg"));
+            }
+            else if (_fotoEliminada && Maquina is not null)
+            {
+                await Api.DeleteAsync($"api/produccion/maquinaria/{maquinariaId}/foto");
+            }
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+}

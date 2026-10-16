@@ -1,0 +1,203 @@
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@implements IAsyncDisposable
+
+@if (_visible)
+{
+    <div class="ae-backdrop" @onclick="Cerrar">
+        <div class="ae-card" @onclick:stopPropagation="true">
+
+            <button class="ae-close" @onclick="Cerrar" aria-label="Cerrar">✕</button>
+
+            <div class="ae-deco ae-deco--tl">🌟</div>
+            <div class="ae-deco ae-deco--tr">✨</div>
+            <div class="ae-deco ae-deco--bl">🎉</div>
+            <div class="ae-deco ae-deco--br">💫</div>
+
+            <div class="ae-dog-wrap">
+                <img src="/images/dog.png" alt="Perro motivador" class="ae-dog" />
+            </div>
+
+            <div class="ae-bubble">
+                <span class="ae-bubble__tail"></span>
+                <p class="ae-msg">@_mensajeActual</p>
+            </div>
+
+            <button class="ae-btn" @onclick="Cerrar">
+                ¡Gracias, lo necesitaba! 🐾
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private bool   _visible;
+    private string _mensajeActual = "";
+    private int    _ultimoIndice  = -1;
+    private CancellationTokenSource? _cts;
+
+    private static readonly string[] Mensajes =
+    {
+        "Respira hondo. Llevas un buen rato trabajando y lo estás haciendo genial 💪",
+        "Recuerda: ni el café más fuerte puede reemplazar lo que vale un descanso de 5 minutos.",
+        "¡Oye! Estás aquí, vivo/a, y eso ya es suficiente. El resto lo resolvemos después.",
+        "Si el sistema falla, no es culpa tuya. Probablemente. En un 90%. Casi seguro.",
+        "Dato curioso: los perros no tienen hojas de cálculo y aun así son felices. Inspírate.",
+        "Eres tan valioso/a para esta empresa como el servidor de producción. Y eso es MUCHO.",
+        "¿Ya tomaste agua hoy? No el café. Agua. La transparente. Esa misma.",
+        "El error que encontraste esta mañana ya no existe. Lo puedes soltar.",
+        "Cada bug que corriges hace del mundo un lugar ligeramente menos caótico. ¡Héroe/Heroína!",
+        "Si esto fuera fácil, cualquiera lo haría. Pero aquí estás tú, haciéndolo.",
+        "Tómate 30 segundos para mirar por la ventana. El mundo exterior aún existe.",
+        "El universo conspira a tu favor. A veces solo tarda un poco más en notificarlo.",
+        "No todo tiene que estar perfecto hoy. Lo suficientemente bueno hoy, perfecto mañana.",
+        "Tus neuronas llevan horas a mil por hora. Dales un abrazo mental. Te lo mereces.",
+        "Recuerda: el 99% de los correos marcados como 'urgente' pueden esperar 10 minutos.",
+        "Eres la razón por la que esto funciona. Sí, tú. No el servidor. Tú.",
+        "La reunión que temes no es tan terrible como la imaginas. Probablemente.",
+        "Hoy no tienes que resolver todo. Solo el siguiente paso. ¿Cuál es el siguiente paso?",
+        "Un perro no sabe lo que es un deadline y aun así mueve la cola. Filosofía de vida.",
+        "Si lograste llegar hasta aquí, el resto del día ya está ganado de entrada.",
+        "El estrés es temporal. El orgullo de haberlo sacado adelante es para siempre.",
+        "Alguien en este momento piensa que haces un trabajo increíble. Es verdad.",
+        "No importa qué tan pesado sea el día: tú eres más pesado/a (en términos de experiencia).",
+        "La pantalla puede esperar. Tu bienestar no.",
+        "Dato: sonreír 15 segundos seguidos engaña al cerebro y le mejora el ánimo. Inténtalo.",
+        "Hoy resolviste algo difícil sin que nadie lo notara. Nosotros sí lo notamos. 👀",
+        "El problema más grande de hoy se verá pequeñísimo en seis meses. Spoiler del futuro.",
+        "Tienes más habilidades de las que crees, más paciencia de la que sientes y más valor del que notas.",
+        "Una cosa a la vez. Eso es todo. Una. Sola. Cosa.",
+        "Mereces un aplauso por cada bug que cerraste sin quejarte. CLAP CLAP CLAP.",
+        "El cliente que te complicó la mañana también tiene su propio perrito en casa. Humanízalo.",
+        "Cada línea de trabajo de hoy construye algo más grande de lo que ves ahora.",
+        "Modo avión mental activado por 3 minutos. Absolutamente nadie lo notará.",
+        "Eres la persona adecuada para este trabajo. No fue accidente que estés aquí.",
+        "Antes de responder ese mensaje que te sacó de quicio: cuenta hasta cinco. Ya. Ahora.",
+        "La solución existe. A veces solo hay que alejarse para verla con claridad.",
+        "No todo lo urgente es importante. Y no todo lo importante parece urgente.",
+        "Llevas cargando muchas cosas hoy. Déjame al menos ayudarte a recordar que eres capaz.",
+        "La pantalla no te juzga. Yo tampoco. Este perrito tampoco. Nadie te juzga aquí.",
+        "Cuando crees que no puedes más, ese momento es exactamente cuando puedes un poco más.",
+        "Has sobrevivido al 100% de tus peores días hasta ahora. Estadística imparable.",
+        "Si el trabajo de hoy se siente pesado, imagina mañana contando lo que lograste hoy.",
+        "Tip profesional: el 80% del estrés viene del 20% de las cosas. Identifícalas y respira.",
+        "No eres un robot. Los robots no necesitan descanso, tú sí. Y eso te hace mejor.",
+        "La versión de ti de hace un año estaría impresionada con lo que manejas hoy.",
+        "¿Cuándo fue la última vez que te pusiste de pie? Ahora mismo. Arribaaa.",
+        "El caos de hoy es la historia de éxito de mañana. Confía en el proceso.",
+        "Este perrito te manda energía recargada. Úsala sabiamente (o úsala en el próximo café).",
+        "No tienes que tener todas las respuestas. Solo las suficientes para el siguiente paso.",
+        "El trabajo bien hecho no necesita publicidad. Pero de vez en cuando está bien recordarlo.",
+        "Hoy eres exactamente la persona que se necesita aquí. Sin sustituto posible.",
+        "El mejor momento para descansar es antes de que lo necesites. Considera esto como esa señal.",
+        "¿Sabes cuántas veces fallaste y lo superaste? Exactamente las suficientes para estar aquí.",
+        "No compares tu día con el de nadie. Tú tienes contexto que ellos no ven.",
+        "Mereces sentirte orgulloso/a de lo que estás construyendo. En serio.",
+        "La productividad no es hacer más cosas. Es hacer las cosas correctas sin quemarse.",
+        "Recuerda: el modo 'pausa' también es parte del trabajo. Activalo sin culpa.",
+        "Eres más que tu bandeja de entrada. Más que tus tareas pendientes. Mucho más.",
+        "¿Tomaste el almuerzo hoy? No cuenten solo el café. Ese no cuenta.",
+        "Cada pequeño avance de hoy suma al grande de mañana. Punto.",
+        "Hay días en que solo hay que llegar al final del día. Hoy puede ser ese día. Y está bien.",
+        "Tu cerebro procesó miles de decisiones hoy. Agradécele con un descanso de 5 minutos.",
+        "La perfección es enemiga de lo entregado. Lo entregado es lo que importa.",
+        "Tú no eres tus errores. Eres lo que aprendiste de ellos y lo que hiciste después.",
+        "¿Ya felicitaste a alguien hoy? Si no, empieza contigo mismo/a. En serio.",
+        "El sol sale todos los días aunque no lo veas desde la pantalla. Existe. Te lo juro.",
+        "Un mensaje del futuro: lo que te preocupa hoy ya no existirá en 3 meses.",
+        "Si algo sale mal hoy, recuerda: también salió algo bien. Busca ese algo.",
+        "Estás construyendo algo que la gente usa de verdad. Eso no es poca cosa.",
+        "No hay nadie en el mundo que haga exactamente lo que haces tú, de la manera en que tú lo haces.",
+        "Hoy no tienes que ser extraordinario/a. Solo un poco mejor que ayer. Eso es suficiente.",
+        "El cansancio que sientes es proporcional al esfuerzo que estás poniendo. Que no es poco.",
+        "La próxima vez que algo salga bien, párate un segundo y reconócelo. Ya.",
+        "No todo silencio es problema. A veces las cosas simplemente están funcionando.",
+        "Eres de esas personas que hacen que las cosas pasen. No de las que esperan que pasen.",
+        "El mejor soporte técnico para tu mente eres tú mismo/a. Dale el mantenimiento que merece.",
+        "Recuerda por qué empezaste. Ese 'por qué' sigue siendo válido.",
+        "Trabajar duro no significa trabajar sin parar. Los mejores saben cuándo detenerse.",
+        "Todo lo que aprendiste hoy (incluso lo frustrante) vale más de lo que parece.",
+        "Eres el tipo de persona que mueve cosas. Eso no lo hace todo el mundo.",
+        "El estrés de hoy se va a transformar en experiencia de mañana. Automaticamente.",
+        "No subestimes lo que lograste hoy solo porque no vino con fanfarria y aplausos.",
+        "Tu trabajo importa. Aunque nadie lo diga en voz alta, importa.",
+        "En algún lugar del sistema, algo funciona gracias a ti. Eso es real.",
+        "Los días difíciles son los que más te fortalecen. Aunque en el momento duelan.",
+        "Si pudiste con ayer, puedes con hoy. Si no del todo, con la mitad también cuenta.",
+        "Hay una versión tuya que superó exactamente esto. Se llama 'tú, mañana'.",
+        "Respira. Ahora otra vez. Lento. Bien. Así es como se resuelven las cosas.",
+        "El perro de esta imagen te manda buen rollo sin condiciones. Acéptalo.",
+        "Tómate este momento sin culpa. El trabajo no se irá a ningún lado en los próximos 60 segundos.",
+        "Lo que estás haciendo tiene valor. No lo olvides porque hoy nadie lo dijo.",
+        "Eres el tipo de persona que no se rinde aunque el sistema se caiga tres veces. Y eso habla bien de ti.",
+        "Tip: cierra los ojos 20 segundos y piensa en algo que te alegre. Listo. Recargado/a.",
+        "El perrito de la pantalla te saluda y te recuerda que la vida también existe fuera del ERP.",
+        "Cada tarea que completas hoy es una promesa cumplida. Eres alguien de palabra.",
+        "Mañana agradecerás haberte tomado este momento. Te lo garantiza este perro.",
+        "No importa cuánto quede por hacer. Lo que importa es cuánto ya hiciste. Y fue bastante.",
+        "Si el día no salió como planeabas, recuerda: los mejores sistemas tienen redundancias. Tú también.",
+    };
+
+    protected override void OnInitialized()
+    {
+        Preferencias.OnCambio += OnPreferenciasChanged;
+        if (Preferencias.AntiestresActivo)
+            IniciarTimer();
+    }
+
+    private void OnPreferenciasChanged()
+    {
+        if (Preferencias.AntiestresActivo)
+            IniciarTimer();
+        else
+            DetenerTimer();
+    }
+
+    private void IniciarTimer()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _ = BucleTimerAsync(_cts.Token);
+    }
+
+    private void DetenerTimer()
+    {
+        _cts?.Cancel();
+        _cts = null;
+    }
+
+    private async Task BucleTimerAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var espera = TimeSpan.FromSeconds(Preferencias.IntervaloAntiestresSeg);
+            try { await Task.Delay(espera, ct); }
+            catch (OperationCanceledException) { break; }
+            if (!ct.IsCancellationRequested)
+                await InvokeAsync(MostrarModal);
+        }
+    }
+
+    private void MostrarModal()
+    {
+        var rng = new Random();
+        int nuevo;
+        do { nuevo = rng.Next(Mensajes.Length); } while (nuevo == _ultimoIndice && Mensajes.Length > 1);
+        _ultimoIndice  = nuevo;
+        _mensajeActual = Mensajes[nuevo];
+        _visible       = true;
+        StateHasChanged();
+    }
+
+    private void Cerrar()
+    {
+        _visible = false;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Preferencias.OnCambio -= OnPreferenciasChanged;
+        _cts?.Cancel();
+        await Task.CompletedTask;
+    }
+}

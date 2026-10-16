@@ -1,0 +1,367 @@
+﻿@page "/rrhh/organigrama"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Organigrama - NEXO</PageTitle>
+
+<style>
+    /* ── Tokens — mapean a paleta MudBlazor (claro y oscuro) ── */
+    :root {
+        --org-line:    var(--mud-palette-divider, #e0e0e0);
+        --org-text1:   var(--mud-palette-text-primary);
+        --org-text2:   var(--mud-palette-text-secondary);
+        --org-bg-card: var(--mud-palette-surface);
+        --org-border:  var(--mud-palette-lines-default);
+    }
+
+    /* ── Colores de avatar (8 variantes) ─────────────────── */
+    .org-color-0 { background:#6366f1; }
+    .org-color-1 { background:#8b5cf6; }
+    .org-color-2 { background:#ec4899; }
+    .org-color-3 { background:#f97316; }
+    .org-color-4 { background:#14b8a6; }
+    .org-color-5 { background:#3b82f6; }
+    .org-color-6 { background:#84cc16; color:#1a2e05 !important; }
+    .org-color-7 { background:#ef4444; }
+
+    /* ── Stats bar ───────────────────────────────────────── */
+    .org-stats { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px; }
+    .org-stat-card {
+        flex:1; min-width:140px; padding:16px 20px;
+        background: var(--org-bg-card);
+        border: 1px solid var(--org-border);
+        border-radius:12px;
+        display:flex; align-items:center; gap:14px;
+    }
+    .org-stat-icon {
+        width:44px; height:44px; border-radius:10px;
+        display:flex; align-items:center; justify-content:center;
+        font-size:20px; flex-shrink:0;
+    }
+    .org-stat-icon.org-stat-icon--purple { background:color-mix(in srgb,#7c3aed 15%,var(--mud-palette-surface)); color:#7c3aed; }
+    .org-stat-icon--green  { background:color-mix(in srgb,#16a34a 15%,var(--mud-palette-surface)); color:#16a34a; }
+    .org-stat-icon--orange { background:color-mix(in srgb,#ea580c 15%,var(--mud-palette-surface)); color:#ea580c; }
+    .org-stat-icon--blue   { background:color-mix(in srgb,#2563eb 15%,var(--mud-palette-surface)); color:#2563eb; }
+    .org-stat-num  { font-size:26px; font-weight:700; line-height:1; color:var(--org-text1); }
+    .org-stat-label{ font-size:12px; color:var(--org-text2); margin-top:2px; }
+
+    /* ── Toolbar ─────────────────────────────────────────── */
+    .org-toolbar {
+        display:flex; align-items:center; justify-content:space-between;
+        gap:12px; flex-wrap:wrap; margin-bottom:20px;
+    }
+    .org-tabs { display:flex; gap:4px; background: var(--org-bg-card); border:1px solid var(--org-border); border-radius:8px; padding:4px; }
+    .org-tab {
+        padding:6px 14px; border-radius:6px; border:none; cursor:pointer;
+        font-size:13px; font-weight:500; background:transparent; color:var(--org-text2);
+        display:flex; align-items:center; gap:6px;
+        transition: background 0.15s, color 0.15s;
+    }
+    .org-tab--active { background: var(--mud-palette-primary); color:#fff; }
+    .org-zoom {
+        display:flex; align-items:center; gap:4px;
+        background: var(--org-bg-card); border:1px solid var(--org-border); border-radius:8px; padding:4px;
+    }
+    .org-zoom-btn {
+        width:30px; height:30px; border:none; background:transparent; cursor:pointer;
+        border-radius:6px; font-size:16px; color:var(--org-text2);
+        display:flex; align-items:center; justify-content:center;
+    }
+    .org-zoom-btn:hover { background: var(--org-border); }
+    .org-zoom-val { font-size:13px; min-width:40px; text-align:center; color:var(--org-text1); }
+    .org-actions { display:flex; gap:8px; }
+    .org-action-btn {
+        padding:6px 14px; border-radius:8px; border:1px solid var(--org-border);
+        background: var(--org-bg-card); cursor:pointer; font-size:13px; color:var(--org-text2);
+        display:flex; align-items:center; gap:6px;
+    }
+    .org-action-btn--primary { background: var(--mud-palette-primary); color:#fff; border-color:transparent; }
+
+    /* ── Árbol scrollable ────────────────────────────────── */
+    .org-scroll-wrap {
+        overflow:auto; border:1px solid var(--org-border); border-radius:12px;
+        padding:32px; min-height:400px;
+    }
+    .org-tree {
+        display:inline-flex; flex-direction:column; align-items:center;
+        transform-origin:top center;
+        transition: transform 0.2s;
+    }
+
+    /* ── Nodo / Card ─────────────────────────────────────── */
+    .org-node-wrapper { display:flex; flex-direction:column; align-items:center; }
+
+    .org-card {
+        display:flex; align-items:center; gap:10px;
+        background: var(--mud-palette-surface);
+        border: 1.5px solid var(--mud-palette-lines-default);
+        border-radius:12px; padding:10px 14px;
+        cursor:pointer; user-select:none;
+        min-width:190px; max-width:260px;
+        transition: border-color .15s, box-shadow .15s;
+        box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .org-card:hover    { border-color:var(--mud-palette-primary); box-shadow:0 2px 12px rgba(99,102,241,.15); }
+    .org-card--open    { border-color:var(--mud-palette-primary); }
+
+    .org-avatar {
+        width:38px; height:38px; border-radius:10px; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center;
+        font-size:13px; font-weight:700; color:#fff; text-transform:uppercase;
+    }
+    .org-info  { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+    .org-name  { font-size:13px; font-weight:600; color:var(--mud-palette-text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .org-role  { font-size:11px; color:var(--mud-palette-text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .org-pill  {
+        font-size:10px; font-weight:600; flex-shrink:0;
+        background:rgba(99,102,241,.12); color:#6366f1;
+        border-radius:20px; padding:3px 8px; white-space:nowrap;
+        display:flex; align-items:center; gap:3px;
+    }
+
+    /* ── Conectores correctos (::before/::after por hijo) ── */
+
+    /* 1. Línea vertical desde la card hacia abajo */
+    .org-v-connector {
+        width:2px; height:22px;
+        background: var(--org-line);
+        flex-shrink:0;
+    }
+
+    /* 2. Fila de hijos */
+    .org-children-row {
+        display:flex; flex-direction:row; align-items:flex-start;
+        position:relative;
+    }
+
+    /* 3. Cada columna-hijo tiene posición relativa para los pseudo-elementos */
+    .org-child {
+        display:flex; flex-direction:column; align-items:center;
+        padding:0 16px; position:relative;
+    }
+
+    /*
+       Segmento horizontal: ::before cubre el lado izquierdo del centro,
+       ::after cubre el lado derecho.
+       :first-child suprime ::before (no hay nada a la izquierda).
+       :last-child  suprime ::after  (no hay nada a la derecha).
+       :only-child  suprime ambos    (sin hermanos = sin barra horizontal).
+    */
+    .org-child::before,
+    .org-child::after {
+        content:''; position:absolute; top:0; height:2px;
+        background: var(--org-line);
+    }
+    .org-child::before { left:0;   width:50%; }
+    .org-child::after  { right:0;  width:50%; }
+
+    .org-child:first-child::before  { display:none; }
+    .org-child:last-child::after    { display:none; }
+    .org-child:only-child::before,
+    .org-child:only-child::after    { display:none; }
+
+    /* 4. Gota vertical desde la barra horizontal hasta la card */
+    .org-drop {
+        width:2px; height:20px;
+        background: var(--org-line);
+        flex-shrink:0;
+    }
+
+    /* ── Vista Lista ─────────────────────────────────────── */
+    .org-lista { display:flex; flex-direction:column; gap:6px; }
+    .org-lista-item {
+        display:flex; align-items:center; gap:10px; padding:10px 14px;
+        background: var(--org-bg-card); border:1px solid var(--org-border);
+        border-radius:10px;
+    }
+    .org-lista-nivel { font-size:11px; color:var(--org-text2); min-width:60px; }
+</style>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Organigrama</h1>
+            <p style="font-size:13px;color:var(--n-text-3,#9B9BB4);margin:0">
+                Visualiza la estructura jerárquica de la organización basada en el campo "Jefe Directo" de cada empleado.
+            </p>
+        </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+        <a href="/rrhh/empleados/nuevo" style="text-decoration:none">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd" Size="Size.Small">
+                Agregar empleado
+            </MudButton>
+        </a>
+    </div>
+</div>
+<InfoAyuda Texto="Visualiza la jerarquía de la organización basada en el campo «Jefe Directo» de cada empleado, con vistas de árbol y lista." />
+
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudo cargar el organigrama: @_errorCarga</MudAlert>
+}
+else
+{
+    <!-- Stats -->
+    <div class="org-stats">
+        <div class="org-stat-card">
+            <div class="org-stat-icon org-stat-icon org-stat-icon--purple">👥</div>
+            <div>
+                <div class="org-stat-num">@_nodos.Count</div>
+                <div class="org-stat-label">Total empleados</div>
+                <div style="font-size:10px;color:var(--n-text-3,#9B9BB4)">En la organización</div>
+            </div>
+        </div>
+        <div class="org-stat-card">
+            <div class="org-stat-icon org-stat-icon--green">🌿</div>
+            <div>
+                <div class="org-stat-num">@_niveles</div>
+                <div class="org-stat-label">Niveles jerárquicos</div>
+                <div style="font-size:10px;color:var(--n-text-3,#9B9BB4)">De profundidad</div>
+            </div>
+        </div>
+        <div class="org-stat-card">
+            <div class="org-stat-icon org-stat-icon--orange">🏢</div>
+            <div>
+                <div class="org-stat-num">@_departamentos</div>
+                <div class="org-stat-label">Departamentos</div>
+                <div style="font-size:10px;color:var(--n-text-3,#9B9BB4)">Activos</div>
+            </div>
+        </div>
+        <div class="org-stat-card">
+            <div class="org-stat-icon org-stat-icon--blue">📦</div>
+            <div>
+                <div class="org-stat-num">@_raices.Count</div>
+                <div class="org-stat-label">Equipos raíz</div>
+                <div style="font-size:10px;color:var(--n-text-3,#9B9BB4)">Conformados</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="org-toolbar">
+        <div class="org-tabs">
+            <button class="org-tab @(_vista == "arbol" ? "org-tab--active" : "")" @onclick='() => _vista = "arbol"'>
+                🌳 Árbol
+            </button>
+            <button class="org-tab @(_vista == "lista" ? "org-tab--active" : "")" @onclick='() => _vista = "lista"'>
+                ☰ Lista
+            </button>
+        </div>
+
+        @if (_vista == "arbol")
+        {
+            <div style="display:flex;gap:8px;align-items:center">
+                <div class="org-zoom">
+                    <button class="org-zoom-btn" @onclick="ZoomOut" title="Alejar">−</button>
+                    <span class="org-zoom-val">@_zoom%</span>
+                    <button class="org-zoom-btn" @onclick="ZoomIn"  title="Acercar">+</button>
+                    <button class="org-zoom-btn" @onclick="ZoomReset" title="Restablecer">⤢</button>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (_vista == "arbol")
+    {
+        <div class="org-scroll-wrap">
+            <div class="org-tree" style="transform: scale(@(_zoom / 100.0).ToString("0.##"))">
+                @foreach (var raiz in _raices)
+                {
+                    <OrganigramaRama Nodo="raiz" Todos="_nodos" />
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="org-lista">
+            @foreach (var nodo in _listaOrdenada)
+            {
+                var nivel = nodo.Nivel;
+                <div class="org-lista-item" style="margin-left:@(nivel * 20)px">
+                    <div class="org-avatar org-color-@(Math.Abs((nodo.Nombres + nodo.Apellidos).GetHashCode()) % 8)" style="width:32px;height:32px;border-radius:8px;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0">
+                        @(nodo.Nombres?.Length > 0 ? nodo.Nombres[0] : '?')@(nodo.Apellidos?.Length > 0 ? nodo.Apellidos[0] : ' ')
+                    </div>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-size:13px;font-weight:600">@nodo.Nombres @nodo.Apellidos</div>
+                        <div style="font-size:11px;color:var(--n-text-3,#9B9BB4)">@(nodo.Cargo ?? "Sin cargo")</div>
+                    </div>
+                    @if (nivel > 0)
+                    {
+                        <span style="font-size:11px;color:var(--n-text-3,#9B9BB4)">Nivel @nivel</span>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<OrganigramaNodo> _nodos = new();
+    private List<OrganigramaNodo> _raices = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+    private string _vista = "arbol";
+    private int _zoom = 100;
+    private int _niveles;
+    private int _departamentos;
+
+    private record NodoConNivel(int EmpleadoID, string Nombres, string Apellidos, string? Cargo, int? JefeDirectoID, int Nivel);
+    private List<NodoConNivel> _listaOrdenada = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _nodos = await ApiClient.GetAsync<List<OrganigramaNodo>>("api/rrhh/empleados/organigrama") ?? new();
+            _raices = _nodos.Where(n => n.JefeDirectoID is null || !_nodos.Any(p => p.EmpleadoID == n.JefeDirectoID)).ToList();
+            _niveles = CalcNiveles(_raices, _nodos, 0);
+            _departamentos = _nodos.Select(n => n.Cargo).Distinct().Count();
+            _listaOrdenada = OrdenaLista(_raices, _nodos, 0);
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void ZoomIn()    => _zoom = Math.Min(_zoom + 10, 150);
+    private void ZoomOut()   => _zoom = Math.Max(_zoom - 10, 40);
+    private void ZoomReset() => _zoom = 100;
+
+    private static int CalcNiveles(List<OrganigramaNodo> raices, List<OrganigramaNodo> todos, int nivel)
+    {
+        if (!raices.Any()) return nivel;
+        int max = nivel + 1;
+        foreach (var n in raices)
+        {
+            var hijos = todos.Where(x => x.JefeDirectoID == n.EmpleadoID).ToList();
+            max = Math.Max(max, CalcNiveles(hijos, todos, nivel + 1));
+        }
+        return max;
+    }
+
+    private static List<NodoConNivel> OrdenaLista(List<OrganigramaNodo> raices, List<OrganigramaNodo> todos, int nivel)
+    {
+        var result = new List<NodoConNivel>();
+        foreach (var n in raices)
+        {
+            result.Add(new(n.EmpleadoID, n.Nombres, n.Apellidos, n.Cargo, n.JefeDirectoID, nivel));
+            var hijos = todos.Where(x => x.JefeDirectoID == n.EmpleadoID).ToList();
+            result.AddRange(OrdenaLista(hijos, todos, nivel + 1));
+        }
+        return result;
+    }
+}

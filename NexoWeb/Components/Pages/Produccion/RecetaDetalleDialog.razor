@@ -1,0 +1,81 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+
+<MudDialog>
+    <DialogContent>
+        @if (_cargando)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_detalle.Count == 0)
+        {
+            <MudText>Esta receta no tiene insumos registrados.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_detalle" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Orden</MudTh>
+                    <MudTh>Insumo</MudTh>
+                    <MudTh>Cantidad</MudTh>
+                    <MudTh>Presentación</MudTh>
+                    <MudTh>% Merma Std.</MudTh>
+                    @if (ConfiguracionEmpresa.SistemaMedidas)
+                    {
+                        <MudTh>Despiece</MudTh>
+                    }
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Orden">@context.Orden</MudTd>
+                    <MudTd DataLabel="Insumo">@context.Insumo</MudTd>
+                    <MudTd DataLabel="Cantidad">@context.CantidadRequerida.ToString("N2")</MudTd>
+                    <MudTd DataLabel="Presentación">@context.Unidad</MudTd>
+                    <MudTd DataLabel="% Merma Std.">@context.PorcentajeMermaEstandar.ToString("N2")</MudTd>
+                    @if (ConfiguracionEmpresa.SistemaMedidas)
+                    {
+                        <MudTd>
+                            <MudTooltip Text="Piezas de corte">
+                                <MudIconButton Icon="@Icons.Material.Outlined.ContentCut"
+                                               Size="Size.Small" Color="Color.Default"
+                                               OnClick="() => AbrirDespieceAsync(context)" />
+                            </MudTooltip>
+                        </MudTd>
+                    }
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int RecetaID { get; set; }
+
+    private List<RecetaDetalleItem> _detalle = new();
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ConfiguracionEmpresa.CargarAsync();
+        _detalle = await ApiClient.GetAsync<List<RecetaDetalleItem>>($"api/produccion/recetas/{RecetaID}/detalle") ?? new();
+        _cargando = false;
+    }
+
+    private async Task AbrirDespieceAsync(RecetaDetalleItem linea)
+    {
+        var p = new DialogParameters<DespiecePiezasDialog>
+        {
+            { x => x.RecetaDetalleID, linea.RecetaDetalleID },
+            { x => x.NombreInsumo, linea.Insumo }
+        };
+        await DialogService.ShowAsync<DespiecePiezasDialog>("Despiece de piezas", p,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+    }
+
+    private void Cerrar() => MudDialog.Close();
+}

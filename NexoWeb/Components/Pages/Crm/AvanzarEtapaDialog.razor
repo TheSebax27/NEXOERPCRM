@@ -1,0 +1,36 @@
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Registra el contacto realizado antes de avanzar a <strong>@EtapaDestino</strong>:
+        </MudText>
+        <MudTextField @bind-Value="_nota" Label="Nota del contacto" Lines="3"
+                      Variant="Variant.Outlined" Required="true"
+                      RequiredError="Escribe una nota del contacto" />
+        <MudDatePicker @bind-Date="_proximoContacto" Label="Agendar próximo contacto (opcional)"
+                       Class="mt-3" Variant="Variant.Outlined"
+                       PickerVariant="PickerVariant.Dialog" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   Disabled="@string.IsNullOrWhiteSpace(_nota)"
+                   OnClick="Confirmar">
+            Confirmar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string EtapaDestino { get; set; } = "";
+
+    private string _nota = "";
+    private DateTime? _proximoContacto;
+
+    public record AvanzarEtapaResult(string Nota, DateTime? ProximoContacto);
+
+    private void Confirmar() =>
+        MudDialog.Close(DialogResult.Ok(new AvanzarEtapaResult(_nota.Trim(), _proximoContacto)));
+}

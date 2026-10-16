@@ -1,0 +1,190 @@
+﻿@page "/crm/actividades"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Actividades CRM - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Actividades</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Registro de llamadas, emails, reuniones y tareas de seguimiento vinculadas a oportunidades y clientes. Las actividades vencidas o de hoy aparecen resaltadas." />
+
+<div class="d-flex align-center mb-3" style="gap:12px; flex-wrap:wrap;">
+    <MudChipSet T="string" SelectionMode="SelectionMode.SingleSelection"
+                @bind-SelectedValue="_filtroTipo">
+        <MudChip T="string" Value="@("")">Todas</MudChip>
+        <MudChip T="string" Value="@("LLAMADA")">📞 Llamadas</MudChip>
+        <MudChip T="string" Value="@("EMAIL")">📧 Emails</MudChip>
+        <MudChip T="string" Value="@("REUNION")">🤝 Reuniones</MudChip>
+        <MudChip T="string" Value="@("TAREA")">✅ Tareas</MudChip>
+    </MudChipSet>
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+        <MudSwitch T="bool" @bind-Value="_soloActivas" Color="Color.Primary" Label="Solo pendientes" />
+    </div>
+</div>
+
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (Preferencias.VistaListado == "lista")
+{
+    var visibles = ActividadesVisibles.ToList();
+    var vencidas    = visibles.Where(a => !a.Completada && a.FechaVencimiento.HasValue && a.FechaVencimiento.Value.ToLocalTime().Date < NexoWeb.Common.ColombiaClock.Today).ToList();
+    var hoy         = visibles.Where(a => !a.Completada && a.FechaVencimiento.HasValue && a.FechaVencimiento.Value.ToLocalTime().Date == NexoWeb.Common.ColombiaClock.Today).ToList();
+    var proximas    = visibles.Where(a => !a.Completada && (!a.FechaVencimiento.HasValue || a.FechaVencimiento.Value.ToLocalTime().Date > NexoWeb.Common.ColombiaClock.Today)).ToList();
+    var completadas = visibles.Where(a => a.Completada).ToList();
+
+    @if (vencidas.Any())
+    {
+        <MudText Typo="Typo.subtitle2" Class="mb-1" Style="color:var(--mud-palette-error);">⚠ Vencidas (@vencidas.Count)</MudText>
+        @foreach (var a in vencidas) { <ActividadRow Item="a" OnCambio="CargarAsync" /> }
+        <MudDivider Class="my-3" />
+    }
+    @if (hoy.Any())
+    {
+        <MudText Typo="Typo.subtitle2" Class="mb-1" Style="color:var(--mud-palette-warning);">🔔 Para hoy (@hoy.Count)</MudText>
+        @foreach (var a in hoy) { <ActividadRow Item="a" OnCambio="CargarAsync" /> }
+        <MudDivider Class="my-3" />
+    }
+    @if (proximas.Any())
+    {
+        <MudText Typo="Typo.subtitle2" Class="mb-1">Próximas (@proximas.Count)</MudText>
+        @foreach (var a in proximas) { <ActividadRow Item="a" OnCambio="CargarAsync" /> }
+    }
+    @if (completadas.Any() && !_soloActivas)
+    {
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-1" Style="color:var(--n-text-3);">Completadas (@completadas.Count)</MudText>
+        @foreach (var a in completadas) { <ActividadRow Item="a" OnCambio="CargarAsync" /> }
+    }
+    @if (!visibles.Any())
+    {
+        @if (!_actividades.Any())
+        {
+            <NexoEmptyState
+                Icono="@Icons.Material.Outlined.EventNote"
+                Titulo="Crea tu primera actividad"
+                Descripcion="Registra llamadas, emails, reuniones y tareas de seguimiento. Vincula cada actividad a un cliente u oportunidad para mantener el historial completo." />
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Style="color:var(--n-text-3);">Sin actividades para mostrar con ese filtro.</MudText>
+        }
+    }
+}
+else
+{
+    var visibles = ActividadesVisibles.ToList();
+    if (!visibles.Any())
+    {
+        if (!_actividades.Any())
+        {
+            <NexoEmptyState
+                Icono="@Icons.Material.Outlined.EventNote"
+                Titulo="Crea tu primera actividad"
+                Descripcion="Registra llamadas, emails, reuniones y tareas de seguimiento. Vincula cada actividad a un cliente u oportunidad para mantener el historial completo." />
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Style="color:var(--n-text-3);">Sin actividades para mostrar con ese filtro.</MudText>
+        }
+    }
+    else
+    {
+        <div class="nexo-cards-grid">
+            @foreach (var a in visibles)
+            {
+                <div class="nexo-ec">
+                    <div class="nexo-ec__header">
+                        <MudIcon Icon="@IconoActividadTipo(a.Tipo)" Size="Size.Small" Style="opacity:.7;flex-shrink:0" />
+                        <div class="nexo-ec__title-block" style="margin-left:8px">
+                            <div class="nexo-ec__name" style="@(a.Completada ? "text-decoration:line-through;opacity:.6" : "")">@a.Titulo</div>
+                            @if (!string.IsNullOrEmpty(a.Cliente) || !string.IsNullOrEmpty(a.Oportunidad))
+                            {
+                                <div class="nexo-ec__sub">@(a.Cliente ?? a.Oportunidad)</div>
+                            }
+                        </div>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(a.Completada ? Color.Success : ColorVencimiento(a.FechaVencimiento))"
+                                 Style="margin-left:auto;font-size:0.68rem;height:22px;flex-shrink:0">
+                            @(a.Completada ? "Hecha" : EtiquetaActividadTipo(a.Tipo))
+                        </MudChip>
+                    </div>
+                    <div class="nexo-ec__body">
+                        @if (a.FechaVencimiento.HasValue)
+                        {
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.Event" Size="Size.Small" />
+                                <span>@a.FechaVencimiento.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(a.Responsable))
+                        {
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.Person" Size="Size.Small" />
+                                <span>@a.Responsable</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<ActividadItem> _actividades = new();
+    private bool _cargando = true;
+    private bool _soloActivas = true;
+    private string _filtroTipo = "";
+
+    private IEnumerable<ActividadItem> ActividadesVisibles =>
+        _actividades
+            .Where(a => !_soloActivas || !a.Completada)
+            .Where(a => string.IsNullOrEmpty(_filtroTipo) || a.Tipo == _filtroTipo);
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            _actividades = await ApiClient.GetAsync<List<ActividadItem>>("api/crm/actividades?soloActivas=false") ?? new();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _cargando = false; }
+    }
+
+    private static string IconoActividadTipo(string tipo) => tipo switch
+    {
+        "LLAMADA" => Icons.Material.Outlined.Phone,
+        "EMAIL"   => Icons.Material.Outlined.Email,
+        "REUNION" => Icons.Material.Outlined.Groups,
+        _         => Icons.Material.Outlined.CheckCircle
+    };
+
+    private static string EtiquetaActividadTipo(string tipo) => tipo switch
+    {
+        "LLAMADA" => "Llamada",
+        "EMAIL"   => "Email",
+        "REUNION" => "Reunión",
+        "TAREA"   => "Tarea",
+        _         => tipo
+    };
+
+    private static Color ColorVencimiento(DateTime? fecha)
+    {
+        if (!fecha.HasValue) return Color.Default;
+        var local = fecha.Value.ToLocalTime().Date;
+        if (local < NexoWeb.Common.ColombiaClock.Today) return Color.Error;
+        if (local == NexoWeb.Common.ColombiaClock.Today) return Color.Warning;
+        return Color.Default;
+    }
+}

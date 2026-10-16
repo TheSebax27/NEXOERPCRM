@@ -1,0 +1,221 @@
+@* Components/Shared/PerfilMenu.razor
+   Mini-panel del avatar/nombre del Top Bar: cambiar nombre y foto de perfil. *@
+@inject NexoWeb.Common.Auth.AuthStateService AuthState
+@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<div class="nexo-topbar__user nexo-perfil-wrapper">
+
+    @* Activador *@
+    <div class="nexo-topbar__user-activator" @onclick="TogglePanel">
+        @if (AuthState.FotoPerfilDataUri is not null)
+        {
+            <img src="@AuthState.FotoPerfilDataUri" class="nexo-topbar__avatar nexo-topbar__avatar--img" alt="" />
+        }
+        else
+        {
+            <div class="nexo-topbar__avatar" aria-hidden="true">@Iniciales</div>
+        }
+        <div class="nexo-topbar__user-info">
+            <span class="nexo-topbar__user-name">@AuthState.NombreCompleto</span>
+            <span class="nexo-topbar__user-role">@AuthState.Rol</span>
+        </div>
+        <MudIcon Icon="@(_panelAbierto ? Icons.Material.Filled.KeyboardArrowUp : Icons.Material.Filled.KeyboardArrowDown)"
+                 Class="nexo-topbar__chevron" />
+    </div>
+
+    @* Overlay transparente para cerrar al clickar fuera *@
+    @if (_panelAbierto)
+    {
+        <div class="nexo-perfil-overlay" @onclick="CerrarPanel"></div>
+
+        <div class="nexo-perfil-panel" @onclick:stopPropagation="true">
+            <div class="nexo-perfil-panel__avatar-row">
+                @if (AuthState.FotoPerfilDataUri is not null)
+                {
+                    <img src="@AuthState.FotoPerfilDataUri" class="nexo-perfil-panel__avatar" alt="" />
+                }
+                else
+                {
+                    <div class="nexo-perfil-panel__avatar nexo-perfil-panel__avatar--iniciales">@Iniciales</div>
+                }
+                <div class="nexo-perfil-panel__avatar-actions">
+                    <InputFile id="nexo-perfil-foto-input" OnChange="OnArchivoSeleccionadoAsync"
+                               accept="image/png,image/jpeg,image/webp" style="display:none;" />
+                    <label for="nexo-perfil-foto-input" class="nexo-perfil-panel__btn-archivo">
+                        @(AuthState.FotoPerfilDataUri is null ? "Subir foto" : "Cambiar foto")
+                    </label>
+                    @if (AuthState.FotoPerfilDataUri is not null)
+                    {
+                        <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                                   OnClick="QuitarFotoAsync" Disabled="_procesando">
+                            Quitar
+                        </MudButton>
+                    }
+                </div>
+            </div>
+            <div class="nexo-perfil-panel__hint">Opcional. Máximo 1 MB (JPG, PNG o WEBP). Si no subes una, se usan tus iniciales.</div>
+
+            <MudTextField T="string" @bind-Value="_nombres" Label="Nombres" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3" />
+            <MudTextField T="string" @bind-Value="_apellidos" Label="Apellidos" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+            <MudTextField T="string" Value="@AuthState.Rol" Label="Rol" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2"
+                          ReadOnly="true" Disabled="true" HelperText="Solo un Administracion puede cambiar tu rol, desde Usuarios." />
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Class="mt-3"
+                       OnClick="GuardarNombreAsync"
+                       Disabled="@(_procesando || string.IsNullOrWhiteSpace(_nombres) || string.IsNullOrWhiteSpace(_apellidos))">
+                @(_procesando ? "Guardando..." : "Guardar cambios")
+            </MudButton>
+
+            <MudDivider Class="my-3" />
+
+            @* ── Contraseña ───────────────────────────────── *@
+            @if (!_cambiarPwd)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Lock"
+                           OnClick="@(() => _cambiarPwd = true)" Class="mt-1">
+                    Cambiar contraseña
+                </MudButton>
+            }
+            else
+            {
+                <MudTextField @bind-Value="_pwdActual" Label="Contraseña actual" InputType="InputType.Password"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-1" />
+                <MudTextField @bind-Value="_pwdNueva" Label="Nueva contraseña" InputType="InputType.Password"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                <MudTextField @bind-Value="_pwdConfirmar" Label="Confirmar nueva" InputType="InputType.Password"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                <div class="d-flex" style="gap:8px; margin-top:8px">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => { _cambiarPwd = false; _pwdActual = _pwdNueva = _pwdConfirmar = string.Empty; })">Cancelar</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="GuardarPwdAsync" Disabled="_procesando">
+                        Guardar contraseña
+                    </MudButton>
+                </div>
+            }
+        </div>
+    }
+
+</div>
+
+@code {
+    private string _nombres = "";
+    private string _apellidos = "";
+    private bool _procesando;
+    private bool _panelAbierto;
+    private bool _cambiarPwd;
+    private string _pwdActual = "";
+    private string _pwdNueva = "";
+    private string _pwdConfirmar = "";
+
+    private string Iniciales
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(AuthState.NombreCompleto)) return "U";
+            var partes = AuthState.NombreCompleto.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return partes.Length >= 2
+                ? $"{partes[0][0]}{partes[1][0]}".ToUpper()
+                : partes[0][0].ToString().ToUpper();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _nombres = AuthState.Nombres ?? "";
+        _apellidos = AuthState.Apellidos ?? "";
+    }
+
+    private void TogglePanel() => _panelAbierto = !_panelAbierto;
+    private void CerrarPanel() { _panelAbierto = false; _cambiarPwd = false; }
+
+    private async Task GuardarPwdAsync()
+    {
+        if (_pwdNueva != _pwdConfirmar) { Snackbar.Add("Las contraseñas no coinciden.", Severity.Warning); return; }
+        if (_pwdNueva.Length < 6) { Snackbar.Add("Mínimo 6 caracteres.", Severity.Warning); return; }
+        _procesando = true;
+        try
+        {
+            await ApiClient.PutAsync<CambiarPasswordPerfilRequest, object?>(
+                "api/auth/perfil/password", new CambiarPasswordPerfilRequest(_pwdActual, _pwdNueva));
+            _cambiarPwd = false;
+            _pwdActual = _pwdNueva = _pwdConfirmar = string.Empty;
+            Snackbar.Add("Contraseña actualizada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _procesando = false; }
+    }
+
+    private async Task GuardarNombreAsync()
+    {
+        _procesando = true;
+        try
+        {
+            var request = new ActualizarPerfilRequest(_nombres.Trim(), _apellidos.Trim());
+            await ApiClient.PutAsync<ActualizarPerfilRequest, PerfilActualizadoResponse>("api/auth/perfil", request);
+            await AuthState.ActualizarNombreAsync(request.Nombres, request.Apellidos);
+            Snackbar.Add("Nombre actualizado.", Severity.Success);
+            _panelAbierto = false;
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _procesando = false;
+        }
+    }
+
+    private async Task OnArchivoSeleccionadoAsync(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 1_000_000;
+
+        if (e.File.Size > maxBytes)
+        {
+            Snackbar.Add("La imagen es muy grande (máximo 1 MB).", Severity.Warning);
+            return;
+        }
+
+        _procesando = true;
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxBytes);
+            using var memoria = new MemoryStream();
+            await stream.CopyToAsync(memoria);
+            var base64 = Convert.ToBase64String(memoria.ToArray());
+
+            var request = new ActualizarFotoPerfilRequest(base64, e.File.ContentType);
+            await ApiClient.PutAsync<ActualizarFotoPerfilRequest, object>("api/auth/perfil/foto", request);
+            await AuthState.ActualizarFotoAsync(base64, e.File.ContentType);
+            Snackbar.Add("Foto de perfil actualizada.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _procesando = false;
+        }
+    }
+
+    private async Task QuitarFotoAsync()
+    {
+        _procesando = true;
+        try
+        {
+            await ApiClient.DeleteAsync("api/auth/perfil/foto");
+            await AuthState.EliminarFotoAsync();
+            Snackbar.Add("Foto de perfil eliminada.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _procesando = false;
+        }
+    }
+}

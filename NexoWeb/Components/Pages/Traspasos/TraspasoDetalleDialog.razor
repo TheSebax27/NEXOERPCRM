@@ -1,0 +1,65 @@
+@using NexoWeb.Common.Dtos
+@inject IDialogService DialogService
+
+<MudDialog>
+    <DialogContent>
+        @if (!SoloLectura)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-4">
+                Esta acción actualizará el stock en la bodega destino de forma permanente.
+            </MudAlert>
+        }
+
+        <MudText Typo="Typo.subtitle2" Class="mb-2">
+            @(SoloLectura ? "Artículos del traspaso:" : "Artículos a recibir:")
+        </MudText>
+
+        <MudTable Items="Detalle" Dense="true" Striped="true">
+            <HeaderContent>
+                <MudTh>Artículo</MudTh>
+                <MudTh Style="text-align:right">Cantidad Enviada</MudTh>
+                @if (SoloLectura)
+                {
+                    <MudTh Style="text-align:right">Cantidad Recibida</MudTh>
+                }
+                <MudTh Style="text-align:right">Costo Unit.</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Artículo">@context.Articulo</MudTd>
+                <MudTd DataLabel="Cantidad Enviada" Style="text-align:right">@context.CantidadEnviada.ToString("N2")</MudTd>
+                @if (SoloLectura)
+                {
+                    <MudTd DataLabel="Cantidad Recibida" Style="text-align:right">
+                        @(context.CantidadRecibida?.ToString("N2") ?? "-")
+                    </MudTd>
+                }
+                <MudTd DataLabel="Costo Unit." Style="text-align:right">@context.CostoUnitario.ToString("C2")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    </DialogContent>
+    <DialogActions>
+        @if (SoloLectura)
+        {
+            <MudButton OnClick="Cancelar">Cerrar</MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Cancelar">Cancelar</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirmar">
+                Confirmar Recepcion
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public List<TraspasoDetalleItem> Detalle { get; set; } = new();
+
+    // true = solo mostrar el detalle (boton "Ver Detalle" desde el listado,
+    // cualquier estado); false = modo accion, exige confirmar la recepcion.
+    [Parameter] public bool SoloLectura { get; set; }
+
+    private void Confirmar() => MudDialog.Close(DialogResult.Ok(true));
+    private void Cancelar() => MudDialog.Cancel();
+}

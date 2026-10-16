@@ -1,0 +1,18 @@
+﻿
+@inject NexoWeb.Common.Auth.AuthStateService AuthState
+
+@if (_listo)
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private bool _listo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AuthState.InicializarAsync();
+        _listo = true;
+    }
+}

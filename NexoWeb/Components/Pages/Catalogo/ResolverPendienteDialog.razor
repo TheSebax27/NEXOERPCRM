@@ -1,0 +1,86 @@
+@using NexoWeb.Common.Dtos
+@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Visions vendio <strong>@Pendiente.CodigoArticuloVisions</strong>
+            (@(Pendiente.NombreVisions ?? "sin nombre en Visions")) pero todavia no esta mapeado en NEXO.
+            Vinculalo a un articulo existente, o crea uno nuevo con los datos sugeridos.
+        </MudText>
+
+        <MudRadioGroup T="string" @bind-Value="_modo" Class="mb-3">
+            <MudRadio T="string" Value="@("existente")" Color="Color.Primary">Vincular a articulo existente</MudRadio>
+            <MudRadio T="string" Value="@("nuevo")" Color="Color.Primary">Crear articulo nuevo</MudRadio>
+        </MudRadioGroup>
+
+        @if (_modo == "existente")
+        {
+            <MudAutocomplete T="ArticuloItem?" @bind-Value="_articuloSeleccionado"
+                             Label="Artículo (Producto Terminado)"
+                             SearchFunc="BuscarArticulos"
+                             ToStringFunc="@(a => a is null ? "" : $"{a.Referencia} — {a.Nombre}")"
+                             Variant="Variant.Outlined" Class="mb-3"
+                             MinCharacters="0" ResetValueOnEmptyText="true" DebounceInterval="300" />
+        }
+        else
+        {
+            <MudTextField @bind-Value="_sku" Label="SKU" Required="true" Class="mb-3" />
+            <MudTextField @bind-Value="_nombre" Label="Nombre" Required="true" Class="mb-3" />
+            <MudNumericField T="decimal?" @bind-Value="_precioVenta" Label="Precio de Venta"
+                              HelperText="Sugerido desde Visions -- puedes ajustarlo" Class="mb-3" />
+            <MudNumericField T="decimal?" @bind-Value="_stockMinimo" Label="Stock Minimo" Class="mb-3" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync">Vincular</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public ArticuloPendienteMapeoItem Pendiente { get; set; } = default!;
+
+    private string _modo = "existente";
+    private ArticuloItem? _articuloSeleccionado;
+    private string _sku = string.Empty;
+    private string _nombre = string.Empty;
+    private decimal? _precioVenta;
+    private decimal? _stockMinimo;
+
+    protected override void OnInitialized()
+    {
+        _nombre = Pendiente.NombreVisions ?? string.Empty;
+        _precioVenta = Pendiente.PrecioVisions;
+        _stockMinimo = 0;
+    }
+
+    private void GuardarAsync()
+    {
+        ResolverArticuloPendienteRequest request;
+
+        if (_modo == "existente")
+        {
+            if (_articuloSeleccionado is null)
+                return;
+
+            request = new ResolverArticuloPendienteRequest(_articuloSeleccionado.ArticuloID, null, null, null, null);
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(_sku) || string.IsNullOrWhiteSpace(_nombre))
+                return;
+
+            request = new ResolverArticuloPendienteRequest(null, _sku.Trim(), _nombre.Trim(), _precioVenta, _stockMinimo);
+        }
+
+        MudDialog.Close(DialogResult.Ok(request));
+    }
+
+    private Task<IEnumerable<ArticuloItem>> BuscarArticulos(string? texto, CancellationToken ct)
+        => ApiClient.BuscarArticulosAsync(texto, ct);
+
+    private void Cancelar() => MudDialog.Cancel();
+}

@@ -1,0 +1,49 @@
+@* Campo de tiempo: se enlaza a un decimal (horas, con fraccion) pero se ve
+   como dos campos separados "Horas" y "Minutos" -- mas realista para capturar
+   cuanto tiempo se gasto en planta que forzar a alguien a calcular "1.75"
+   horas mentalmente. Internamente sigue siendo el mismo decimal de horas que
+   ya usa el calculo de costo (Horas * CostoHora). *@
+<MudText Typo="Typo.body2" Class="mb-1" Style="color: var(--n-text-2, #6B6B8A); font-weight: 500;">@Label</MudText>
+<div class="d-flex align-center gap-3">
+    <MudNumericField T="int" Value="_horas" ValueChanged="OnHorasCambiadasAsync" Label="Horas" Min="0" Class="flex-grow-1" />
+    <MudNumericField T="int" Value="_minutos" ValueChanged="OnMinutosCambiadosAsync" Label="Minutos" Min="0" Max="59" Class="flex-grow-1" />
+</div>
+@if (!string.IsNullOrEmpty(HelperText))
+{
+    <MudText Typo="Typo.caption" Class="mt-1 d-block" Style="color: var(--n-text-3, #9B9BB4);">@HelperText</MudText>
+}
+
+@code {
+    [Parameter] public decimal Value { get; set; }
+    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? HelperText { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private int _horas;
+    private int _minutos;
+
+    protected override void OnInitialized()
+    {
+        _horas = (int)Math.Floor(Value);
+        _minutos = (int)Math.Round((Value - _horas) * 60);
+    }
+
+    private Task OnHorasCambiadasAsync(int nuevo)
+    {
+        _horas = Math.Max(0, nuevo);
+        return ActualizarAsync();
+    }
+
+    private Task OnMinutosCambiadosAsync(int nuevo)
+    {
+        _minutos = Math.Clamp(nuevo, 0, 59);
+        return ActualizarAsync();
+    }
+
+    private async Task ActualizarAsync()
+    {
+        Value = _horas + (_minutos / 60m);
+        await ValueChanged.InvokeAsync(Value);
+    }
+}

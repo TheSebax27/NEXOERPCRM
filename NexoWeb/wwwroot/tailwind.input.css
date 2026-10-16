@@ -1,0 +1,7 @@
+/* Tailwind CSS — archivo de entrada
+   El CLI lee este archivo y genera wwwroot/tailwind.css
+   usando las clases detectadas en Components/**‌/*.razor */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

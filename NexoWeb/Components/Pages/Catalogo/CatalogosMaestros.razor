@@ -1,0 +1,566 @@
+﻿@page "/catalogo/maestros"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Catalogos Maestros - NEXO</PageTitle>
+
+<div class="nexo-page-hero mb-5">
+    <div class="nexo-page-hero__icon">
+        <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Style="font-size:1.6rem;" />
+    </div>
+    <div>
+        <div class="nexo-page-hero__title">Catalogos Maestros</div>
+        <div class="nexo-page-hero__sub">Marcas, Grupos Mayores, Grupos Menores y Presentaciones (calca de Visions).</div>
+    </div>
+</div>
+<InfoAyuda Texto="Gestiona los catálogos base del sistema: marcas, grupos mayores, grupos menores y presentaciones sincronizados con Visions." />
+
+<MudTabs Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" Class="nexo-bi-tabs">
+
+    @* ── Marcas ──────────────────────────────────────────────────────── *@
+    <MudTabPanel Text="Marcas" Icon="@Icons.Material.Filled.Label">
+        <div class="d-flex align-center justify-space-between mb-3">
+            <MudText Typo="Typo.subtitle1">Marcas</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrearMarcaAsync" Size="Size.Small">Nueva Marca</MudButton>
+        </div>
+
+        @if (_cargandoMarcas)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_marcas.Count == 0)
+        {
+            <MudText Style="color: var(--n-text-3);">No hay marcas registradas.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_marcas" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Codigo</MudTh>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Codigo">@context.Codigo</MudTd>
+                    <MudTd DataLabel="Nombre">@(context.Nombre ?? "-")</MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEditarMarcaAsync(context))">Editar</MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => EliminarMarcaAsync(context))">Eliminar</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    @* ── Grupos Mayores ──────────────────────────────────────────────── *@
+    <MudTabPanel Text="Grupos Mayores" Icon="@Icons.Material.Filled.AccountTree">
+        <div class="d-flex align-center justify-space-between mb-3">
+            <MudText Typo="Typo.subtitle1">Grupos Mayores</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrearGrupoMayorAsync" Size="Size.Small">Nuevo Grupo Mayor</MudButton>
+        </div>
+
+        @if (_cargandoGruposMayores)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_gruposMayores.Count == 0)
+        {
+            <MudText Style="color: var(--n-text-3);">No hay grupos mayores registrados.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_gruposMayores" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Codigo</MudTh>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Codigo">@context.Codigo</MudTd>
+                    <MudTd DataLabel="Nombre">@(context.Nombre ?? "-")</MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEditarGrupoMayorAsync(context))">Editar</MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => EliminarGrupoMayorAsync(context))">Eliminar</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    @* ── Grupos Menores ──────────────────────────────────────────────── *@
+    <MudTabPanel Text="Grupos Menores" Icon="@Icons.Material.Filled.AccountTree">
+        <div class="d-flex align-center justify-space-between mb-3">
+            <MudText Typo="Typo.subtitle1">Grupos Menores</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrearGrupoMenorAsync"
+                       Disabled="_gruposMayores.Count == 0" Size="Size.Small">Nuevo Grupo Menor</MudButton>
+        </div>
+        @if (_gruposMayores.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-3">Primero registra al menos un Grupo Mayor antes de crear Grupos Menores.</MudAlert>
+        }
+
+        @if (_cargandoGruposMenores)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_gruposMenores.Count == 0)
+        {
+            <MudText Style="color: var(--n-text-3);">No hay grupos menores registrados.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_gruposMenores" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Codigo</MudTh>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>Grupo Mayor</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Codigo">@context.Codigo</MudTd>
+                    <MudTd DataLabel="Nombre">@(context.Nombre ?? "-")</MudTd>
+                    <MudTd DataLabel="Grupo Mayor">
+                        @context.GrupoMayor
+                        @if (context.GrupoMayorNombre is not null)
+                        {
+                            <MudText Typo="Typo.caption" Class="d-block" Style="color: var(--n-text-3);">@context.GrupoMayorNombre</MudText>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEditarGrupoMenorAsync(context))">Editar</MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => EliminarGrupoMenorAsync(context))">Eliminar</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    @* ── Impuestos ───────────────────────────────────────────────────── *@
+    <MudTabPanel Text="Impuestos" Icon="@Icons.Material.Filled.Percent">
+        <div class="d-flex align-center justify-space-between mb-3">
+            <MudText Typo="Typo.subtitle1">Impuestos</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrearIvaAsync" Size="Size.Small">Nuevo Impuesto</MudButton>
+        </div>
+
+        @if (_cargandoIvas)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_ivas.Count == 0)
+        {
+            <MudText Style="color: var(--n-text-3);">No hay impuestos registrados.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_ivas" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh>%</MudTh>
+                    <MudTh>Descripcion</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Tipo">
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(context.TipoImpuesto == "ICO" ? Color.Secondary : Color.Default)"
+                                 Variant="Variant.Filled">@context.TipoImpuesto</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="%">@context.Iva%</MudTd>
+                    <MudTd DataLabel="Descripcion">@(context.Descripcion ?? "-")</MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEditarIvaAsync(context))">Editar</MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => EliminarIvaAsync(context))">Eliminar</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    @* ── Presentaciones ──────────────────────────────────────────────── *@
+    <MudTabPanel Text="Presentaciones" Icon="@Icons.Material.Filled.Inventory2">
+        <div class="d-flex align-center justify-space-between mb-3">
+            <MudText Typo="Typo.subtitle1">Presentaciones</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrearPresentacionAsync" Size="Size.Small">Nueva Presentacion</MudButton>
+        </div>
+
+        @if (_cargandoPresentaciones)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_presentaciones.Count == 0)
+        {
+            <MudText Style="color: var(--n-text-3);">No hay presentaciones registradas.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_presentaciones" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Codigo</MudTh>
+                    <MudTh>Presentacion</MudTh>
+                    <MudTh>Fracciones</MudTh>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Codigo">@context.Codigo</MudTd>
+                    <MudTd DataLabel="Presentacion">@context.Presentacion</MudTd>
+                    <MudTd DataLabel="Fracciones">@(context.Fracciones is > 0 ? context.Fracciones.Value.ToString("N0") : "—")</MudTd>
+                    <MudTd DataLabel="Tipo">@(context.Tipo ?? "Unidades")</MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEditarPresentacionAsync(context))">Editar</MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => EliminarPresentacionAsync(context))">Eliminar</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+</MudTabs>
+
+@code {
+    // ── Marcas ────────────────────────────────────────────────────────────
+    private List<MarcaItem> _marcas = new();
+    private bool _cargandoMarcas = true;
+
+    // ── Grupos Mayores ────────────────────────────────────────────────────
+    private List<GrupoMayorItem> _gruposMayores = new();
+    private bool _cargandoGruposMayores = true;
+
+    // ── Grupos Menores ────────────────────────────────────────────────────
+    private List<GrupoMenorItem> _gruposMenores = new();
+    private bool _cargandoGruposMenores = true;
+
+    // ── Presentaciones ────────────────────────────────────────────────────
+    private List<PresentacionItem> _presentaciones = new();
+    private bool _cargandoPresentaciones = true;
+
+    // ── IVA ───────────────────────────────────────────────────────────────
+    private List<IvaItem> _ivas = new();
+    private bool _cargandoIvas = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Task.WhenAll(
+                CargarMarcasAsync(),
+                CargarGruposMayoresAsync(),
+                CargarGruposMenoresAsync(),
+                CargarPresentacionesAsync(),
+                CargarIvasAsync()
+            );
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar catálogos: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Carga ─────────────────────────────────────────────────────────────
+
+    private async Task CargarMarcasAsync()
+    {
+        _cargandoMarcas = true;
+        _marcas = await ApiClient.GetAsync<List<MarcaItem>>("api/catalogo/marcas") ?? new();
+        _cargandoMarcas = false;
+    }
+
+    private async Task CargarGruposMayoresAsync()
+    {
+        _cargandoGruposMayores = true;
+        _gruposMayores = await ApiClient.GetAsync<List<GrupoMayorItem>>("api/catalogo/grupos-mayores") ?? new();
+        _cargandoGruposMayores = false;
+    }
+
+    private async Task CargarGruposMenoresAsync()
+    {
+        _cargandoGruposMenores = true;
+        _gruposMenores = await ApiClient.GetAsync<List<GrupoMenorItem>>("api/catalogo/grupos-menores") ?? new();
+        _cargandoGruposMenores = false;
+    }
+
+    private async Task CargarPresentacionesAsync()
+    {
+        _cargandoPresentaciones = true;
+        _presentaciones = await ApiClient.GetAsync<List<PresentacionItem>>("api/catalogo/presentaciones") ?? new();
+        _cargandoPresentaciones = false;
+    }
+
+    // ── Marcas CRUD ───────────────────────────────────────────────────────
+
+    private async Task AbrirCrearMarcaAsync()
+    {
+        var result = await MostrarDialogCatalogo("Nueva Marca");
+        if (result is null) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearMarcaRequest, object?>("api/catalogo/marcas",
+                new CrearMarcaRequest(result.Codigo, result.Nombre));
+            Snackbar.Add("Marca creada.", Severity.Success);
+            await CargarMarcasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEditarMarcaAsync(MarcaItem marca)
+    {
+        var result = await MostrarDialogCatalogo($"Editar Marca: {marca.Codigo}",
+            mostrarCodigo: false, nombreInicial: marca.Nombre);
+        if (result is null) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarMarcaRequest, object?>($"api/catalogo/marcas/{marca.Codigo}",
+                new ActualizarMarcaRequest(result.Nombre));
+            Snackbar.Add("Marca actualizada.", Severity.Success);
+            await CargarMarcasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarMarcaAsync(MarcaItem marca)
+    {
+        var ok = await Confirmar($"Eliminar la marca '{marca.Codigo} - {marca.Nombre}'?");
+        if (!ok) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/catalogo/marcas/{marca.Codigo}");
+            Snackbar.Add("Marca eliminada.", Severity.Success);
+            await CargarMarcasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ── Grupos Mayores CRUD ───────────────────────────────────────────────
+
+    private async Task AbrirCrearGrupoMayorAsync()
+    {
+        var result = await MostrarDialogCatalogo("Nuevo Grupo Mayor");
+        if (result is null) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearGrupoMayorRequest, object?>("api/catalogo/grupos-mayores",
+                new CrearGrupoMayorRequest(result.Codigo, result.Nombre));
+            Snackbar.Add("Grupo Mayor creado.", Severity.Success);
+            await Task.WhenAll(CargarGruposMayoresAsync(), CargarGruposMenoresAsync());
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEditarGrupoMayorAsync(GrupoMayorItem gm)
+    {
+        var result = await MostrarDialogCatalogo($"Editar Grupo Mayor: {gm.Codigo}",
+            mostrarCodigo: false, nombreInicial: gm.Nombre);
+        if (result is null) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarGrupoMayorRequest, object?>($"api/catalogo/grupos-mayores/{gm.Codigo}",
+                new ActualizarGrupoMayorRequest(result.Nombre));
+            Snackbar.Add("Grupo Mayor actualizado.", Severity.Success);
+            await Task.WhenAll(CargarGruposMayoresAsync(), CargarGruposMenoresAsync());
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarGrupoMayorAsync(GrupoMayorItem gm)
+    {
+        var ok = await Confirmar($"Eliminar el grupo mayor '{gm.Codigo}'? Se eliminaran tambien sus grupos menores.");
+        if (!ok) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/catalogo/grupos-mayores/{gm.Codigo}");
+            Snackbar.Add("Grupo Mayor eliminado.", Severity.Success);
+            await Task.WhenAll(CargarGruposMayoresAsync(), CargarGruposMenoresAsync());
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ── Grupos Menores CRUD ───────────────────────────────────────────────
+
+    private async Task AbrirCrearGrupoMenorAsync()
+    {
+        var parametros = new DialogParameters<GrupoMenorDialog>
+        {
+            { x => x.GruposMayores, _gruposMayores }
+        };
+        var dialogo = await DialogService.ShowAsync<GrupoMenorDialog>("Nuevo Grupo Menor", parametros);
+        var res = await dialogo.Result;
+        if (res is null || res.Canceled) return;
+        var data = (CrearGrupoMenorRequest)res.Data!;
+        try
+        {
+            await ApiClient.PostAsync<CrearGrupoMenorRequest, object?>("api/catalogo/grupos-menores", data);
+            Snackbar.Add("Grupo Menor creado.", Severity.Success);
+            await CargarGruposMenoresAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEditarGrupoMenorAsync(GrupoMenorItem gm)
+    {
+        var result = await MostrarDialogCatalogo($"Editar Grupo Menor: {gm.Codigo} / {gm.GrupoMayor}",
+            mostrarCodigo: false, nombreInicial: gm.Nombre);
+        if (result is null) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarGrupoMenorRequest, object?>(
+                $"api/catalogo/grupos-menores/{gm.Codigo}/{gm.GrupoMayor}",
+                new ActualizarGrupoMenorRequest(result.Nombre));
+            Snackbar.Add("Grupo Menor actualizado.", Severity.Success);
+            await CargarGruposMenoresAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarGrupoMenorAsync(GrupoMenorItem gm)
+    {
+        var ok = await Confirmar($"Eliminar el grupo menor '{gm.Codigo}' del grupo mayor '{gm.GrupoMayor}'?");
+        if (!ok) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/catalogo/grupos-menores/{gm.Codigo}/{gm.GrupoMayor}");
+            Snackbar.Add("Grupo Menor eliminado.", Severity.Success);
+            await CargarGruposMenoresAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ── Presentaciones CRUD ───────────────────────────────────────────────
+
+    private async Task AbrirCrearPresentacionAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<PresentacionDialog>("Nueva Presentacion",
+            new DialogParameters<PresentacionDialog>(), new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled || resultado.Data is not PresentacionDialog.Result data) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearPresentacionRequest, object?>("api/catalogo/presentaciones",
+                new CrearPresentacionRequest(data.Codigo, data.Nombre, data.Fracciones, data.Tipo));
+            Snackbar.Add("Presentacion creada.", Severity.Success);
+            await CargarPresentacionesAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEditarPresentacionAsync(PresentacionItem p)
+    {
+        var parametros = new DialogParameters<PresentacionDialog> { { x => x.Presentacion, p } };
+        var dialogo = await DialogService.ShowAsync<PresentacionDialog>($"Editar: {p.Codigo}", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled || resultado.Data is not PresentacionDialog.Result data) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarPresentacionRequest, object?>($"api/catalogo/presentaciones/{p.Codigo}",
+                new ActualizarPresentacionRequest(data.Nombre, data.Fracciones, data.Tipo));
+            Snackbar.Add("Presentacion actualizada.", Severity.Success);
+            await CargarPresentacionesAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarPresentacionAsync(PresentacionItem p)
+    {
+        var ok = await Confirmar($"Eliminar la presentacion '{p.Codigo} - {p.Presentacion}'?");
+        if (!ok) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/catalogo/presentaciones/{p.Codigo}");
+            Snackbar.Add("Presentacion eliminada.", Severity.Success);
+            await CargarPresentacionesAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task CargarIvasAsync()
+    {
+        _cargandoIvas = true;
+        _ivas = await ApiClient.GetAsync<List<IvaItem>>("api/catalogo/ivas") ?? new();
+        _cargandoIvas = false;
+    }
+
+    // ── Impuestos CRUD ────────────────────────────────────────────────────
+
+    private async Task AbrirCrearIvaAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<ImpuestoDialog>("Nuevo Impuesto",
+            new DialogParameters<ImpuestoDialog>(),
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled || resultado.Data is not ImpuestoDialog.Result data) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearIvaRequest, object?>("api/catalogo/ivas",
+                new CrearIvaRequest(data.Valor, data.Descripcion, data.TipoImpuesto));
+            Snackbar.Add("Impuesto creado.", Severity.Success);
+            await CargarIvasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEditarIvaAsync(IvaItem iva)
+    {
+        var parametros = new DialogParameters<ImpuestoDialog> { { x => x.Impuesto, iva } };
+        var dialogo = await DialogService.ShowAsync<ImpuestoDialog>($"Editar: {iva.Descripcion}", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled || resultado.Data is not ImpuestoDialog.Result data) return;
+        try
+        {
+            await ApiClient.PutAsync<CrearIvaRequest, object?>($"api/catalogo/ivas/{iva.IvaID}",
+                new CrearIvaRequest(data.Valor, data.Descripcion, data.TipoImpuesto));
+            Snackbar.Add("Impuesto actualizado.", Severity.Success);
+            await CargarIvasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarIvaAsync(IvaItem iva)
+    {
+        var ok = await Confirmar($"Eliminar el impuesto '{iva.Descripcion}'?");
+        if (!ok) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/catalogo/ivas/{iva.IvaID}");
+            Snackbar.Add("Impuesto eliminado.", Severity.Success);
+            await CargarIvasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+
+    private async Task<CatalogoCamposDialog.Result?> MostrarDialogCatalogo(
+        string titulo,
+        string nombreLabel = "Nombre",
+        string codigoLabel = "Codigo",
+        bool mostrarCodigo = true,
+        string? nombreInicial = null)
+    {
+        var parametros = new DialogParameters<CatalogoCamposDialog>
+        {
+            { x => x.CodigoLabel,   codigoLabel },
+            { x => x.NombreLabel,   nombreLabel },
+            { x => x.MostrarCodigo, mostrarCodigo },
+            { x => x.NombreInicial, nombreInicial }
+        };
+        var dialogo = await DialogService.ShowAsync<CatalogoCamposDialog>(titulo, parametros);
+        var res = await dialogo.Result;
+        if (res is null || res.Canceled) return null;
+        return (CatalogoCamposDialog.Result)res.Data!;
+    }
+
+    private async Task<bool> Confirmar(string mensaje)
+    {
+        var result = await DialogService.ShowMessageBox("Confirmar", mensaje, "Eliminar", "Cancelar");
+        return result == true;
+    }
+}

@@ -1,0 +1,179 @@
+﻿@* Panel reutilizable de actividades CRM. Se embebe en OportunidadDialog y ClienteWorkspace. *@
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+
+<div class="d-flex align-center justify-space-between mb-2">
+    <MudText Typo="Typo.subtitle2">Actividades</MudText>
+    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+               Variant="Variant.Text" Color="Color.Primary"
+               OnClick="AbrirFormAsync">Nueva</MudButton>
+</div>
+
+@if (_creando)
+{
+    <MudPaper Elevation="0" Class="pa-3 mb-3" Style="border:1px solid var(--mud-palette-divider); border-radius:8px;">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <AppSelect TValue="string" @bind-Value="_nuevoTipo" Label="Tipo"
+                           Items="@(new AppSelectItem<string>[]{ new("Llamada","LLAMADA"), new("Email","EMAIL"), new("Reunión","REUNION"), new("Tarea","TAREA") })" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_nuevaFecha" Label="Vencimiento (opcional)" Dense="true" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_nuevoTitulo" Label="Descripción" Required="true"
+                              Immediate="true" Dense="true" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+        <div class="d-flex justify-end mt-2" style="gap:8px;">
+            <MudButton Size="Size.Small" OnClick="@(() => _creando = false)">Cancelar</MudButton>
+            <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled"
+                       OnClick="GuardarNuevaAsync"
+                       Disabled="@string.IsNullOrWhiteSpace(_nuevoTitulo)">Agregar</MudButton>
+        </div>
+    </MudPaper>
+}
+
+@if (_cargando)
+{
+    <MudProgressLinear Indeterminate="true" Class="mb-2" />
+}
+else if (!_actividades.Any())
+{
+    <div class="pa-3 text-center" style="color:var(--n-text-3); font-size:0.82rem;">
+        Sin actividades registradas.
+    </div>
+}
+else
+{
+    <div style="display:flex; flex-direction:column; gap:6px;">
+        @foreach (var a in _actividades.OrderBy(x => x.Completada).ThenBy(x => x.FechaVencimiento ?? DateTime.MaxValue))
+        {
+            var vencida = !a.Completada && a.FechaVencimiento.HasValue && a.FechaVencimiento.Value.ToLocalTime().Date < NexoWeb.Common.ColombiaClock.Today;
+            var hoy     = !a.Completada && a.FechaVencimiento.HasValue && a.FechaVencimiento.Value.ToLocalTime().Date == NexoWeb.Common.ColombiaClock.Today;
+            <div class="d-flex align-center"
+                 style="gap:8px; padding:8px 10px; border-radius:8px; border:1px solid var(--mud-palette-divider);
+                        background:@(a.Completada ? "var(--mud-palette-background-grey)" : "var(--mud-palette-background)");">
+                <MudCheckBox T="bool" Value="@a.Completada"
+                             ValueChanged="@(async v => await ToggleCompletadaAsync(a, v))"
+                             Color="Color.Success" Dense="true" />
+                <div style="flex:1; min-width:0;">
+                    <div style="font-size:0.85rem; font-weight:600;
+                                @(a.Completada ? "text-decoration:line-through; color:var(--n-text-3);" : "")">
+                        <span style="margin-right:4px;">@IconoTipo(a.Tipo)</span>@a.Titulo
+                    </div>
+                    @if (a.FechaVencimiento.HasValue || a.Responsable is not null)
+                    {
+                        <div style="font-size:0.75rem; color:@(vencida ? "var(--mud-palette-error)" : hoy ? "var(--mud-palette-warning)" : "var(--n-text-3)");">
+                            @if (a.FechaVencimiento.HasValue)
+                            {
+                                @(vencida ? "⚠ Venció " : hoy ? "🔔 Hoy · " : "📅 ")
+                                @a.FechaVencimiento.Value.ToLocalTime().ToString("dd/MM/yyyy")
+                                @if (a.Responsable is not null) { <span> · </span> }
+                            }
+                            @if (a.Responsable is not null)
+                            {
+                                @a.Responsable
+                            }
+                        </div>
+                    }
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                               Color="Color.Default"
+                               OnClick="@(() => EliminarAsync(a))"
+                               Style="opacity:.5;" />
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int? OportunidadID { get; set; }
+    [Parameter] public int? ClienteID     { get; set; }
+    [Parameter] public int? ResponsableIDPorDefecto { get; set; }
+
+    private List<ActividadItem> _actividades = new();
+    private bool _cargando = true;
+    private bool _creando;
+
+    private string _nuevoTipo = "TAREA";
+    private string _nuevoTitulo = "";
+    private DateTime? _nuevaFecha;
+
+    private static string IconoTipo(string tipo) => tipo switch
+    {
+        "LLAMADA" => "📞",
+        "EMAIL"   => "📧",
+        "REUNION" => "🤝",
+        _         => "✅"
+    };
+
+    protected override async Task OnParametersSetAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var qs = $"soloActivas=false&oportunidadId={OportunidadID}&clienteId={ClienteID}";
+            _actividades = await ApiClient.GetAsync<List<ActividadItem>>($"api/crm/actividades?{qs}") ?? new();
+        }
+        catch { _actividades = new(); }
+        finally { _cargando = false; }
+    }
+
+    private void AbrirFormAsync()
+    {
+        _nuevoTipo = "TAREA";
+        _nuevoTitulo = "";
+        _nuevaFecha = null;
+        _creando = true;
+    }
+
+    private async Task GuardarNuevaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoTitulo)) return;
+        try
+        {
+            var req = new CrearActividadRequest(
+                _nuevoTipo, _nuevoTitulo.Trim(), null,
+                _nuevaFecha.HasValue ? DateTime.SpecifyKind(_nuevaFecha.Value, DateTimeKind.Local).ToUniversalTime() : null,
+                OportunidadID, ClienteID, ResponsableIDPorDefecto);
+            await ApiClient.PostAsync<CrearActividadRequest, object?>("api/crm/actividades", req);
+            _creando = false;
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ToggleCompletadaAsync(ActividadItem a, bool completada)
+    {
+        try
+        {
+            await ApiClient.PatchAsync<CompletarActividadRequest, object?>(
+                $"api/crm/actividades/{a.ActividadID}/completar",
+                new CompletarActividadRequest(completada));
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarAsync(ActividadItem a)
+    {
+        var ok = await DialogService.ShowMessageBox(
+            "Eliminar actividad",
+            $"¿Eliminar \"{a.Tipo}\"? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (ok != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/crm/actividades/{a.ActividadID}");
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

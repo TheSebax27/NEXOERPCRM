@@ -1,0 +1,178 @@
+﻿@page "/catalogo/centros-trabajo"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Centros de Trabajo - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Centros de Trabajo</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Un Centro de Trabajo es una línea, máquina o estación específica dentro de un Centro de Costo (ej. 'Línea de Ensamble 1'). Se usa para asociar una receta o una orden de producción al lugar exacto donde se ejecuta, y para calcular el costo de mano de obra y CIF por hora." />
+
+<MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+           StartIcon="@Icons.Material.Filled.Add" Class="mb-4"
+           Disabled="_centrosCosto.Count == 0">
+    Nuevo Centro de Trabajo
+</MudButton>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los centros de trabajo: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_centrosTrabajo.Count == 0)
+{
+    <MudText>No hay centros de trabajo registrados.</MudText>
+}
+else if (Preferencias.VistaListado == "tarjetas")
+{
+    <div class="nexo-card-grid">
+        @foreach (var ct in _centrosTrabajo)
+        {
+            <div class="nexo-item-card">
+                <div class="d-flex align-center justify-space-between">
+                    <div class="nexo-item-card__title">@ct.Nombre</div>
+                    <MudChip T="string" Color="@(ct.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                        @(ct.Estado ? "Activo" : "Inactivo")
+                    </MudChip>
+                </div>
+                <div class="nexo-item-card__sub">@ct.CentroCosto</div>
+                <div class="nexo-item-card__row"><span>Costo Hora M.O.</span><strong>@ct.CostoHoraManoObra.ToString("C2")</strong></div>
+                <div class="nexo-item-card__row"><span>Costo Hora CIF</span><strong>@ct.CostoHoraCIF.ToString("C2")</strong></div>
+                <div class="nexo-item-card__actions">
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(ct))">Editar</MudButton>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <MudTable Items="_centrosTrabajo" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Centro de Costo</MudTh>
+            <MudTh>Costo Hora Mano de Obra</MudTh>
+            <MudTh>Costo Hora CIF</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Accion</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+            <MudTd DataLabel="Centro de Costo">@context.CentroCosto</MudTd>
+            <MudTd DataLabel="Costo Hora Mano de Obra">@context.CostoHoraManoObra.ToString("C2")</MudTd>
+            <MudTd DataLabel="Costo Hora CIF">@context.CostoHoraCIF.ToString("C2")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                    @(context.Estado ? "Activo" : "Inactivo")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Accion">
+                <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">
+                    Editar
+                </MudButton>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No hay centros de trabajo registrados.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private List<CentroTrabajoItem> _centrosTrabajo = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        _errorCarga = null;
+
+        try
+        {
+            var tareaCentrosTrabajo = ApiClient.GetAsync<List<CentroTrabajoItem>>("api/catalogo/centros-trabajo?soloActivos=false");
+            var tareaCentrosCosto = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=false");
+            await Task.WhenAll(tareaCentrosTrabajo, tareaCentrosCosto);
+
+            _centrosTrabajo = tareaCentrosTrabajo.Result ?? new();
+            _centrosCosto = tareaCentrosCosto.Result ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<CentroTrabajoDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto }
+        };
+
+        var dialogo = await DialogService.ShowAsync<CentroTrabajoDialog>("Nuevo Centro de Trabajo", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (CrearCentroTrabajoRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearCentroTrabajoRequest, object?>("api/catalogo/centros-trabajo", request);
+            Snackbar.Add("Centro de trabajo creado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirEdicionAsync(CentroTrabajoItem centroTrabajo)
+    {
+        var parametros = new DialogParameters<CentroTrabajoDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.CentroTrabajo, centroTrabajo }
+        };
+
+        var dialogo = await DialogService.ShowAsync<CentroTrabajoDialog>("Editar Centro de Trabajo", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (ActualizarCentroTrabajoRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarCentroTrabajoRequest, object?>(
+                $"api/catalogo/centros-trabajo/{centroTrabajo.CentroTrabajoID}", request);
+            Snackbar.Add("Centro de trabajo actualizado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

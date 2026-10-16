@@ -1,0 +1,88 @@
+/* ── Header ────────────────────────────────────────────────────────── */
+.inv-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap;
+}
+.inv-header__left    { display: flex; flex-direction: column; gap: .25rem; }
+.inv-header__actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.inv-header__title   { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--n-text-1); }
+.inv-header__icon    { color: var(--n-purple); }
+.inv-header__sub     { margin: 0; font-size: .84rem; color: var(--n-text-3); }
+
+/* ── KPIs ──────────────────────────────────────────────────────────── */
+.inv-kpis { display: flex; gap: .75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.inv-kpi {
+    display: flex; flex-direction: column; align-items: center;
+    padding: .5rem 1rem; background: var(--n-card);
+    border: 1px solid var(--n-border); border-radius: var(--n-radius); min-width: 90px;
+}
+.inv-kpi--warn { border-color: rgba(255,152,0,.3); background: rgba(255,152,0,.06); }
+.inv-kpi__label { font-size: .72rem; color: var(--n-text-3); text-transform: uppercase; letter-spacing: .04em; }
+.inv-kpi__value { font-size: 1.25rem; font-weight: 700; color: var(--n-text-1); }
+
+/* ── Skeleton ──────────────────────────────────────────────────────── */
+.inv-skeleton { display: flex; flex-direction: column; gap: .5rem; }
+.inv-skeleton__row {
+    height: 44px; border-radius: var(--n-radius);
+    background: linear-gradient(90deg, var(--n-border) 25%, rgba(124,92,255,.06) 50%, var(--n-border) 75%);
+    background-size: 200% 100%; animation: tra-shimmer 1.4s infinite;
+}
+@keyframes tra-shimmer { to { background-position: -200% 0; } }
+
+/* ── Vacío ─────────────────────────────────────────────────────────── */
+.inv-vacio { text-align: center; padding: 3rem 1rem; color: var(--n-text-3); }
+
+/* ── Grid ──────────────────────────────────────────────────────────── */
+.inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+
+/* ── Tarjeta traspaso ──────────────────────────────────────────────── */
+.tra-card {
+    background: var(--n-card); border: 1px solid var(--n-border);
+    border-radius: var(--n-radius); padding: .9rem;
+    box-shadow: var(--n-shadow); display: flex; flex-direction: column; gap: .55rem;
+    transition: box-shadow .15s, border-color .15s;
+}
+.tra-card:hover { box-shadow: 0 4px 16px rgba(124,92,255,.12); border-color: var(--n-purple); }
+.tra-card__head { display: flex; justify-content: space-between; align-items: center; }
+.tra-card__ruta {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .84rem; color: var(--n-text-1); font-weight: 500;
+}
+.tra-card__fechas { font-size: .78rem; color: var(--n-text-2); display: flex; flex-direction: column; gap: .15rem; }
+.tra-card__actions { display: flex; gap: .5rem; }
+
+/* ── Tabla ─────────────────────────────────────────────────────────── */
+.inv-table-wrap { overflow-x: auto; border-radius: var(--n-radius); border: 1px solid var(--n-border); box-shadow: var(--n-shadow); }
+.inv-table { width: 100%; border-collapse: collapse; font-size: .84rem; background: var(--n-card); }
+.inv-table thead { background: rgba(124,92,255,.07); }
+.inv-table th {
+    padding: .65rem .75rem; text-align: left; font-size: .72rem; font-weight: 600;
+    color: var(--n-text-3); text-transform: uppercase; letter-spacing: .04em;
+    white-space: nowrap; border-bottom: 1px solid var(--n-border);
+}
+.inv-table__row { border-bottom: 1px solid var(--n-border); transition: background .1s; }
+.inv-table__row:hover { background: rgba(124,92,255,.04); }
+.inv-table td { padding: .5rem .75rem; color: var(--n-text-1); vertical-align: middle; }
+
+/* ── Badges ────────────────────────────────────────────────────────── */
+.tra-codigo {
+    font-family: monospace; font-size: .78rem;
+    background: rgba(124,92,255,.1); color: var(--n-purple);
+    padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+    font-weight: 700;
+}
+.tra-estado {
+    font-size: .72rem; font-weight: 700; padding: 3px 8px;
+    border-radius: 100px; text-transform: uppercase; letter-spacing: .04em;
+    white-space: nowrap;
+}
+.tra-estado--pendiente  { background: rgba(0,0,0,.07); color: var(--n-text-3); }
+.tra-estado--en_transito{ background: rgba(255,152,0,.15); color: var(--n-warning); }
+.tra-estado--recibido   { background: rgba(76,175,80,.15); color: var(--n-success); }
+.tra-estado--cancelado  { background: var(--n-error-bg); color: var(--n-error); }
+
+/* ── Botones de acción en tabla ────────────────────────────────────── */
+.tra-acciones { display: flex; gap: .35rem; }
+
+/* ── Muted ─────────────────────────────────────────────────────────── */
+.inv-muted { color: var(--n-text-3); }

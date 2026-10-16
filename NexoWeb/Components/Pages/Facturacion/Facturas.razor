@@ -1,0 +1,909 @@
+﻿@page "/facturacion"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject IJSRuntime JS
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Salidas - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Operaciones</p>
+            <h1 class="nexo-page-hero__title">Salidas</h1>
+        </div>
+    </div>
+    <div class="d-flex align-center" style="gap:8px">
+        <VistaToggle OnCambio="StateHasChanged" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="AbrirCreacionAsync">
+            Nueva Factura
+        </MudButton>
+    </div>
+</div>
+<InfoAyuda Texto="Registro de salidas: facturas pendientes, emitidas y anuladas. Crea, confirma y anula documentos de venta desde un solo lugar." />
+
+@if (_stockFallidoCount > 0)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-2"
+              Icon="@Icons.Material.Filled.WarningAmber"
+              ContentAlignment="HorizontalAlignment.Left">
+        <strong>@_stockFallidoCount factura(s) confirmadas en Visions con stock sin descontar.</strong>
+        Busca el ícono <MudIcon Icon="@Icons.Material.Filled.WarningAmber" Size="Size.Small" Color="Color.Warning" /> en la columna Inv. y usa "Reintentar" para corregirlo.
+    </MudAlert>
+}
+
+@* ── Workspace tabs ── *@
+<MudTabs @bind-ActivePanelIndex="_tabActivo" Elevation="0" Rounded="true"
+         ApplyEffectsToContainer="true" Class="nexo-bi-tabs mb-2">
+    @* ════ Tab 1: Pendientes ════ *@
+    <MudTabPanel Text="Pendientes" Icon="@Icons.Material.Filled.Schedule">
+        @if (_cargandoPend)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mt-2" />
+        }
+        else if (_pendientes.Count == 0)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-2">
+                No hay documentos pendientes de pago.
+            </MudAlert>
+        }
+        else if (Preferencias.VistaListado == "lista")
+        {
+            <div style="display:flex; justify-content:space-between; align-items:center; margin:8px 0; font-size:0.85rem; opacity:.7">
+                <span>@_totalPend documentos pendientes · página @_paginaPend de @_totalPaginasPend</span>
+                <div style="display:flex; gap:4px">
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                                   Disabled="@(_paginaPend <= 1)" OnClick="@(() => IrPendAsync(_paginaPend - 1))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                                   Disabled="@(_paginaPend >= _totalPaginasPend)" OnClick="@(() => IrPendAsync(_paginaPend + 1))" />
+                </div>
+            </div>
+            <div style="overflow-x:auto">
+            <MudTable Items="_pendientes" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Tipo Doc</MudTh>
+                    <MudTh>Nro. Doc</MudTh>
+                    <MudTh>Fecha</MudTh>
+                    <MudTh>Cliente / NIT</MudTh>
+                    <MudTh>Centro de Costo</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh Style="text-align:right">Saldo</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Visions</MudTh>
+                    <MudTh>Accion</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Tipo Doc">
+                        <MudChip T="string" Size="Size.Small" Color="@ColorTipDoc(context.TipDoc)">@context.TipDoc</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Nro. Doc" Style="font-size:0.82rem">@(context.NroDoc ?? "-")</MudTd>
+                    <MudTd DataLabel="Fecha">@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Cliente">
+                        <div style="font-size:0.85rem; font-weight:500">@context.Cliente</div>
+                        @if (context.NitCliente is not null)
+                        { <div style="font-size:0.72rem; opacity:.6">NIT @context.NitCliente</div> }
+                    </MudTd>
+                    <MudTd DataLabel="CC" Style="font-size:0.82rem">@(context.CentroCostoNombre ?? "-")</MudTd>
+                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C0")</MudTd>
+                    <MudTd DataLabel="Saldo" Style="text-align:right; color:var(--mud-palette-error)">
+                        @context.SaldoPendiente.ToString("C0")
+                    </MudTd>
+                    <MudTd DataLabel="Estado">
+                        <MudChip T="string" Size="Size.Small" Color="@ColorEstado(context.Estado)">@EtiquetaEstado(context.Estado)</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Visions">
+                        @if (context.VisionsConfirmado)
+                        { <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" Size="Size.Small" /> }
+                        else
+                        { <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Color="Color.Default" Size="Size.Small" /> }
+                    </MudTd>
+                    <MudTd DataLabel="Accion" Style="display:flex;gap:4px;align-items:center">
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirGestionAsync(context))">Gestionar</MudButton>
+                        <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                       Size="Size.Small" Title="Descargar PDF"
+                                       OnClick="@(() => DescargarPdfAsync(context.FacturaID, context.NroDoc))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Print" Color="Color.Default"
+                                       Size="Size.Small" Title="Imprimir"
+                                       OnClick="@(() => ImprimirFacturaAsync(context.FacturaID))" />
+                        @if (!context.StockDescontado && !context.VisionsConfirmado)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error"
+                                           Size="Size.Small" Title="Eliminar factura"
+                                           OnClick="@(() => EliminarFacturaAsync(context))" />
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+            </div>
+        }
+        else
+        {
+            <div class="nexo-cards-grid" style="margin-top:8px">
+                @foreach (var f in _pendientes)
+                {
+                    <div class="nexo-ec">
+                        <div class="nexo-ec__header">
+                            <MudChip T="string" Size="Size.Small" Color="@ColorTipDoc(f.TipDoc)" Style="flex-shrink:0">@f.TipDoc</MudChip>
+                            <div class="nexo-ec__title-block" style="margin-left:8px">
+                                <div class="nexo-ec__name">@f.Cliente</div>
+                                @if (f.NitCliente is not null) { <div class="nexo-ec__sub">NIT @f.NitCliente</div> }
+                            </div>
+                            <MudChip T="string" Size="Size.Small" Color="@ColorEstado(f.Estado)"
+                                     Style="margin-left:auto;font-size:0.68rem;height:22px;flex-shrink:0">
+                                @EtiquetaEstado(f.Estado)
+                            </MudChip>
+                        </div>
+                        <div class="nexo-ec__body">
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.Tag" Size="Size.Small" />
+                                <span>@(f.NroDoc ?? "—") · @f.Fecha.ToString("dd/MM/yyyy")</span>
+                            </div>
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.AttachMoney" Size="Size.Small" />
+                                <span>Total: <b>@f.Total.ToString("C0")</b> · Saldo: <b style="color:var(--mud-palette-error)">@f.SaldoPendiente.ToString("C0")</b></span>
+                            </div>
+                            @if (f.CentroCostoNombre is not null)
+                            {
+                                <div class="nexo-ec__row">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Business" Size="Size.Small" />
+                                    <span>@f.CentroCostoNombre</span>
+                                </div>
+                            }
+                        </div>
+                        <div class="nexo-ec__footer">
+                            <div style="display:flex;gap:4px;align-items:center">
+                                @if (f.VisionsConfirmado)
+                                { <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" Size="Size.Small" Title="Confirmado en Visions" /> }
+                            </div>
+                            <div style="display:flex;gap:4px">
+                                <MudButton Size="Size.Small" OnClick="@(() => AbrirGestionAsync(f))">Gestionar</MudButton>
+                                <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                               Size="Size.Small" Title="Descargar PDF"
+                                               OnClick="@(() => DescargarPdfAsync(f.FacturaID, f.NroDoc))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Print" Color="Color.Default"
+                                               Size="Size.Small" Title="Imprimir"
+                                               OnClick="@(() => ImprimirFacturaAsync(f.FacturaID))" />
+                                @if (!f.StockDescontado && !f.VisionsConfirmado)
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error"
+                                                   Size="Size.Small" Title="Eliminar factura"
+                                                   OnClick="@(() => EliminarFacturaAsync(f))" />
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </MudTabPanel>
+
+    @* ════ Tab 2: Historial ════ *@
+    <MudTabPanel Text="Historial" Icon="@Icons.Material.Filled.History">
+        @* Filtros historial *@
+        <MudPaper Elevation="0" Class="pa-3 mt-2 mb-3"
+                  Style="border:1px solid var(--mud-palette-lines-default); border-radius:8px">
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(160px,1fr)); gap:10px; align-items:end">
+                <MudTextField T="string?" Value="_filtroTexto" ValueChanged="OnFiltroTextoAsync"
+                              Label="Nro. doc / cliente" Placeholder="Busca..."
+                              Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true" DebounceInterval="400"
+                              Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <AppSelect TValue="string?" Value="_filtroTipDoc" ValueChanged="OnFiltroTipDocAsync"
+                           Label="Tipo doc"
+                           Items="@(TiposDocumento.Todos.Select(td => new AppSelectItem<string?>(td, td)))" />
+                <ClienteAutocomplete Value="_filtroCliente" ValueChanged="OnFiltroClienteAsync" Label="Cliente" />
+                <AppSelect TValue="int?" Value="_filtroCentroCostoId" ValueChanged="OnFiltroCCAsync"
+                           Label="Centro de Costo"
+                           Items="@(_centrosCosto.Select(cc => new AppSelectItem<int?>(cc.Nombre, (int?)cc.CentroCostoID)))" />
+                <AppSelect TValue="string?" Value="_filtroEstado" ValueChanged="OnFiltroEstadoAsync"
+                           Label="Estado"
+                           Items="@(new AppSelectItem<string?>[]{ new("Pendiente","PENDIENTE"), new("Pago parcial","PARCIAL"), new("Pagada","PAGADA") })" />
+                <MudDatePicker Date="_filtroDesde"
+                               DateChanged="@(async v => { _filtroDesde = v; _pagina = 1; await CargarHistorialAsync(); })"
+                               Label="Desde" DateFormat="dd/MM/yyyy"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudDatePicker Date="_filtroHasta"
+                               DateChanged="@(async v => { _filtroHasta = v; _pagina = 1; await CargarHistorialAsync(); })"
+                               Label="Hasta" DateFormat="dd/MM/yyyy"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </MudPaper>
+
+        @if (_errorCarga is not null)
+        { <MudAlert Severity="Severity.Error" Class="mb-3">@_errorCarga</MudAlert> }
+
+        @if (_cargando)
+        { <MudProgressLinear Indeterminate="true" Class="mb-2" /> }
+        else if (_facturas.Count == 0)
+        { <MudAlert Severity="Severity.Info">No hay documentos que coincidan con los filtros.</MudAlert> }
+        else if (Preferencias.VistaListado == "lista")
+        {
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:0.85rem; opacity:.7">
+                <span>@_total documentos · página @_pagina de @_totalPaginas</span>
+                <div style="display:flex; gap:4px">
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                                   Disabled="@(_pagina <= 1)" OnClick="@(() => IrPaginaAsync(_pagina - 1))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                                   Disabled="@(_pagina >= _totalPaginas)" OnClick="@(() => IrPaginaAsync(_pagina + 1))" />
+                </div>
+            </div>
+            <div style="overflow-x:auto">
+            <MudTable Items="_facturas" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Tipo Doc</MudTh>
+                    <MudTh>Nro. Doc</MudTh>
+                    <MudTh>Fecha</MudTh>
+                    <MudTh>Cliente / NIT</MudTh>
+                    <MudTh>Centro de Costo</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh Style="text-align:right">Pagado</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Inv.</MudTh>
+                    <MudTh>Visions</MudTh>
+                    <MudTh>Accion</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Tipo Doc">
+                        <MudChip T="string" Size="Size.Small" Color="@ColorTipDoc(context.TipDoc)">@context.TipDoc</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Nro. Doc" Style="font-size:0.82rem">@(context.NroDoc ?? "-")</MudTd>
+                    <MudTd DataLabel="Fecha">@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Cliente">
+                        <div style="font-size:0.85rem; font-weight:500">@context.Cliente</div>
+                        @if (context.NitCliente is not null)
+                        { <div style="font-size:0.72rem; opacity:.6">NIT @context.NitCliente</div> }
+                    </MudTd>
+                    <MudTd DataLabel="CC" Style="font-size:0.82rem">@(context.CentroCostoNombre ?? "-")</MudTd>
+                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C0")</MudTd>
+                    <MudTd DataLabel="Pagado" Style="text-align:right">@context.TotalPagado.ToString("C0")</MudTd>
+                    <MudTd DataLabel="Estado">
+                        <MudChip T="string" Size="Size.Small" Color="@ColorEstado(context.Estado)">@EtiquetaEstado(context.Estado)</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Inv.">
+                        @if (context.StockDescontado)
+                        { <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" Title="Stock descontado" /> }
+                        else if (context.VisionsConfirmado)
+                        { <MudIcon Icon="@Icons.Material.Filled.WarningAmber" Color="Color.Warning" Size="Size.Small" Title="Stock pendiente — descuento falló" /> }
+                        else
+                        { <MudIcon Icon="@Icons.Material.Filled.RadioButtonUnchecked" Color="Color.Default" Size="Size.Small" /> }
+                    </MudTd>
+                    <MudTd DataLabel="Visions">
+                        @if (context.VisionsConfirmado)
+                        { <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" Size="Size.Small" /> }
+                        else
+                        { <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Color="Color.Default" Size="Size.Small" /> }
+                    </MudTd>
+                    <MudTd DataLabel="Accion" Style="display:flex;gap:4px;align-items:center">
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirGestionAsync(context))">Gestionar</MudButton>
+                        <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                       Size="Size.Small" Title="Descargar PDF"
+                                       OnClick="@(() => DescargarPdfAsync(context.FacturaID, context.NroDoc))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Print" Color="Color.Default"
+                                       Size="Size.Small" Title="Imprimir"
+                                       OnClick="@(() => ImprimirFacturaAsync(context.FacturaID))" />
+                        @if (context.VisionsConfirmado && !context.StockDescontado)
+                        {
+                            <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       OnClick="@(() => ReintentarStockAsync(context))">
+                                Reintentar
+                            </MudButton>
+                        }
+                        @if (!context.StockDescontado && !context.VisionsConfirmado)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error"
+                                           Size="Size.Small" Title="Eliminar factura"
+                                           OnClick="@(() => EliminarFacturaAsync(context))" />
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+            </div>
+        }
+        else
+        {
+            <div class="nexo-cards-grid" style="margin-top:8px">
+                @foreach (var f in _facturas)
+                {
+                    <div class="nexo-ec">
+                        <div class="nexo-ec__header">
+                            <MudChip T="string" Size="Size.Small" Color="@ColorTipDoc(f.TipDoc)" Style="flex-shrink:0">@f.TipDoc</MudChip>
+                            <div class="nexo-ec__title-block" style="margin-left:8px">
+                                <div class="nexo-ec__name">@f.Cliente</div>
+                                @if (f.NitCliente is not null) { <div class="nexo-ec__sub">NIT @f.NitCliente</div> }
+                            </div>
+                            <MudChip T="string" Size="Size.Small" Color="@ColorEstado(f.Estado)"
+                                     Style="margin-left:auto;font-size:0.68rem;height:22px;flex-shrink:0">
+                                @EtiquetaEstado(f.Estado)
+                            </MudChip>
+                        </div>
+                        <div class="nexo-ec__body">
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.Tag" Size="Size.Small" />
+                                <span>@(f.NroDoc ?? "—") · @f.Fecha.ToString("dd/MM/yyyy")</span>
+                            </div>
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.AttachMoney" Size="Size.Small" />
+                                <span>Total: <b>@f.Total.ToString("C0")</b> · Pagado: <b>@f.TotalPagado.ToString("C0")</b></span>
+                            </div>
+                            @if (f.CentroCostoNombre is not null)
+                            {
+                                <div class="nexo-ec__row">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Business" Size="Size.Small" />
+                                    <span>@f.CentroCostoNombre</span>
+                                </div>
+                            }
+                        </div>
+                        <div class="nexo-ec__footer">
+                            <div style="display:flex;gap:4px;align-items:center">
+                                @if (f.StockDescontado) { <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" Title="Inventario descontado" /> }
+                                else if (f.VisionsConfirmado) { <MudIcon Icon="@Icons.Material.Filled.WarningAmber" Color="Color.Warning" Size="Size.Small" Title="Stock pendiente — descuento falló" /> }
+                                @if (f.VisionsConfirmado) { <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" Size="Size.Small" Title="Confirmado en Visions" /> }
+                            </div>
+                            <div style="display:flex;gap:4px">
+                                <MudButton Size="Size.Small" OnClick="@(() => AbrirGestionAsync(f))">Gestionar</MudButton>
+                                @if (f.VisionsConfirmado && !f.StockDescontado)
+                                {
+                                    <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined"
+                                               StartIcon="@Icons.Material.Filled.Refresh"
+                                               OnClick="@(() => ReintentarStockAsync(f))">
+                                        Reintentar
+                                    </MudButton>
+                                }
+                                @if (!f.StockDescontado && !f.VisionsConfirmado)
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error"
+                                                   Size="Size.Small" Title="Eliminar factura"
+                                                   OnClick="@(() => EliminarFacturaAsync(f))" />
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </MudTabPanel>
+
+    @* ════ Tab 3: Devoluciones ════ *@
+    <MudTabPanel Text="Devoluciones" Icon="@Icons.Material.Filled.AssignmentReturn"
+                 BadgeData="@(_devoluciones.Count > 0 ? _devoluciones.Count.ToString() : null)"
+                 BadgeColor="Color.Warning">
+        <div class="d-flex justify-space-between align-center my-2">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+                <AppSelect TValue="string?" Value="_devFiltroTipo"
+                           ValueChanged="@(async (string? v) => { _devFiltroTipo = v; await CargarDevolucionesAsync(); })"
+                           Label="Tipo" Style="min-width:160px"
+                           Items="@(new AppSelectItem<string?>[]{ new("Cliente","CLIENTE"), new("Proveedor","PROVEEDOR") })" />
+                <MudDatePicker Date="_devDesde"
+                               DateChanged="@(async v => { _devDesde = v; await CargarDevolucionesAsync(); })"
+                               Label="Desde" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:140px" />
+                <MudDatePicker Date="_devHasta"
+                               DateChanged="@(async v => { _devHasta = v; await CargarDevolucionesAsync(); })"
+                               Label="Hasta" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:140px" />
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="AbrirNuevaDevolucionAsync">
+                Nueva Devolución
+            </MudButton>
+        </div>
+
+        @if (_devCargando)
+        { <MudProgressLinear Indeterminate="true" /> }
+        else if (!_devoluciones.Any())
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-2">No hay devoluciones registradas en el período.</MudAlert>
+        }
+        else if (Preferencias.VistaListado == "lista")
+        {
+            <div style="overflow-x:auto">
+            <MudTable Items="_devoluciones" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh>Fecha</MudTh>
+                    <MudTh>Contraparte</MudTh>
+                    <MudTh>Motivo</MudTh>
+                    <MudTh>Nro. Doc</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh>Stock</MudTh>
+                    <MudTh>Origen</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(context.TipoDevolucion == "CLIENTE" ? Color.Info : Color.Warning)">
+                            @context.TipoDevolucion
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd Style="font-size:0.82rem">
+                        @(context.TipoDevolucion == "CLIENTE" ? (context.Cliente ?? "-") : (context.Proveedor ?? "-"))
+                    </MudTd>
+                    <MudTd Style="font-size:0.82rem;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="@(context.Motivo ?? "")">
+                        @(context.Motivo ?? "-")
+                    </MudTd>
+                    <MudTd Style="font-size:0.82rem">@(context.NroDoc ?? "-")</MudTd>
+                    <MudTd Style="text-align:right">@context.Total.ToString("C0")</MudTd>
+                    <MudTd>
+                        @if (context.StockRestituido)
+                        { <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" /> }
+                        else
+                        { <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Color="Color.Warning" Size="Size.Small" /> }
+                    </MudTd>
+                    <MudTd>
+                        @if (context.OrigenVisions)
+                        { <MudChip T="string" Size="Size.Small" Color="Color.Secondary">Visions</MudChip> }
+                        else
+                        { <MudChip T="string" Size="Size.Small" Color="Color.Default">NEXO</MudChip> }
+                    </MudTd>
+                </RowTemplate>
+                <FooterContent>
+                    <MudTd colspan="5" Style="text-align:right;font-weight:bold">Total devuelto:</MudTd>
+                    <MudTd Style="text-align:right;font-weight:bold">
+                        @_devoluciones.Sum(d => d.Total).ToString("C0")
+                    </MudTd>
+                    <MudTd colspan="2" />
+                </FooterContent>
+            </MudTable>
+            </div>
+        }
+        else
+        {
+            <div class="nexo-cards-grid" style="margin-top:8px">
+                @foreach (var d in _devoluciones)
+                {
+                    <div class="nexo-ec">
+                        <div class="nexo-ec__header">
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(d.TipoDevolucion == "CLIENTE" ? Color.Info : Color.Warning)"
+                                     Style="flex-shrink:0">@d.TipoDevolucion</MudChip>
+                            <div class="nexo-ec__title-block" style="margin-left:8px">
+                                <div class="nexo-ec__name">
+                                    @(d.TipoDevolucion == "CLIENTE" ? (d.Cliente ?? "—") : (d.Proveedor ?? "—"))
+                                </div>
+                                <div class="nexo-ec__sub">@d.Fecha.ToString("dd/MM/yyyy")</div>
+                            </div>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(d.OrigenVisions ? Color.Secondary : Color.Default)"
+                                     Style="margin-left:auto;font-size:0.68rem;height:22px;flex-shrink:0">
+                                @(d.OrigenVisions ? "Visions" : "NEXO")
+                            </MudChip>
+                        </div>
+                        <div class="nexo-ec__body">
+                            @if (!string.IsNullOrEmpty(d.Motivo))
+                            {
+                                <div class="nexo-ec__row">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Notes" Size="Size.Small" />
+                                    <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@d.Motivo</span>
+                                </div>
+                            }
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.AttachMoney" Size="Size.Small" />
+                                <span><b>@d.Total.ToString("C0")</b></span>
+                                @if (!string.IsNullOrEmpty(d.NroDoc))
+                                { <span style="font-size:0.75rem;opacity:.7;margin-left:4px">· @d.NroDoc</span> }
+                            </div>
+                        </div>
+                        <div class="nexo-ec__footer">
+                            @if (d.StockRestituido)
+                            { <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" Title="Stock restituido" /> }
+                            else
+                            { <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Color="Color.Warning" Size="Size.Small" Title="Stock pendiente" /> }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@* ── Ventas recibidas desde Visions (solo en Historial) ── *@
+@if (_tabActivo == 1)
+{
+<MudExpansionPanels Class="mt-4">
+    <MudExpansionPanel Text="@($"Ventas de Visions ({_totalVisions:N0} documentos)")"
+                       Icon="@Icons.Material.Filled.Store" IsInitiallyExpanded="true">
+        <MudPaper Elevation="0" Class="pa-3 mb-3"
+                  Style="border:1px solid var(--mud-palette-lines-default); border-radius:8px">
+            <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end">
+                <AppSelect TValue="string?" Value="_vTipDoc"
+                           ValueChanged="@(async (string? v) => { _vTipDoc = v; _vPagina=1; await CargarVentasVisionsAsync(); })"
+                           Label="Tipo documento" Style="min-width:160px"
+                           Items="@(TiposDocumento.Todos.Select(td => new AppSelectItem<string?>(td, td)))" />
+                <MudDatePicker Date="_vDesde"
+                               DateChanged="@(async v => { _vDesde = v; _vPagina=1; await CargarVentasVisionsAsync(); })"
+                               Label="Desde" DateFormat="dd/MM/yyyy"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:140px" />
+                <MudDatePicker Date="_vHasta"
+                               DateChanged="@(async v => { _vHasta = v; _vPagina=1; await CargarVentasVisionsAsync(); })"
+                               Label="Hasta" DateFormat="dd/MM/yyyy"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:140px" />
+            </div>
+        </MudPaper>
+
+        @if (_vCargando)
+        { <MudProgressLinear Indeterminate="true" Class="mb-2" /> }
+        else if (_ventasVisions.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-2">
+                No hay ventas de Visions en el rango seleccionado.
+                Solo aparecen documentos recibidos desde que se activó la integración.
+            </MudAlert>
+        }
+        else
+        {
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:0.85rem; opacity:.7">
+                <span>@_totalVisions documentos · página @_vPagina de @_vTotalPaginas</span>
+                <div style="display:flex; gap:4px">
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                                   Disabled="@(_vPagina <= 1)"
+                                   OnClick="@(async () => { _vPagina--; await CargarVentasVisionsAsync(); })" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                                   Disabled="@(_vPagina >= _vTotalPaginas)"
+                                   OnClick="@(async () => { _vPagina++; await CargarVentasVisionsAsync(); })" />
+                </div>
+            </div>
+            <div style="overflow-x:auto">
+            <MudTable Items="_ventasVisions" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Tipo Doc</MudTh>
+                    <MudTh>Nro. Doc</MudTh>
+                    <MudTh>Fecha</MudTh>
+                    <MudTh>NIT</MudTh>
+                    <MudTh>Cliente</MudTh>
+                    <MudTh>CC</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh Style="text-align:right">Líneas</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd><MudChip T="string" Size="Size.Small" Color="@ColorTipDoc(context.TipDoc)">@context.TipDoc</MudChip></MudTd>
+                    <MudTd Style="font-size:0.82rem">@context.NroDoc</MudTd>
+                    <MudTd>@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd Style="font-size:0.82rem">@(context.NitCliente ?? "-")</MudTd>
+                    <MudTd Style="font-size:0.82rem">@(context.NombreCliente ?? "-")</MudTd>
+                    <MudTd Style="font-size:0.82rem">@(_centrosCosto.FirstOrDefault(cc => cc.CentroCostoID == context.CentroCostoID)?.Nombre ?? context.CentroCostoID.ToString())</MudTd>
+                    <MudTd Style="text-align:right">@context.TotalVenta.ToString("C0")</MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudButton Size="Size.Small" Variant="Variant.Text"
+                                   OnClick="@(() => AbrirLineasVisionsAsync(context))">
+                            @context.Lineas
+                        </MudButton>
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                       Size="Size.Small" Title="Descargar PDF"
+                                       OnClick="@(() => DescargarPdfVisionsAsync(context.CentroCostoID, context.TipDoc, context.NroDoc))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+            </div>
+        }
+    </MudExpansionPanel>
+</MudExpansionPanels>
+} @* fin @if (_tabActivo == 1) *@
+
+@code {
+    // ── Estado general ──
+    private ClienteItem? _filtroCliente;
+    private List<ComboItem> _combosActivos = new();
+    private List<CentroCostoBasicoItem> _centrosCosto = new();
+    private string? _errorCarga;
+    private int _tabActivo;
+    private int _stockFallidoCount;
+
+    // ── Tab Devoluciones ──
+    private List<DevolucionItem> _devoluciones = new();
+    private bool    _devCargando;
+    private string? _devFiltroTipo;
+    private DateTime? _devDesde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+    private DateTime? _devHasta;
+
+    // ── Tab Pendientes ──
+    private List<FacturaItem> _pendientes = new();
+    private bool   _cargandoPend = true;
+    private int    _paginaPend = 1;
+    private const int _tamanoPend = 50;
+    private int    _totalPend = 0;
+    private int    _totalPaginasPend => (int)Math.Ceiling((double)_totalPend / _tamanoPend);
+
+    // ── Tab Historial ──
+    private List<FacturaItem> _facturas = new();
+    private bool   _cargando = true;
+    private string? _filtroTexto;
+    private string? _filtroTipDoc;
+    private int?    _filtroClienteId => _filtroCliente?.ClienteID;
+    private int?    _filtroCentroCostoId;
+    private string? _filtroEstado;
+    private DateTime? _filtroDesde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+    private DateTime? _filtroHasta;
+    private int _pagina = 1;
+    private const int _tamano = 50;
+    private int _total  = 0;
+    private int _totalPaginas => (int)Math.Ceiling((double)_total / _tamano);
+
+    // ── Ventas Visions ──
+    private List<VentaVisionsItem> _ventasVisions = new();
+    private bool    _vCargando;
+    private string? _vTipDoc;
+    private DateTime? _vDesde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+    private DateTime? _vHasta;
+    private int _vPagina = 1;
+    private const int _vTamano = 50;
+    private int _totalVisions = 0;
+    private int _vTotalPaginas => (int)Math.Ceiling((double)_totalVisions / _vTamano);
+
+    // ── Colores ──
+    private Color ColorTipDoc(string tipDoc) => tipDoc switch
+    {
+        "FACTURA" or "REMISION" => Color.Primary,
+        "DEVOLUCION PROVEEDOR" or "NOTA DEVOLUCION" => Color.Warning,
+        "NOTA DEBITO" => Color.Secondary,
+        "ORDEN COMPRA" => Color.Info,
+        "EGRESO" or "PERDIDA INVENTARIO" => Color.Error,
+        _ => Color.Default
+    };
+    private Color ColorEstado(string estado) => estado switch
+    {
+        "PAGADA" => Color.Success,
+        "PARCIAL" => Color.Warning,
+        _ => Color.Error
+    };
+    private static string EtiquetaEstado(string estado) => estado switch
+    {
+        "PAGADA" => "Pagada",
+        "PARCIAL" => "Pago parcial",
+        _ => "Pendiente"
+    };
+    protected override async Task OnInitializedAsync()
+    {
+        var tareaCombos   = ApiClient.GetAsync<List<ComboItem>>("api/marketing/combos");
+        var tareaCentros  = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo");
+        var tareaPend     = CargarPendientesAsync();
+        var tareaHist     = CargarHistorialAsync();
+        var tareaVisions  = CargarVentasVisionsAsync();
+        var tareaAlertas  = ApiClient.GetAsync<int>("api/facturacion/stock-fallido-count");
+
+        await Task.WhenAll(tareaCombos, tareaCentros, tareaPend, tareaHist, tareaVisions, tareaAlertas);
+        _stockFallidoCount = await tareaAlertas;
+
+        _combosActivos = (await tareaCombos ?? new()).Where(c => c.Estado != "Inactivo").ToList();
+        _centrosCosto = (await tareaCentros ?? new())
+            .Where(c => c.Estado)
+            .Select(c => new CentroCostoBasicoItem(c.CentroCostoID, c.Nombre, c.TieneVisions))
+            .ToList();
+    }
+
+    // ── Pendientes ──
+    private async Task CargarPendientesAsync()
+    {
+        _cargandoPend = true;
+        try
+        {
+            var q = $"api/facturacion/facturas?soloNoPagadas=true&pagina={_paginaPend}&tamano={_tamanoPend}";
+            var resp = await ApiClient.GetAsync<FacturasPaginadasResponse>(q);
+            _pendientes = resp?.Items ?? new();
+            _totalPend  = resp?.Total ?? 0;
+        }
+        catch { _pendientes = new(); _totalPend = 0; }
+        finally { _cargandoPend = false; }
+    }
+    private async Task IrPendAsync(int p) { _paginaPend = p; await CargarPendientesAsync(); }
+
+    // ── Historial ──
+    private async Task CargarHistorialAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var q = new List<string>();
+            if (!string.IsNullOrWhiteSpace(_filtroTexto))  q.Add($"texto={Uri.EscapeDataString(_filtroTexto)}");
+            if (_filtroClienteId is not null)               q.Add($"clienteId={_filtroClienteId}");
+            if (_filtroCentroCostoId is not null)           q.Add($"centroCostoId={_filtroCentroCostoId}");
+            if (_filtroTipDoc is not null)                  q.Add($"tipDoc={Uri.EscapeDataString(_filtroTipDoc)}");
+            if (_filtroEstado is not null)                  q.Add($"estado={_filtroEstado}");
+            if (_filtroDesde is not null)                   q.Add($"desde={_filtroDesde.Value:yyyy-MM-dd}");
+            if (_filtroHasta is not null)                   q.Add($"hasta={_filtroHasta.Value:yyyy-MM-dd}");
+            q.Add($"pagina={_pagina}");
+            q.Add($"tamano={_tamano}");
+
+            var resp = await ApiClient.GetAsync<FacturasPaginadasResponse>(
+                "api/facturacion/facturas?" + string.Join("&", q));
+            _facturas   = resp?.Items ?? new();
+            _total      = resp?.Total ?? 0;
+            _errorCarga = null;
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+    private async Task IrPaginaAsync(int p) { _pagina = p; await CargarHistorialAsync(); }
+
+    private async Task OnFiltroTextoAsync(string? v)   { _filtroTexto = v;        _pagina = 1; await CargarHistorialAsync(); }
+    private async Task OnFiltroTipDocAsync(string? v)  { _filtroTipDoc = v;       _pagina = 1; await CargarHistorialAsync(); }
+    private async Task OnFiltroClienteAsync(ClienteItem? v) { _filtroCliente = v; _pagina = 1; await CargarHistorialAsync(); }
+    private async Task OnFiltroCCAsync(int? v)         { _filtroCentroCostoId = v; _pagina = 1; await CargarHistorialAsync(); }
+    private async Task OnFiltroEstadoAsync(string? v)  { _filtroEstado = v;       _pagina = 1; await CargarHistorialAsync(); }
+
+    // ── Ventas Visions ──
+    private async Task CargarVentasVisionsAsync()
+    {
+        _vCargando = true;
+        try
+        {
+            var q = new List<string>();
+            if (_vTipDoc is not null) q.Add($"tipDoc={Uri.EscapeDataString(_vTipDoc)}");
+            if (_vDesde  is not null) q.Add($"desde={_vDesde.Value:yyyy-MM-dd}");
+            if (_vHasta  is not null) q.Add($"hasta={_vHasta.Value:yyyy-MM-dd}");
+            q.Add($"pagina={_vPagina}");
+            q.Add($"tamano={_vTamano}");
+            var resp = await ApiClient.GetAsync<VentasVisionsPaginadasResponse>(
+                "api/integracion/ventas-visions?" + string.Join("&", q));
+            _ventasVisions = resp?.Items ?? new();
+            _totalVisions  = resp?.Total ?? 0;
+        }
+        catch { _ventasVisions = new(); _totalVisions = 0; }
+        finally { _vCargando = false; }
+    }
+
+    // ── Devoluciones ──
+    private async Task CargarDevolucionesAsync()
+    {
+        _devCargando = true;
+        try
+        {
+            var q = new List<string>();
+            if (_devFiltroTipo is not null) q.Add($"tipo={_devFiltroTipo}");
+            if (_devDesde is not null) q.Add($"desde={_devDesde.Value:yyyy-MM-dd}");
+            if (_devHasta is not null) q.Add($"hasta={_devHasta.Value:yyyy-MM-dd}");
+            _devoluciones = await ApiClient.GetAsync<List<DevolucionItem>>(
+                "api/facturacion/devoluciones" + (q.Any() ? "?" + string.Join("&", q) : "")) ?? new();
+        }
+        catch { _devoluciones = new(); }
+        finally { _devCargando = false; }
+    }
+
+    private async Task AbrirNuevaDevolucionAsync()
+    {
+        var dialog = await DialogService.ShowAsync<DevolucionDialog>("Nueva Devolución",
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (result?.Canceled == false) await CargarDevolucionesAsync();
+    }
+
+    // ── Diálogos ──
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<FacturaDialog>
+        {
+            { x => x.CombosActivos, _combosActivos },
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.UsaVisions, ConfiguracionEmpresa.UsaVisions }
+        };
+        var dialogo = await DialogService.ShowAsync<FacturaDialog>("Nueva Factura", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            var request = (CrearFacturaRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearFacturaRequest, object?>("api/facturacion/facturas", request);
+            Snackbar.Add("Documento creado correctamente.", Severity.Success);
+            await Task.WhenAll(CargarPendientesAsync(), CargarHistorialAsync());
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirGestionAsync(FacturaItem factura)
+    {
+        var ccTieneVisions = _centrosCosto
+            .FirstOrDefault(cc => cc.CentroCostoID == factura.CentroCostoID)
+            ?.TieneVisions ?? false;
+
+        var parametros = new DialogParameters<GestionFacturaDialog>
+        {
+            { x => x.Factura, factura },
+            { x => x.CcTieneVisions, ccTieneVisions }
+        };
+        var dialogo = await DialogService.ShowAsync<GestionFacturaDialog>("Gestionar", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        await dialogo.Result;
+        await Task.WhenAll(CargarPendientesAsync(), CargarHistorialAsync());
+    }
+
+    private async Task AbrirLineasVisionsAsync(VentaVisionsItem venta)
+    {
+        var parametros = new DialogParameters<LineasVisionsDialog>
+        {
+            { x => x.CentroCostoID, venta.CentroCostoID },
+            { x => x.TipDoc,        venta.TipDoc },
+            { x => x.NroDoc,        venta.NroDoc }
+        };
+        await DialogService.ShowAsync<LineasVisionsDialog>(
+            $"{venta.TipDoc} {venta.NroDoc} — Líneas",
+            parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+    }
+
+    private async Task ReintentarStockAsync(FacturaItem factura)
+    {
+        try
+        {
+            await ApiClient.PostAsync($"api/facturacion/facturas/{factura.FacturaID}/descontar-stock");
+            Snackbar.Add("Stock descontado correctamente.", Severity.Success);
+            await CargarHistorialAsync();
+            _stockFallidoCount = await ApiClient.GetAsync<int>("api/facturacion/stock-fallido-count");
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add($"Error al descontar stock: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DescargarPdfAsync(int facturaId, string? nroDoc)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/facturacion/facturas/{facturaId}/pdf");
+            var nombre = string.IsNullOrWhiteSpace(nroDoc) ? $"factura-{facturaId}.pdf" : $"factura-{nroDoc}.pdf";
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", nombre, "application/pdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo generar el PDF: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ImprimirFacturaAsync(int facturaId)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/facturacion/facturas/{facturaId}/pdf");
+            await JS.InvokeVoidAsync("nexoImprimirPdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo imprimir: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DescargarPdfVisionsAsync(int centroCostoId, string tipDoc, string nroDoc)
+    {
+        try
+        {
+            var url = $"api/integracion/ventas-visions/pdf?centroCostoId={centroCostoId}&tipDoc={Uri.EscapeDataString(tipDoc)}&nroDoc={Uri.EscapeDataString(nroDoc)}";
+            var bytes = await ApiClient.GetBytesAsync(url);
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", $"visions-{nroDoc}.pdf", "application/pdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo generar el PDF: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task EliminarFacturaAsync(FacturaItem factura)
+    {
+        var etiqueta = factura.NroDoc is not null ? $"#{factura.NroDoc}" : $"ID {factura.FacturaID}";
+        var confirmado = await DialogService.ShowMessageBox(
+            "Eliminar factura",
+            $"¿Eliminar la factura {etiqueta} de {factura.Cliente}? Esta acción no se puede deshacer y eliminará el registro del staging de Visions.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+
+        if (confirmado != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/facturacion/facturas/{factura.FacturaID}");
+            Snackbar.Add("Factura eliminada correctamente.", Severity.Success);
+            await Task.WhenAll(CargarPendientesAsync(), CargarHistorialAsync());
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add($"No se pudo eliminar: {ex.Message}", Severity.Error);
+        }
+    }
+}

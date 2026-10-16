@@ -1,0 +1,211 @@
+﻿@using NexoWeb.Common.Dtos
+
+<MudDialog Style="min-width:min(700px,95vw); max-height:90vh; overflow-y:auto">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Schedule" Class="mr-2" />
+            Nuevo Horario
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="8">
+                <MudTextField @bind-Value="_nombre" Label="Nombre del horario"
+                              Placeholder="Ej: Turno mañana, Jornada completa" Required />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudNumericField @bind-Value="_tolerancia" Label="Tolerancia tardanza (min)" Min="0" Max="120" />
+            </MudItem>
+            <MudItem xs="12" sm="8">
+                <AppSelect TValue="string" @bind-Value="_tipoCiclo" Label="Tipo de ciclo"
+                           Items="@(new AppSelectItem<string>[]{ new("Fijo — misma hora todos los dias","FIJO"), new("Semana A/B — 2 semanas alternadas","SEMANA_AB"), new("Semana A/B/C/D — 4 semanas alternadas","SEMANA_4") })" />
+            </MudItem>
+            <MudItem xs="12" sm="4" Class="d-flex align-center">
+                <MudSwitch @bind-Value="_registraSalida" Color="Color.Primary"
+                           Label="@(_registraSalida ? "Registra salida" : "Solo entrada")" />
+            </MudItem>
+        </MudGrid>
+
+        @foreach (var semana in SemanasActivas)
+        {
+            @if (_tipoCiclo != "FIJO")
+            {
+                <div class="d-flex align-center justify-space-between mt-4 mb-1">
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600">Semana @semana</MudText>
+                    @if (semana != "A")
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.ContentCopy"
+                                   OnClick="@(() => CopiarDesdeA(semana))">
+                            Copiar desde A
+                        </MudButton>
+                    }
+                </div>
+                <MudDivider Class="mb-2"/>
+            }
+
+            <div style="overflow-x:auto">
+                <table style="width:100%; border-collapse:collapse; font-size:0.85rem">
+                    <thead>
+                        <tr style="background:var(--mud-palette-background-grey)">
+                            <th style="padding:6px 8px; text-align:left; width:90px">Dia</th>
+                            <th style="padding:6px 4px; text-align:center; width:50px">Activo</th>
+                            <th style="padding:6px 4px; min-width:110px">Entrada</th>
+                            <th style="padding:6px 4px; min-width:110px">Salida</th>
+                            <th style="padding:6px 4px; text-align:center; width:70px">Almuerzo</th>
+                            <th style="padding:6px 4px; min-width:110px">Inicio alm.</th>
+                            <th style="padding:6px 4px; min-width:110px">Fin alm.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var fila in _dias.Where(d => d.Semana == semana))
+                        {
+                            <tr style="border-bottom:1px solid var(--mud-palette-lines-default)">
+                                <td style="padding:4px 8px">@NombreDia(fila.DiaSemana)</td>
+                                <td style="padding:2px 4px; text-align:center">
+                                    <MudCheckBox @bind-Value="fila.Activo" Color="Color.Primary" Size="Size.Small" />
+                                </td>
+                                <td style="padding:2px 4px">
+                                    @if (fila.Activo)
+                                    {
+                                        <MudTimePicker @bind-Time="fila.HoraEntrada" AmPm="false"
+                                                       Placeholder="--:--" Margin="Margin.Dense" />
+                                    }
+                                </td>
+                                <td style="padding:2px 4px">
+                                    @if (fila.Activo)
+                                    {
+                                        <MudTimePicker @bind-Time="fila.HoraSalida" AmPm="false"
+                                                       Placeholder="--:--" Margin="Margin.Dense" />
+                                    }
+                                </td>
+                                <td style="padding:2px 4px; text-align:center">
+                                    @if (fila.Activo)
+                                    {
+                                        <MudCheckBox @bind-Value="fila.TieneAlmuerzo" Color="Color.Secondary" Size="Size.Small" />
+                                    }
+                                </td>
+                                <td style="padding:2px 4px">
+                                    @if (fila.Activo && fila.TieneAlmuerzo)
+                                    {
+                                        <MudTimePicker @bind-Time="fila.HoraInicioAlmuerzo" AmPm="false"
+                                                       Placeholder="--:--" Margin="Margin.Dense" />
+                                    }
+                                </td>
+                                <td style="padding:2px 4px">
+                                    @if (fila.Activo && fila.TieneAlmuerzo)
+                                    {
+                                        <MudTimePicker @bind-Time="fila.HoraFinAlmuerzo" AmPm="false"
+                                                       Placeholder="--:--" Margin="Margin.Dense" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(!Valido)" OnClick="Confirmar">
+            Crear Horario
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    private string _nombre = "";
+    private int _tolerancia = 10;
+    private string _tipoCiclo = "FIJO";
+    private bool _registraSalida = true;
+
+    private static readonly string[] TodasSemanas = ["A", "B", "C", "D"];
+    private static readonly string[] NombresDia = ["", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"];
+    private static string NombreDia(int d) => NombresDia[d];
+
+    private IEnumerable<string> SemanasActivas => _tipoCiclo switch
+    {
+        "SEMANA_AB" => ["A", "B"],
+        "SEMANA_4"  => ["A", "B", "C", "D"],
+        _           => ["A"]
+    };
+
+    private class FilaDia
+    {
+        public int DiaSemana { get; init; }
+        public string Semana { get; init; } = "A";
+        public bool Activo { get; set; }
+        public TimeSpan? HoraEntrada { get; set; }
+        public TimeSpan? HoraSalida { get; set; }
+        public bool TieneAlmuerzo { get; set; }
+        public TimeSpan? HoraInicioAlmuerzo { get; set; }
+        public TimeSpan? HoraFinAlmuerzo { get; set; }
+    }
+
+    // Un row por (semana A/B/C/D, día 1-7)
+    private List<FilaDia> _dias = [];
+
+    protected override void OnInitialized()
+    {
+        foreach (var s in TodasSemanas)
+            for (int d = 1; d <= 7; d++)
+                _dias.Add(new FilaDia
+                {
+                    DiaSemana = d, Semana = s,
+                    Activo = d <= 5,
+                    HoraEntrada = new TimeSpan(8, 0, 0),
+                    HoraSalida  = new TimeSpan(17, 0, 0)
+                });
+    }
+
+    private void CopiarDesdeA(string semanaDestino)
+    {
+        var filasA = _dias.Where(d => d.Semana == "A").ToList();
+        foreach (var dest in _dias.Where(d => d.Semana == semanaDestino))
+        {
+            var src = filasA.FirstOrDefault(a => a.DiaSemana == dest.DiaSemana);
+            if (src is null) continue;
+            dest.Activo             = src.Activo;
+            dest.HoraEntrada        = src.HoraEntrada;
+            dest.HoraSalida         = src.HoraSalida;
+            dest.TieneAlmuerzo      = src.TieneAlmuerzo;
+            dest.HoraInicioAlmuerzo = src.HoraInicioAlmuerzo;
+            dest.HoraFinAlmuerzo    = src.HoraFinAlmuerzo;
+        }
+    }
+
+    private bool Valido
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_nombre)) return false;
+            var activas = _dias.Where(d => SemanasActivas.Contains(d.Semana) && d.Activo).ToList();
+            if (activas.Count == 0) return false;
+            return activas.All(d => d.HoraEntrada.HasValue && d.HoraSalida.HasValue);
+        }
+    }
+
+    private void Confirmar()
+    {
+        if (!Valido) return;
+
+        var dias = _dias
+            .Where(d => SemanasActivas.Contains(d.Semana) && d.Activo)
+            .Select(d => new HorarioDiaInput(
+                d.DiaSemana,
+                _tipoCiclo == "FIJO" ? null : d.Semana,
+                d.HoraEntrada!.Value, d.HoraSalida!.Value,
+                d.TieneAlmuerzo, d.HoraInicioAlmuerzo, d.HoraFinAlmuerzo
+            )).ToList();
+
+        MudDialog.Close(DialogResult.Ok(
+            new CrearHorarioRequest(_nombre.Trim(), _tolerancia, _tipoCiclo, _registraSalida, dias)));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}
+

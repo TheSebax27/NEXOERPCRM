@@ -1,0 +1,74 @@
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:8px">
+            <MudIcon Icon="@Icons.Material.Filled.Shield" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">@(Rol is null ? "Nuevo rol" : "Editar rol")</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_nombre" Label="Nombre del rol" Variant="Variant.Outlined"
+                      Required Immediate Class="mb-3" />
+        <MudTextField @bind-Value="_descripcion" Label="Descripcion (opcional)"
+                      Variant="Variant.Outlined" Lines="2" />
+        @if (Rol is not null)
+        {
+            <MudSwitch @bind-Value="_estado" Color="Color.Primary" Class="mt-3">
+                @(_estado ? "Activo" : "Inactivo")
+            </MudSwitch>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="Guardar" Disabled="@(_guardando || string.IsNullOrWhiteSpace(_nombre))">
+            @if (_guardando) { <MudProgressCircular Size="Size.Small" Indeterminate /> }
+            else { <span>Guardar</span> }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public RolDetalleItem? Rol { get; set; }
+
+    private string _nombre = "";
+    private string? _descripcion;
+    private bool _estado = true;
+    private bool _guardando;
+
+    protected override void OnInitialized()
+    {
+        if (Rol is null) return;
+        _nombre      = Rol.Nombre;
+        _descripcion = Rol.Descripcion;
+        _estado      = Rol.Estado;
+    }
+
+    private async Task Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre)) return;
+        _guardando = true;
+        try
+        {
+            if (Rol is null)
+                await Api.PostAsync<CrearRolRequest, object>(
+                    "api/seguridad/roles",
+                    new CrearRolRequest(_nombre.Trim(), _descripcion?.Trim()));
+            else
+                await Api.PutAsync(
+                    $"api/seguridad/roles/{Rol.RolID}",
+                    new ActualizarRolRequest(_nombre.Trim(), _descripcion?.Trim(), _estado));
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

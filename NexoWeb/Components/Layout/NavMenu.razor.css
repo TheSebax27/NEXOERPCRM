@@ -1,0 +1,113 @@
+/* ================================================================
+   NavMenu — grupos colapsables MudNavGroup + items flat
+   ================================================================ */
+
+::deep .mud-nav-menu {
+  padding: 0.5rem 0 1rem !important;
+}
+
+/* ── Ítem raíz (BI) — sin sangría, destacado ─────────────────── */
+::deep .mud-nav-link.nexo-nav-item--root {
+  margin: 2px 8px 6px !important;
+  font-weight: 600 !important;
+}
+
+/* ── Header de grupo colapsable ──────────────────────────────── */
+::deep .nexo-nav-group > .mud-nav-group-header .mud-nav-link {
+  display: flex !important;
+  align-items: center !important;
+  padding: 0.6rem 0.85rem 0.6rem 0.75rem !important;
+  margin: 1px 8px !important;
+  border-radius: 9px !important;
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 0.70rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+::deep .nexo-nav-group > .mud-nav-group-header .mud-nav-link:hover {
+  background: rgba(255,255,255,0.06) !important;
+  color: rgba(255,255,255,0.82) !important;
+}
+
+/* Icono del header del grupo */
+::deep .nexo-nav-group > .mud-nav-group-header .mud-nav-link-icon-wrapper {
+  color: rgba(255,255,255,0.32) !important;
+  margin-right: 0.35rem !important;
+  flex-shrink: 0 !important;
+  transition: color 0.15s ease !important;
+}
+
+::deep .nexo-nav-group > .mud-nav-group-header .mud-nav-link:hover .mud-nav-link-icon-wrapper {
+  color: rgba(255,255,255,0.62) !important;
+}
+
+/* Chevron de colapso */
+::deep .nexo-nav-group .mud-nav-group-toggle-icon {
+  font-size: 1rem !important;
+  color: rgba(255,255,255,0.28) !important;
+  transition: transform 0.2s ease, color 0.15s ease !important;
+}
+
+/* Separador sutil entre grupos */
+::deep .nexo-nav-group {
+  margin-bottom: 2px !important;
+}
+
+/* ── Ítem de navegación (sub-ítem dentro del grupo) ──────────── */
+::deep .mud-nav-link.nexo-nav-item {
+  display: flex !important;
+  align-items: center !important;
+  border-radius: 9px !important;
+  margin: 1px 8px 1px 20px !important;
+  padding: 0.48rem 0.85rem !important;
+  color: rgba(255,255,255,0.62) !important;
+  font-size: 0.83rem !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.005em !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+  position: relative !important;
+  text-decoration: none !important;
+}
+
+::deep .mud-nav-link.nexo-nav-item:hover {
+  background: rgba(255,255,255,0.07) !important;
+  color: rgba(255,255,255,0.90) !important;
+}
+
+/* Estado activo — pill morado */
+::deep .mud-nav-link.nexo-nav-item.active {
+  background: var(--n-nav-active-bg) !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  box-shadow: 0 3px 12px rgba(124,92,255,0.35) !important;
+}
+
+::deep .mud-nav-link.nexo-nav-item.active::after {
+  content: '»';
+  position: absolute;
+  right: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.70);
+  letter-spacing: -0.05em;
+}
+
+/* Iconos de sub-ítems */
+::deep .mud-nav-link.nexo-nav-item .mud-nav-link-icon-wrapper {
+  color: rgba(255,255,255,0.32) !important;
+  margin-right: 0.35rem !important;
+  flex-shrink: 0 !important;
+  transition: color 0.15s ease !important;
+}
+
+::deep .mud-nav-link.nexo-nav-item:hover .mud-nav-link-icon-wrapper {
+  color: rgba(255,255,255,0.65) !important;
+}
+
+::deep .mud-nav-link.nexo-nav-item.active .mud-nav-link-icon-wrapper {
+  color: #FFFFFF !important;
+}

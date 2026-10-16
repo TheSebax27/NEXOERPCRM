@@ -1,0 +1,573 @@
+/* ================================================================
+   MainLayout — Chrome completo de la aplicación
+   Top Bar blanca + Sidebar oscuro con acento morado
+   ================================================================ */
+
+/* ══ ANIMACIONES ════════════════════════════════════════════════ */
+@keyframes blobFloat {
+  0%, 100% { transform: scale(1) translate(0, 0) rotate(0deg); opacity: 0.65; }
+  33%       { transform: scale(1.08) translate(6px, -8px) rotate(5deg); opacity: 0.85; }
+  66%       { transform: scale(0.95) translate(-4px, 4px) rotate(-3deg); opacity: 0.7; }
+}
+
+@keyframes blobFloat2 {
+  0%, 100% { transform: scale(1) translate(0, 0); opacity: 0.4; }
+  50%       { transform: scale(1.12) translate(-6px, -10px); opacity: 0.6; }
+}
+
+@keyframes activePulse {
+  0%, 100% { box-shadow: 0 4px 14px rgba(124,92,255,0.30); }
+  50%       { box-shadow: 0 4px 20px rgba(124,92,255,0.50), 0 0 0 3px rgba(124,92,255,0.12); }
+}
+
+/* ══ TOP BAR ════════════════════════════════════════════════════
+   AVISO: el background, backdrop-filter, border y box-shadow de
+   .mud-appbar.nexo-topbar son sobreescritos por app.css (sección
+   "Glass TopBar y Sidebar") con mayor especificidad (ID selector).
+   Para cambiar el fondo/glass del topbar: editar app.css, NO aquí.
+   Lo que SÍ manda desde este archivo: padding, height, color texto,
+   y todos los sub-elementos del topbar (búsqueda, notificaciones...) */
+::deep .mud-appbar.nexo-topbar {
+  background: rgba(10,14,36,0.60) !important; /* sobreescrito por app.css */
+  backdrop-filter: blur(24px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(140%) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow: 0 1px 0 rgba(124,92,255,0.10) !important;
+  color: #FFFFFF !important;
+  padding: 0 1.25rem !important;
+  height: 68px !important;
+}
+
+::deep .nexo-topbar__menu-btn {
+  color: var(--n-text-3) !important;
+  margin-right: 0.5rem !important;
+}
+::deep .nexo-topbar__menu-btn:hover {
+  background: rgba(255,255,255,0.08) !important;
+  color: #FFFFFF !important;
+}
+
+/* Título de página */
+::deep .nexo-topbar__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Barra de búsqueda — más prominente, centrada */
+::deep .nexo-topbar__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  padding: 0.45rem 1rem;
+  width: 100%;
+  max-width: 480px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+::deep .nexo-topbar__search:focus-within {
+  border-color: rgba(124,92,255,0.60);
+  box-shadow: 0 0 0 3px rgba(124,92,255,0.18);
+  background: rgba(255,255,255,0.09);
+}
+::deep .nexo-topbar__search-icon {
+  color: var(--n-text-3) !important;
+  font-size: 1.1rem !important;
+  flex-shrink: 0;
+}
+::deep .nexo-topbar__search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.875rem;
+  color: #FFFFFF;
+  font-family: 'Mango Dream', 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  min-width: 0;
+}
+::deep .nexo-topbar__search-input::placeholder { color: var(--n-text-3); }
+
+/* Dropdown de sugerencias -- flota sobre el contenido, no empuja layout */
+::deep .nexo-topbar__search-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--n-card);
+  border: 1px solid var(--n-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15);
+  max-height: 420px;
+  overflow-y: auto;
+  z-index: 20;
+  padding: 0.4rem 0;
+}
+::deep .nexo-topbar__search-status {
+  display: flex;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  font-size: 0.82rem;
+  color: var(--n-text-3);
+}
+::deep .nexo-topbar__search-group {
+  padding: 0.5rem 1rem 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--n-purple-l);
+}
+::deep .nexo-topbar__search-item {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+::deep .nexo-topbar__search-item:hover {
+  background: var(--n-purple-xl);
+}
+::deep .nexo-topbar__search-item-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--n-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+::deep .nexo-topbar__search-item-sub {
+  font-size: 0.72rem;
+  color: var(--n-text-3);
+  margin-top: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Notificaciones */
+::deep .nexo-topbar__notif {
+  position: relative;
+  flex-shrink: 0;
+}
+::deep .nexo-topbar__notif-btn { color: rgba(255,255,255,0.80) !important; }
+::deep .nexo-topbar__notif-btn:hover {
+  background: rgba(255,255,255,0.08) !important;
+  color: #FFFFFF !important;
+}
+::deep .nexo-topbar__notif-dot {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: #EF4444;
+  border: 2px solid var(--n-dark);
+  pointer-events: none;
+  animation: nexoNotifPulse 2s ease-in-out infinite;
+}
+@keyframes nexoNotifPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+  50%       { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+
+/* Overlay full-viewport para cerrar notificaciones al hacer click fuera.
+   Debe vivir FUERA del AppBar (el backdrop-filter del appbar haría que
+   position:fixed; inset:0 cubra solo el appbar, no la pantalla completa). */
+::deep .nexo-notif-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--nexo-z-notif-overlay);
+}
+
+/* Panel desplegable de notificaciones */
+::deep .nexo-topbar__notif-panel {
+  min-width: 300px;
+  max-width: 380px;
+  background: var(--mud-palette-background);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.2);
+  border: 1px solid var(--n-border);
+  overflow: hidden;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+::deep .nexo-topbar__notif-panel-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--n-text-1);
+  padding: 0.75rem 1rem 0.5rem;
+  border-bottom: 1px solid var(--n-border);
+  background: rgba(255,255,255,0.03);
+}
+::deep .nexo-topbar__notif-empty {
+  color: var(--n-text-3);
+  font-size: 0.85rem;
+}
+::deep .nexo-topbar__notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  white-space: normal;
+  border-bottom: 1px solid var(--n-border);
+  transition: background 0.15s;
+}
+::deep .nexo-topbar__notif-item:last-child { border-bottom: none; }
+::deep .nexo-topbar__notif-item:hover { background: rgba(255,255,255,0.05); }
+::deep .nexo-topbar__notif-item-icon { margin-top: 1px; flex-shrink: 0; }
+::deep .nexo-topbar__notif-item-msg {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--n-text-1);
+  line-height: 1.35;
+}
+::deep .nexo-topbar__notif-item-detalle {
+  font-size: 0.72rem;
+  color: var(--n-text-2, var(--n-text-3));
+  line-height: 1.35;
+  margin-top: 0.2rem;
+  opacity: 0.75;
+}
+
+/* Mini-panel de "Mi perfil" (PerfilMenu.razor) */
+::deep .nexo-perfil-wrapper {
+  position: relative;
+}
+
+/* Overlay transparente cubre toda la pantalla; click cierra el panel */
+::deep .nexo-perfil-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+}
+
+::deep .nexo-perfil-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1251;
+  width: 280px;
+  padding: 0.9rem 1rem 1rem;
+  background: var(--n-surface, #1A1C2E);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+::deep .nexo-perfil-panel__avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+::deep .nexo-perfil-panel__avatar {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 2px 8px rgba(124,92,255,0.30);
+}
+::deep .nexo-perfil-panel__avatar--iniciales {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #7C5CFF 0%, #5A3BFF 100%);
+  color: #FFFFFF;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+::deep .nexo-perfil-panel__avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+::deep .nexo-perfil-panel__btn-archivo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #7C5CFF;
+  border: 1.5px solid #7C5CFF;
+  border-radius: 8px;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+::deep .nexo-perfil-panel__btn-archivo:hover {
+  background: #EDE9FF;
+}
+::deep .nexo-perfil-panel__hint {
+  font-size: 0.7rem;
+  color: #9B9BB4;
+  line-height: 1.35;
+  margin-top: 0.6rem;
+}
+
+/* ── Avatar + nombre (ver PerfilMenu.razor) ── */
+::deep .nexo-topbar__user { margin-left: 0.25rem; flex-shrink: 0 !important; }
+
+::deep .nexo-topbar__user-activator {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.65rem !important;
+  padding: 0.3rem 0.7rem 0.3rem 0.3rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+::deep .nexo-topbar__user-activator:hover { background: rgba(255,255,255,0.08); }
+
+::deep .nexo-topbar__avatar {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  border-radius: 50% !important;
+  background: linear-gradient(135deg, #7C5CFF 0%, #5A3BFF 100%) !important;
+  color: #FFFFFF !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  letter-spacing: 0.03em;
+  box-shadow: 0 2px 8px rgba(124,92,255,0.30);
+  line-height: 1 !important;
+}
+::deep .nexo-topbar__avatar--img {
+  object-fit: cover !important;
+}
+
+::deep .nexo-topbar__user-info {
+  display: flex !important;
+  flex-direction: column !important;
+  line-height: 1.25 !important;
+  flex-shrink: 0;
+}
+::deep .nexo-topbar__user-name {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #FFFFFF;
+  white-space: nowrap;
+  display: block;
+}
+::deep .nexo-topbar__user-role {
+  font-size: 0.7rem;
+  color: var(--n-text-3);
+  white-space: nowrap;
+  display: block;
+}
+::deep .nexo-topbar__chevron {
+  color: var(--n-text-3) !important;
+  font-size: 1rem !important;
+  flex-shrink: 0;
+}
+
+/* ══ SIDEBAR ════════════════════════════════════════════════════
+   AVISO: igual que el topbar, background/backdrop-filter/border del
+   sidebar son sobreescritos por app.css (sección "Glass TopBar y
+   Sidebar"). Para cambiar el glass/fondo del sidebar: editar app.css.
+   Lo que SÍ manda desde aquí: estructura interna (mud-drawer-content,
+   logo, nav, footer) y estilos de los nav links en modo oscuro. */
+::deep .mud-drawer.nexo-sidebar {
+  position: fixed !important;
+  top: 0 !important;
+  height: 100vh !important;
+  z-index: 1200;       /* sin !important → MudBlazor popovers (1300) y nuestro overlay (1250) quedan encima */
+  background: rgba(10,14,36,0.68) !important; /* sobreescrito por app.css */
+  backdrop-filter: blur(34px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(34px) saturate(160%) !important;
+  border-right: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow: 2px 0 24px rgba(0,0,0,0.20), inset -1px 0 0 rgba(124,92,255,0.08) !important;
+}
+
+::deep .nexo-sidebar .mud-drawer-content {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  position: relative;
+}
+
+/* ── Logo ──────────────────────────────────────────────────────── */
+::deep .nexo-sidebar__logo {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1.35rem 1.4rem 1.1rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 0.5rem;
+}
+
+::deep .nexo-sidebar__logo-img {
+  height: 34px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: brightness(1.05) drop-shadow(0 2px 6px rgba(124,92,255,0.3));
+}
+
+::deep .nexo-sidebar__logo-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #FFFFFF;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.92;
+  flex: 1;
+  min-width: 0;
+}
+::deep .nexo-sidebar__logo-text strong { font-weight: 800; }
+
+::deep .nexo-sidebar__close-btn {
+  color: rgba(255,255,255,0.45) !important;
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: -0.3rem;
+}
+::deep .nexo-sidebar__close-btn:hover {
+  background: rgba(255,255,255,0.10) !important;
+  color: #FFFFFF !important;
+}
+
+/* ── Zona de navegación ─────────────────────────────────────── */
+::deep .nexo-sidebar__nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.25rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.07) transparent;
+}
+::deep .nexo-sidebar__nav::-webkit-scrollbar { width: 4px; }
+::deep .nexo-sidebar__nav::-webkit-scrollbar-track { background: transparent; }
+::deep .nexo-sidebar__nav::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.07);
+  border-radius: 4px;
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+::deep .nexo-sidebar__footer {
+  flex-shrink: 0;
+  padding: 0 0 1rem;
+  position: relative;
+  z-index: 1;
+}
+::deep .nexo-sidebar__footer-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.07);
+  margin: 0 1rem 0.6rem;
+}
+::deep .nexo-sidebar__footer-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1px 10px;
+  padding: 0.52rem 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--n-text-3);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  user-select: none;
+}
+::deep .nexo-sidebar__footer-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.90);
+}
+::deep .nexo-sidebar__footer-item--logout:hover {
+  background: rgba(239,68,68,0.1);
+  color: #F87171;
+}
+::deep .nexo-sidebar__footer-item--logout:hover .nexo-sidebar__footer-icon {
+  color: #F87171 !important;
+}
+::deep .nexo-sidebar__footer-icon {
+  font-size: 1.1rem !important;
+  color: var(--n-text-2) !important;
+  flex-shrink: 0;
+}
+
+/* ── Blobs decorativos animados ─────────────────────────────── */
+::deep .nexo-sidebar__blob {
+  position: absolute;
+  bottom: -50px; left: -40px;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124,92,255,0.40) 0%, rgba(90,59,255,0.15) 40%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: blobFloat 9s ease-in-out infinite;
+}
+
+::deep .nexo-sidebar__blob-2 {
+  position: absolute;
+  top: 20%; right: -60px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124,92,255,0.18) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: 0;
+  animation: blobFloat2 12s ease-in-out infinite;
+}
+
+/* ══ CONTENIDO PRINCIPAL ════════════════════════════════════════ */
+/* BUG REAL (agosto 2026): MudAppBar es "Fixed" por defecto (position:fixed,
+   sacado del flujo normal) -- MudBlazor compensa eso agregando
+   padding-top:var(--mud-appbar-height) a .mud-main-content, pero esta regla
+   pisaba el padding COMPLETO con un valor fijo de 1.75rem (28px) sin relacion
+   con la altura REAL de la barra (76px, ver .nexo-topbar arriba), dejando los
+   primeros ~48px de cada pagina tapados detras de la barra fija. Fix: el
+   padding-top ahora suma la altura de la barra + el aire original.
+   Si se cambia la altura de .nexo-topbar, hay que actualizar este valor tambien. */
+::deep .mud-main-content.nexo-main-content {
+  background: var(--n-bg) !important;
+  padding: calc(var(--n-topbar-height) + 1.75rem) 2rem 1.75rem !important;
+  min-height: 100vh;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+/* En desktop: sidebar siempre visible via Temporary+position:fixed.
+   Ocultar backdrop para que clics en contenido no cierren la barra. */
+@media (min-width: 960px) {
+  ::deep .mud-drawer-overlay { display: none !important; }
+}
+@media (max-width: 960px) {
+  ::deep .mud-main-content.nexo-main-content { padding: calc(var(--n-topbar-height) + 1.25rem) 1rem 1.25rem !important; }
+  ::deep .nexo-topbar__search { max-width: 200px; }
+  ::deep .nexo-topbar__user-info { display: none !important; }
+}
+@media (max-width: 600px) {
+  ::deep .nexo-topbar__search { max-width: 140px; min-width: 0; }
+}
+@media (max-width: 400px) {
+  ::deep .nexo-topbar__search { display: none !important; }
+  ::deep .mud-main-content.nexo-main-content { padding: calc(var(--n-topbar-height) + .75rem) .75rem .75rem !important; }
+}
+
+/* Blazor error UI */
+#blazor-error-ui {
+  color-scheme: light only;
+  background: #FEF9C3;
+  border-top: 1px solid #FDE68A;
+  bottom: 0; left: 0;
+  padding: 0.65rem 1.25rem;
+  position: fixed;
+  width: 100%;
+  z-index: 1000;
+  display: none;
+  font-size: 0.875rem;
+}
+#blazor-error-ui .dismiss {
+  cursor: pointer;
+  position: absolute;
+  right: 0.75rem;
+  top: 0.55rem;
+}

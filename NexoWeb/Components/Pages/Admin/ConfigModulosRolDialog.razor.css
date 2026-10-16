@@ -1,0 +1,64 @@
+/* ── Sección de nav ─────────────────────────────────────────── */
+.cmd-seccion {
+    margin-bottom: 1.25rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.cmd-seccion__header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.9rem;
+    background: var(--mud-palette-background-grey);
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+
+.cmd-seccion__icon {
+    color: var(--mud-palette-primary);
+    opacity: 0.75;
+    flex-shrink: 0;
+}
+
+.cmd-seccion__label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--mud-palette-primary);
+}
+
+/* ── Fila de módulo ─────────────────────────────────────────── */
+.cmd-mod {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.9rem;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+    transition: background-color 0.15s ease;
+}
+
+.cmd-mod:last-child {
+    border-bottom: none;
+}
+
+.cmd-mod:hover {
+    background: var(--mud-palette-background-grey);
+}
+
+.cmd-mod--leaf {
+    padding-left: 1.1rem;
+}
+
+.cmd-mod__nombre {
+    font-size: 0.88rem;
+    color: var(--mud-palette-text-primary);
+    transition: color 0.15s ease;
+}
+
+.cmd-mod__nombre--off {
+    color: var(--mud-palette-text-disabled);
+    text-decoration: line-through;
+    text-decoration-color: var(--mud-palette-text-disabled);
+}

@@ -1,0 +1,704 @@
+﻿@page "/planificacion"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Planificacion - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Planificacion</p>
+            <h1 class="nexo-page-hero__title">Planificacion</h1>
+        </div>
+    </div>
+</div>
+<InfoAyuda Texto="Define metas de venta por centro de costo y demanda proyectada de producción, y compáralas contra los resultados reales del mes." />
+
+@* ── Info explicativa ── *@
+<MudPaper Elevation="0" Class="pa-4 mb-4"
+          Style="border-left:4px solid var(--mud-palette-info);background:var(--mud-palette-info-hover);border-radius:0 8px 8px 0">
+    <div style="display:flex;gap:10px;align-items:flex-start">
+        <MudIcon Icon="@Icons.Material.Outlined.Info" Color="Color.Info" Style="margin-top:2px;flex-shrink:0" />
+        <div style="font-size:0.88rem;line-height:1.6">
+            <strong>Metas de Venta</strong> es un objetivo <em>comercial</em>: define cuánto dinero debe facturar
+            cada centro de costo en un mes y lo compara contra la venta real (Facturación + Visions).
+            Responde a la pregunta <em>"¿estamos vendiendo lo que prometimos?"</em>
+            <br />
+            <strong>Demanda Proyectada</strong> es un plan de <em>producción</em>: define cuántas unidades de cada
+            artículo se espera fabricar en un mes y lo compara contra lo que el Kardex registró como entradas
+            de Producto Terminado.
+            Responde a la pregunta <em>"¿estamos produciendo lo que necesitamos?"</em>
+            <br />
+            <span style="color:var(--mud-palette-text-secondary)">
+                Ambas métricas son complementarias pero independientes: puedes cumplir la meta de venta
+                usando inventario existente sin producir (Demanda en rojo), o producir según el plan
+                pero no lograr venderlo (Meta en rojo). Cruza las dos vistas para detectar desequilibrios.
+            </span>
+        </div>
+    </div>
+</MudPaper>
+
+@* ── Mejora 3: Alertas mes actual ── *@
+@if (!_cargandoMeta && !_cargandoDem && (_alertasMeta.Any() || _alertasDemanda.Any()))
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-3" Dense="false">
+        <MudText Typo="Typo.subtitle2" Class="mb-1">⚠ Atención — Mes actual en riesgo</MudText>
+        @foreach (var m in _alertasMeta)
+        {
+            var pctA = m.MetaValor > 0 ? m.VentaReal / m.MetaValor * 100 : 0;
+            <div>Meta venta <strong>@m.CentroCosto</strong>: @pctA.ToString("N0")% de la meta (@m.VentaReal.ToString("C0") / @m.MetaValor.ToString("C0"))</div>
+        }
+        @foreach (var d in _alertasDemanda)
+        {
+            var pctA = d.CantidadProyectada > 0 ? d.CantidadReal / d.CantidadProyectada * 100 : 0;
+            <div>Demanda <strong>@d.NombreArticulo</strong> (@d.CentroCosto): @pctA.ToString("N0")% (@d.CantidadReal.ToString("N0") / @d.CantidadProyectada.ToString("N0") uds)</div>
+        }
+    </MudAlert>
+}
+
+@* ── Mejora 1: Panel cruzado histórico ── *@
+@if (_historico.Count > 1)
+{
+    <MudPaper Elevation="0" Class="pa-4 mb-4"
+              Style="border:1px solid var(--mud-palette-lines-default);border-radius:8px">
+        <MudText Typo="Typo.subtitle2" Class="mb-3">Resumen cruzado — últimos @_historico.Count meses</MudText>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+            @foreach (var h in _historico.OrderByDescending(h => h.Periodo).Take(6))
+            {
+                var esMesActH = h.Periodo.Year == NexoWeb.Common.ColombiaClock.Today.Year && h.Periodo.Month == NexoWeb.Common.ColombiaClock.Today.Month;
+                <div style="flex:1;min-width:90px;border:1px solid var(--mud-palette-lines-default);border-radius:6px;padding:8px;@(esMesActH ? "border-color:var(--mud-palette-info)" : "")">
+                    <div style="font-size:0.7rem;font-weight:600;color:var(--mud-palette-text-secondary);text-transform:uppercase;margin-bottom:4px">
+                        @h.Periodo.ToString("MMM yy")
+                    </div>
+                    <div style="font-size:0.78rem;margin-bottom:2px">
+                        <span style="color:var(--mud-palette-text-secondary)">Venta</span>
+                        <span style="font-weight:700;margin-left:4px;color:@ColorPctDec(h.CumplimientoVentaPromedio)">@h.CumplimientoVentaPromedio.ToString("N0")%</span>
+                    </div>
+                    <div style="font-size:0.78rem">
+                        <span style="color:var(--mud-palette-text-secondary)">Demanda</span>
+                        <span style="font-weight:700;margin-left:4px;color:@ColorPctDec(h.CumplimientoDemandaPromedio)">@h.CumplimientoDemandaPromedio.ToString("N0")%</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </MudPaper>
+}
+
+<MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Class="nexo-bi-tabs mb-2">
+
+    @* ════ Tab 1: Metas de Venta ════ *@
+    <MudTabPanel Text="Metas de Venta" Icon="@Icons.Material.Filled.TrendingUp">
+
+        @if (_errorMeta is not null)
+        { <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar las metas: @_errorMeta</MudAlert> }
+        @if (_cargandoMeta)
+        { <MudProgressCircular Indeterminate="true" Class="ma-4" /> }
+        else if (_metas.Count == 0)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionMetaAsync"
+                       StartIcon="@Icons.Material.Filled.Add" Class="mb-4 mt-2">
+                Nueva Meta
+            </MudButton>
+            <MudText>No hay metas registradas.</MudText>
+        }
+        else
+        {
+            <div class="mv-summary mb-4 mt-2">
+                <div class="mv-summary__kpi">
+                    <span class="mv-summary__kpi-label">Meta total</span>
+                    <span class="mv-summary__kpi-value">@_totalMeta.ToString("C0")</span>
+                </div>
+                <div class="mv-summary__kpi">
+                    <span class="mv-summary__kpi-label">Venta real</span>
+                    <span class="mv-summary__kpi-value">@_totalReal.ToString("C0")</span>
+                </div>
+                <div class="mv-summary__kpi mv-summary__kpi--pct @(_pctGlobal >= 100 ? "mv-summary__kpi--ok" : _pctGlobal >= 70 ? "mv-summary__kpi--warn" : "mv-summary__kpi--risk")">
+                    <span class="mv-summary__kpi-label">Cumplimiento global</span>
+                    <span class="mv-summary__kpi-value">@_pctGlobal.ToString("N0")%</span>
+                </div>
+                <div style="margin-left:auto">
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionMetaAsync"
+                               StartIcon="@Icons.Material.Filled.Add">
+                        Nueva Meta
+                    </MudButton>
+                </div>
+            </div>
+
+            @foreach (var grupo in _metasPorMes)
+            {
+                <div class="mv-mes-header">
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600">
+                        @grupo.Key.ToString("MMMM yyyy").ToUpper()
+                    </MudText>
+                    @{
+                        var pctMes = grupo.Sum(m => m.MetaValor) > 0
+                            ? grupo.Sum(m => m.VentaReal) / grupo.Sum(m => m.MetaValor) * 100
+                            : 0;
+                    }
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(pctMes >= 100 ? Color.Success : pctMes >= 70 ? Color.Warning : Color.Error)">
+                        @pctMes.ToString("N0")% del mes
+                    </MudChip>
+                </div>
+
+                <div class="mv-cards-grid mb-4">
+                    @foreach (var meta in grupo.OrderByDescending(m => m.MetaValor))
+                    {
+                        var pct = meta.MetaValor > 0
+                                ? (double)(meta.VentaReal / meta.MetaValor * 100)
+                                : 0;
+                        var pctCap  = Math.Min(pct, 100);
+                        var colorPct = pct >= 100 ? Color.Success : pct >= 70 ? Color.Warning : Color.Error;
+                        var esMesActual = meta.Periodo.Year == NexoWeb.Common.ColombiaClock.Today.Year && meta.Periodo.Month == NexoWeb.Common.ColombiaClock.Today.Month;
+                        decimal ritmoProyectado = 0;
+                        double pctRitmo = 0;
+                        if (esMesActual && meta.VentaReal > 0)
+                        {
+                            var diasMes = DateTime.DaysInMonth(NexoWeb.Common.ColombiaClock.Today.Year, NexoWeb.Common.ColombiaClock.Today.Month);
+                            ritmoProyectado = meta.VentaReal / NexoWeb.Common.ColombiaClock.Today.Day * diasMes;
+                            pctRitmo = meta.MetaValor > 0 ? (double)(ritmoProyectado / meta.MetaValor * 100) : 0;
+                        }
+                        <div class="mv-card">
+                            <div class="mv-card__header">
+                                <span class="mv-card__centro">@meta.CentroCosto</span>
+                                <div class="d-flex" style="gap:4px">
+                                    @if (esMesActual)
+                                    { <MudChip T="string" Size="Size.Small" Color="Color.Info" Style="height:20px;font-size:10px">Mes actual</MudChip> }
+                                    <MudIcon Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
+                                             Style="cursor:pointer;color:var(--mud-palette-text-secondary)"
+                                             @onclick="@(() => VerHistorialMetaAsync(meta))" />
+                                </div>
+                            </div>
+
+                            <div class="mv-card__pct-wrap">
+                                <span class="mv-card__pct" style="color:@ColorPct(pct)">@pct.ToString("N0")%</span>
+                                <span class="mv-card__pct-label">cumplimiento</span>
+                            </div>
+                            <MudProgressLinear Value="@pctCap" Color="@colorPct"
+                                              Rounded="true" Size="Size.Medium" Class="mv-card__bar" />
+                            <div class="mv-card__vals">
+                                <div>
+                                    <div class="mv-card__val-label">Venta real</div>
+                                    <div class="mv-card__val">@meta.VentaReal.ToString("C0")</div>
+                                </div>
+                                <div style="text-align:right">
+                                    <div class="mv-card__val-label">Meta</div>
+                                    <div class="mv-card__val">@meta.MetaValor.ToString("C0")</div>
+                                </div>
+                            </div>
+
+                            @if (esMesActual && ritmoProyectado > 0)
+                            {
+                                <div class="mv-card__ritmo @(pctRitmo >= 100 ? "mv-card__ritmo--ok" : pctRitmo >= 80 ? "mv-card__ritmo--warn" : "mv-card__ritmo--risk")">
+                                    <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small" />
+                                    <span>A este ritmo: @ritmoProyectado.ToString("C0") (@pctRitmo.ToString("N0")%)</span>
+                                </div>
+                            }
+                            <div class="mv-card__actions">
+                                <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionMetaAsync(meta))">Editar</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => VerHistorialMetaAsync(meta))">Historial</MudButton>
+                            </div>
+
+                            @* Mejora 4: producción relacionada del mismo CC+periodo *@
+                            @{
+                                var demRel = _demanda
+                                    .Where(d => d.CentroCostoID == meta.CentroCostoID &&
+                                                d.Periodo.Year == meta.Periodo.Year &&
+                                                d.Periodo.Month == meta.Periodo.Month)
+                                    .ToList();
+                            }
+                            @if (demRel.Any())
+                            {
+                                <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--mud-palette-lines-default)">
+                                    <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;color:var(--mud-palette-text-secondary);margin-bottom:4px">Producción del mes</div>
+                                    @foreach (var dem in demRel.OrderBy(d => d.NombreArticulo))
+                                    {
+                                        var pctD = dem.CantidadProyectada > 0
+                                            ? (double)(dem.CantidadReal / dem.CantidadProyectada * 100) : 0;
+                                        <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:2px">
+                                            <span style="color:var(--mud-palette-text-secondary)">@dem.NombreArticulo</span>
+                                            <span style="font-weight:600;color:@ColorPct(pctD)">@pctD.ToString("N0")%</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </MudTabPanel>
+
+    @* ════ Tab 2: Predicción de Demanda ════ *@
+    <MudTabPanel Text="Predicción" Icon="@Icons.Material.Outlined.AutoGraph">
+
+        <div class="d-flex align-center mt-2 mb-3" style="gap:1rem;flex-wrap:wrap">
+            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary)">
+                Media móvil de los últimos 3 meses completos del Kardex.
+                Próximo mes: <strong>@(new DateTime(NexoWeb.Common.ColombiaClock.Today.Year, NexoWeb.Common.ColombiaClock.Today.Month, 1).AddMonths(1).ToString("MMMM yyyy"))</strong>
+            </MudText>
+            @{
+                var hoyMes = new DateTime(NexoWeb.Common.ColombiaClock.Today.Year, NexoWeb.Common.ColombiaClock.Today.Month, 1);
+                var labelM3 = hoyMes.AddMonths(-3).ToString("MMM");
+                var labelM2 = hoyMes.AddMonths(-2).ToString("MMM");
+                var labelM1 = hoyMes.AddMonths(-1).ToString("MMM");
+            }
+        </div>
+
+        @if (_cargandoPrediccion)
+        { <MudProgressCircular Indeterminate="true" Class="ma-4" /> }
+        else if (_prediccion.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Sin movimientos en los últimos 3 meses. No hay datos para proyectar.</MudAlert>
+        }
+        else
+        {
+            <div class="d-flex align-center mb-3" style="gap:0.5rem;flex-wrap:wrap">
+                <MudTextField @bind-Value="_filtroPred" Label="Filtrar artículo" Immediate="true"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Style="max-width:280px" />
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(_filtroPredTipo is null ? Color.Primary : Color.Default)"
+                         OnClick="@(() => { _filtroPredTipo = null; })" Variant="Variant.Outlined">Todos</MudChip>
+                @foreach (var tipo in _prediccion.Select(p => p.TipoArticulo).Distinct().OrderBy(t => t))
+                {
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(_filtroPredTipo == tipo ? Color.Primary : Color.Default)"
+                             OnClick="@(() => _filtroPredTipo = tipo)" Variant="Variant.Outlined">@tipo</MudChip>
+                }
+            </div>
+
+            <MudTable Items="_prediccionFiltrada" Hover="true" Dense="true" Striped="true" FixedHeader="true" Height="60vh">
+                <HeaderContent>
+                    <MudTh>Artículo</MudTh>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh Style="text-align:right">@labelM3</MudTh>
+                    <MudTh Style="text-align:right">@labelM2</MudTh>
+                    <MudTh Style="text-align:right">@labelM1</MudTh>
+                    <MudTh Style="text-align:right">Media Móvil</MudTh>
+                    <MudTh Style="text-align:right">Tendencia</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @{
+                        var tendencia = TendenciaPrediccion(context);
+                    }
+                    <MudTd DataLabel="Artículo">
+                        <div style="font-weight:500;font-size:.85rem">@context.Articulo</div>
+                        <div style="font-size:.72rem;color:var(--mud-palette-text-secondary)">@context.SKU</div>
+                    </MudTd>
+                    <MudTd DataLabel="Tipo">
+                        <MudChip T="string" Size="Size.Small" Style="font-size:0.68rem;height:20px">@context.TipoArticulo</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="@labelM3" Style="text-align:right;font-variant-numeric:tabular-nums;color:var(--mud-palette-text-secondary)">
+                        @context.ConsumoM3.ToString("N2")
+                    </MudTd>
+                    <MudTd DataLabel="@labelM2" Style="text-align:right;font-variant-numeric:tabular-nums;color:var(--mud-palette-text-secondary)">
+                        @context.ConsumoM2.ToString("N2")
+                    </MudTd>
+                    <MudTd DataLabel="@labelM1" Style="text-align:right;font-variant-numeric:tabular-nums">
+                        @context.ConsumoM1.ToString("N2")
+                    </MudTd>
+                    <MudTd DataLabel="Media Móvil" Style="text-align:right">
+                        <span style="font-weight:700;font-size:.9rem">@context.MediaMovil.ToString("N2")</span>
+                    </MudTd>
+                    <MudTd DataLabel="Tendencia" Style="text-align:right">
+                        @if (tendencia > 0)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small"
+                                     Style="color:var(--mud-palette-success)" Title="Consumo creciente" />
+                        }
+                        else if (tendencia < 0)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Size="Size.Small"
+                                     Style="color:var(--mud-palette-error)" Title="Consumo decreciente" />
+                        }
+                        else
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.TrendingFlat" Size="Size.Small"
+                                     Style="opacity:.4" Title="Consumo estable" />
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                   OnClick="@(() => AbrirPrediccionComoProyeccionAsync(context))">
+                            Crear Proyección
+                        </MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    @* ════ Tab 3: Demanda Proyectada ════ *@
+    <MudTabPanel Text="Demanda Proyectada" Icon="@Icons.Material.Filled.Factory">
+
+        <div class="d-flex align-center mt-2 mb-4">
+            <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionDemandaAsync"
+                       StartIcon="@Icons.Material.Filled.Add">
+                Nueva Proyeccion
+            </MudButton>
+        </div>
+
+        @if (!_cargandoDem && _demanda.Count > 0)
+        {
+            <div class="dem-kpi-row mb-4">
+                <div class="dem-kpi-tile">
+                    <span class="dem-kpi-tile__label">Proyecciones</span>
+                    <span class="dem-kpi-tile__value">@_demanda.Count</span>
+                </div>
+                <div class="dem-kpi-tile @(_cumplimientoPromedio >= 100 ? "dem-kpi-tile--ok" : _cumplimientoPromedio >= 70 ? "dem-kpi-tile--warn" : "dem-kpi-tile--risk")">
+                    <span class="dem-kpi-tile__label">Cumplimiento prom.</span>
+                    <span class="dem-kpi-tile__value">@_cumplimientoPromedio.ToString("N0")%</span>
+                </div>
+                <div class="dem-kpi-tile @(_enRiesgo > 0 ? "dem-kpi-tile--risk" : "dem-kpi-tile--ok")">
+                    <span class="dem-kpi-tile__label">En riesgo (&lt;70%)</span>
+                    <span class="dem-kpi-tile__value">@_enRiesgo</span>
+                </div>
+                <div class="dem-kpi-tile @(_cumplidas > 0 ? "dem-kpi-tile--ok" : "")">
+                    <span class="dem-kpi-tile__label">Cumplidas (≥100%)</span>
+                    <span class="dem-kpi-tile__value">@_cumplidas</span>
+                </div>
+            </div>
+        }
+
+        @* Mejora 5: gráfico de tendencia (reemplaza la tabla histórica) *@
+        @if (_historico.Count > 0)
+        {
+            <MudPaper Elevation="0" Class="pa-4 mb-4"
+                      Style="border:1px solid var(--mud-palette-lines-default);border-radius:8px">
+                <MudText Typo="Typo.subtitle2" Class="mb-3">Tendencia histórica — últimos 12 meses</MudText>
+                <MudChart ChartType="ChartType.Line"
+                          ChartSeries="@_chartSeries"
+                          XAxisLabels="@_chartLabels"
+                          Width="100%" Height="280px"
+                          ChartOptions="@_chartOptions" />
+                <div style="display:flex;gap:16px;margin-top:8px;font-size:0.78rem">
+                    <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#388E3C;margin-right:4px;vertical-align:middle"></span>Cumpl. Demanda</span>
+                    <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#1565C0;margin-right:4px;vertical-align:middle"></span>Cumpl. Venta</span>
+                </div>
+            </MudPaper>
+        }
+
+        @if (_errorDem is not null)
+        { <MudAlert Severity="Severity.Error" Class="mb-4">No se pudo cargar la demanda: @_errorDem</MudAlert> }
+        @if (_cargandoDem)
+        { <MudProgressCircular Indeterminate="true" Class="ma-4" /> }
+        else if (_demanda.Count == 0)
+        { <MudText>No hay proyecciones registradas.</MudText> }
+        else
+        {
+            <MudTable Items="_demandaOrdenada" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Mes</MudTh>
+                    <MudTh>Artículo</MudTh>
+                    <MudTh>Centro</MudTh>
+                    <MudTh Style="text-align:right">Proyectado</MudTh>
+                    <MudTh Style="text-align:right">Real</MudTh>
+                    <MudTh Style="min-width:180px">Cumplimiento</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @{
+                        var pct = context.CantidadProyectada > 0
+                            ? (double)(context.CantidadReal / context.CantidadProyectada * 100)
+                            : 0;
+                        var pctCap    = Math.Min(pct, 100);
+                        var colorPct  = pct >= 100 ? Color.Success : pct >= 70 ? Color.Warning : Color.Error;
+                        var esFuturo  = context.Periodo > NexoWeb.Common.ColombiaClock.Today;
+                    }
+                    <MudTd DataLabel="Mes">
+                        <div style="font-weight:500">@context.Periodo.ToString("MMM yyyy")</div>
+                        @if (esFuturo)
+                        { <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="mt-1" Style="height:18px;font-size:10px">Futuro</MudChip> }
+                    </MudTd>
+                    <MudTd DataLabel="Artículo">
+                        <div style="font-weight:500;font-size:.85rem">@context.NombreArticulo</div>
+                        <div style="font-size:.75rem;color:var(--mud-palette-text-secondary)">@context.SkuArticulo</div>
+                    </MudTd>
+                    <MudTd DataLabel="Centro">@context.CentroCosto</MudTd>
+                    <MudTd DataLabel="Proyectado" Style="text-align:right;font-variant-numeric:tabular-nums">
+                        @context.CantidadProyectada.ToString("N2")
+                    </MudTd>
+                    <MudTd DataLabel="Real" Style="text-align:right;font-variant-numeric:tabular-nums">
+                        @if (esFuturo)
+                        { <span style="color:var(--mud-palette-text-secondary)">—</span> }
+                        else
+                        { @context.CantidadReal.ToString("N2") }
+                    </MudTd>
+                    <MudTd DataLabel="Cumplimiento">
+                        @if (esFuturo)
+                        { <span style="color:var(--mud-palette-text-secondary);font-size:.8rem">Pendiente</span> }
+                        else
+                        {
+                            <div class="d-flex align-center" style="gap:6px">
+                                <div style="flex:1">
+                                    <MudProgressLinear Value="@pctCap" Color="@colorPct" Rounded="true" Size="Size.Small" />
+                                </div>
+                                <span style="font-size:.8rem;font-weight:600;min-width:38px;text-align:right;color:@(pct >= 100 ? "var(--mud-palette-success)" : pct >= 70 ? "var(--mud-palette-warning)" : "var(--mud-palette-error)")">
+                                    @pct.ToString("N0")%
+                                </span>
+                            </div>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionDemandaAsync(context))">Editar</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    // ── Compartido ──
+    private List<CentroCostoItem> _centrosCosto = new();
+
+    // ── Metas de Venta ──
+    private List<MetaVentaItem> _metas = new();
+    private bool    _cargandoMeta = true;
+    private string? _errorMeta;
+
+    private IEnumerable<IGrouping<DateTime, MetaVentaItem>> _metasPorMes =>
+        _metas.GroupBy(m => m.Periodo).OrderByDescending(g => g.Key);
+
+    private decimal _totalMeta  => _metas.Sum(m => m.MetaValor);
+    private decimal _totalReal  => _metas.Sum(m => m.VentaReal);
+    private double  _pctGlobal  => _totalMeta > 0 ? (double)(_totalReal / _totalMeta * 100) : 0;
+
+    // ── Predicción de Demanda ──
+    private List<PrediccionDemandaItem> _prediccion = new();
+    private bool _cargandoPrediccion = true;
+    private string? _filtroPred;
+    private string? _filtroPredTipo;
+
+    private IEnumerable<PrediccionDemandaItem> _prediccionFiltrada =>
+        _prediccion.Where(p =>
+            (string.IsNullOrWhiteSpace(_filtroPred) ||
+             p.Articulo.Contains(_filtroPred, StringComparison.OrdinalIgnoreCase) ||
+             p.SKU.Contains(_filtroPred, StringComparison.OrdinalIgnoreCase)) &&
+            (_filtroPredTipo is null || p.TipoArticulo == _filtroPredTipo));
+
+    // ── Demanda Proyectada ──
+    private List<DemandaProyectadaItem> _demanda  = new();
+    private List<HistoricoCumplimientoItem> _historico = new();
+    private bool    _cargandoDem = true;
+    private string? _errorDem;
+
+    private IEnumerable<DemandaProyectadaItem> _demandaOrdenada =>
+        _demanda.OrderByDescending(d => d.Periodo).ThenBy(d => d.NombreArticulo);
+
+    private double _cumplimientoPromedio => _demanda.Count == 0 ? 0 :
+        _demanda.Where(d => d.CantidadProyectada > 0 && d.Periodo <= NexoWeb.Common.ColombiaClock.Today)
+                .Select(d => (double)(d.CantidadReal / d.CantidadProyectada * 100))
+                .DefaultIfEmpty(0).Average();
+
+    private int _enRiesgo => _demanda.Count(d =>
+        d.CantidadProyectada > 0 && d.Periodo <= NexoWeb.Common.ColombiaClock.Today &&
+        d.CantidadReal / d.CantidadProyectada * 100 < 70);
+
+    private int _cumplidas => _demanda.Count(d =>
+        d.CantidadProyectada > 0 && d.Periodo <= NexoWeb.Common.ColombiaClock.Today &&
+        d.CantidadReal >= d.CantidadProyectada);
+
+    // ── Mejora 3: alertas mes actual ──
+    private IEnumerable<MetaVentaItem> _alertasMeta => _metas
+        .Where(m => m.Periodo.Year == NexoWeb.Common.ColombiaClock.Today.Year && m.Periodo.Month == NexoWeb.Common.ColombiaClock.Today.Month
+                 && m.MetaValor > 0 && m.VentaReal / m.MetaValor < 0.8m);
+
+    private IEnumerable<DemandaProyectadaItem> _alertasDemanda => _demanda
+        .Where(d => d.Periodo.Year == NexoWeb.Common.ColombiaClock.Today.Year && d.Periodo.Month == NexoWeb.Common.ColombiaClock.Today.Month
+                 && d.CantidadProyectada > 0 && d.CantidadReal / d.CantidadProyectada < 0.7m);
+
+    // ── Mejora 5: gráfico de tendencia ──
+    private List<ChartSeries> _chartSeries => new()
+    {
+        new ChartSeries { Name = "Demanda %", Data = _historico.OrderBy(h => h.Periodo).Select(h => (double)h.CumplimientoDemandaPromedio).ToArray() },
+        new ChartSeries { Name = "Venta %",   Data = _historico.OrderBy(h => h.Periodo).Select(h => (double)h.CumplimientoVentaPromedio).ToArray() }
+    };
+
+    private string[] _chartLabels => _historico.OrderBy(h => h.Periodo).Select(h => h.Periodo.ToString("MMM yy")).ToArray();
+
+    private ChartOptions _chartOptions = new()
+    {
+        ChartPalette = new[] { "#388E3C", "#1565C0" }
+    };
+
+    // ── Helpers ──
+    private string ColorPct(double pct) =>
+        pct >= 100 ? "var(--mud-palette-success)" :
+        pct >= 70  ? "var(--mud-palette-warning)" :
+                     "var(--mud-palette-error)";
+
+    private string ColorPctDec(decimal pct) =>
+        pct >= 100 ? "var(--mud-palette-success)" :
+        pct >= 70  ? "var(--mud-palette-warning)" :
+                     "var(--mud-palette-error)";
+
+    // ── Carga inicial ──
+    protected override async Task OnInitializedAsync()
+    {
+        var t1 = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=true");
+        var t2 = ApiClient.GetAsync<List<MetaVentaItem>>("api/planificacion/metas-venta");
+        var t3 = ApiClient.GetAsync<List<DemandaProyectadaItem>>("api/planificacion/demanda");
+        var t4 = ApiClient.GetAsync<List<HistoricoCumplimientoItem>>("api/planificacion/historico-cumplimiento?meses=12");
+        var t5 = ApiClient.GetAsync<List<PrediccionDemandaItem>>("api/planificacion/prediccion-demanda");
+
+        try { await Task.WhenAll(t1, t2, t3, t4, t5); } catch { }
+
+        try { _centrosCosto = await t1 ?? new(); } catch { }
+
+        try { _metas = await t2 ?? new(); }
+        catch (Exception ex) { _errorMeta = ex.Message; }
+        finally { _cargandoMeta = false; }
+
+        try { _demanda = await t3 ?? new(); _historico = await t4 ?? new(); }
+        catch (Exception ex) { _errorDem = ex.Message; }
+        finally { _cargandoDem = false; }
+
+        try { _prediccion = await t5 ?? new(); }
+        catch { }
+        finally { _cargandoPrediccion = false; }
+    }
+
+    // ── Metas ──
+    private async Task CargarMetasAsync()
+    {
+        try { _metas = await ApiClient.GetAsync<List<MetaVentaItem>>("api/planificacion/metas-venta") ?? new(); }
+        catch (Exception ex) { _errorMeta = ex.Message; }
+    }
+
+    private async Task AbrirCreacionMetaAsync()
+    {
+        var p = new DialogParameters<MetaVentaDialog> { { x => x.CentrosCosto, _centrosCosto } };
+        var d = await DialogService.ShowAsync<MetaVentaDialog>("Nueva Meta de Venta", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            var request = (CrearMetaVentaRequest)r.Data!;
+            await ApiClient.PostAsync<CrearMetaVentaRequest, object?>("api/planificacion/metas-venta", request);
+            Snackbar.Add("Meta creada correctamente.", Severity.Success);
+            await CargarMetasAsync();
+
+            // Mejora 2: sugerir proyección de demanda si no existe para ese CC+periodo
+            var tieneDemandasEnPeriodo = _demanda.Any(d =>
+                d.CentroCostoID == request.CentroCostoID &&
+                d.Periodo.Year == request.Periodo.Year &&
+                d.Periodo.Month == request.Periodo.Month);
+
+            if (!tieneDemandasEnPeriodo)
+            {
+                Snackbar.Add("No hay proyección de producción para este período. ¿Crear una ahora?",
+                    Severity.Info,
+                    config =>
+                    {
+                        config.Action = "Crear proyección →";
+                        config.ActionColor = Color.Info;
+                        config.Onclick = async _ => await AbrirCreacionDemandaAsync();
+                    });
+            }
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEdicionMetaAsync(MetaVentaItem meta)
+    {
+        var p = new DialogParameters<MetaVentaDialog> { { x => x.Meta, meta } };
+        var d = await DialogService.ShowAsync<MetaVentaDialog>("Editar Meta de Venta", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarMetaVentaRequest, object?>(
+                $"api/planificacion/metas-venta/{meta.MetaID}", (ActualizarMetaVentaRequest)r.Data!);
+            Snackbar.Add("Meta actualizada correctamente.", Severity.Success);
+            await CargarMetasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task VerHistorialMetaAsync(MetaVentaItem meta)
+    {
+        var historial = await ApiClient.GetAsync<List<MetaVentaHistorialItem>>($"api/planificacion/metas-venta/{meta.MetaID}/historial") ?? new();
+        var p = new DialogParameters<HistorialMetaVentaDialog> { { x => x.Historial, historial } };
+        await DialogService.ShowAsync<HistorialMetaVentaDialog>($"Historial — {meta.CentroCosto} {meta.Periodo:MMM yyyy}", p);
+    }
+
+    // ── Demanda ──
+    private async Task CargarDemandaAsync()
+    {
+        try { _demanda = await ApiClient.GetAsync<List<DemandaProyectadaItem>>("api/planificacion/demanda") ?? new(); }
+        catch (Exception ex) { _errorDem = ex.Message; }
+    }
+
+    private async Task AbrirCreacionDemandaAsync()
+    {
+        var p = new DialogParameters<DemandaDialog> { { x => x.CentrosCosto, _centrosCosto } };
+        var d = await DialogService.ShowAsync<DemandaDialog>("Nueva Proyeccion de Demanda", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearDemandaRequest, object?>("api/planificacion/demanda", (CrearDemandaRequest)r.Data!);
+            Snackbar.Add("Proyeccion creada correctamente.", Severity.Success);
+            await CargarDemandaAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ── Predicción ──
+    // Tendencia: compara M1 vs M3. >0 creciente, <0 decreciente, 0 estable.
+    private static int TendenciaPrediccion(PrediccionDemandaItem p)
+    {
+        if (p.ConsumoM3 == 0) return 0;
+        var delta = p.ConsumoM1 - p.ConsumoM3;
+        if (delta > p.ConsumoM3 * 0.1m) return 1;
+        if (delta < -p.ConsumoM3 * 0.1m) return -1;
+        return 0;
+    }
+
+    private async Task AbrirPrediccionComoProyeccionAsync(PrediccionDemandaItem pred)
+    {
+        var artSugerido = new ArticuloItem(
+            pred.ArticuloID, pred.SKU, pred.Articulo, null, pred.TipoArticulo,
+            0, 0, 0, true, 0, null, null, false, null, null);
+
+        var p = new DialogParameters<DemandaDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.ArticuloSugerido, artSugerido },
+            { x => x.CantidadSugerida, pred.MediaMovil }
+        };
+        var d = await DialogService.ShowAsync<DemandaDialog>($"Proyección — {pred.Articulo}", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearDemandaRequest, object?>("api/planificacion/demanda", (CrearDemandaRequest)r.Data!);
+            Snackbar.Add("Proyección creada correctamente.", Severity.Success);
+            await CargarDemandaAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEdicionDemandaAsync(DemandaProyectadaItem demanda)
+    {
+        var p = new DialogParameters<DemandaDialog> { { x => x.Demanda, demanda } };
+        var d = await DialogService.ShowAsync<DemandaDialog>("Editar Proyeccion", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarDemandaRequest, object?>(
+                $"api/planificacion/demanda/{demanda.DemandaID}", (ActualizarDemandaRequest)r.Data!);
+            Snackbar.Add("Proyeccion actualizada correctamente.", Severity.Success);
+            await CargarDemandaAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

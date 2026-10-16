@@ -1,0 +1,468 @@
+﻿@page "/rrhh/empleados"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject IJSRuntime JS
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Components.Pages.Admin
+
+<PageTitle>Empleados - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Empleados</h1>
+        </div>
+    </div>
+    <div class="d-flex align-center" style="gap:8px">
+        @if (!_cargando && _empleados.Count > 0)
+        {
+            <VistaToggle OnCambio="StateHasChanged" />
+            <MudTextField T="string" @bind-Value="_busqueda" Placeholder="Buscar empleado…"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Style="min-width:220px" Immediate="true" />
+            <MudTooltip Text="Exportar listado a Excel">
+                <MudIconButton Icon="@Icons.Material.Outlined.TableChart" Color="Color.Secondary"
+                               Disabled="_exportando" OnClick="ExportarExcelAsync" />
+            </MudTooltip>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="AbrirCreacionAsync">
+                Nuevo Empleado
+            </MudButton>
+        }
+    </div>
+</div>
+<InfoAyuda Texto="Directorio de personal activo e inactivo con cargo, centro de costo y datos de contacto. Desde aquí se gestiona cada ficha de empleado." />
+
+@if (_alertas.Count > 0)
+{
+    <MudAlert Severity="Severity.Warning" Icon="@Icons.Material.Outlined.NotificationsActive"
+              Class="mb-3" Dense="true">
+        <div class="d-flex align-center flex-wrap" style="gap:0.5rem;">
+            <MudText Typo="Typo.body2" Style="font-weight:600;">@_alertas.Count alerta(s) de RRHH:</MudText>
+            @foreach (var g in _alertas.GroupBy(a => a.Tipo))
+            {
+                var (icon, color, label) = g.Key switch
+                {
+                    "CAPACITACION_VENCE"  => (Icons.Material.Outlined.School,             Color.Warning, $"{g.Count()} capacitación(es) por vencer"),
+                    "CONTRATO_VENCE"      => (Icons.Material.Outlined.Assignment,          Color.Error,   $"{g.Count()} contrato(s) por vencer"),
+                    "AUSENCIA_PENDIENTE"  => (Icons.Material.Outlined.PendingActions,      Color.Info,    $"{g.Count()} ausencia(s) pendiente(s)"),
+                    _                    => (Icons.Material.Outlined.Warning,             Color.Default, $"{g.Count()} alerta(s)")
+                };
+                <MudChip T="string" Icon="@icon" Color="@color" Size="Size.Small" Label="true">@label</MudChip>
+            }
+        </div>
+    </MudAlert>
+}
+
+<MudPaper Class="pa-4 mb-4" Elevation="0" Style="border:1px solid var(--mud-palette-lines-default); border-radius:8px">
+    <div style="display:flex; align-items:center; gap:8px">
+        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Secondary" />
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Directorio de personal: nombre, cargo, Centro de Costo y datos de contacto. No maneja nomina ni contabilidad.
+        </MudText>
+    </div>
+</MudPaper>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los empleados: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_empleados.Count == 0 && _errorCarga is null)
+{
+    <NexoEmptyState
+        Icono="@Icons.Material.Outlined.PeopleAlt"
+        Titulo="Agrega tu primer empleado"
+        Descripcion="Lleva el directorio de tu equipo: nombre, cargo, Centro de Costo y datos de contacto."
+        BotonTexto="Nuevo empleado"
+        BotonOnClick="AbrirCreacionAsync" />
+}
+else if (Preferencias.VistaListado != "lista")
+{
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:16px;">
+        @foreach (var emp in EmpleadosFiltrados)
+        {
+            <MudCard Elevation="2" Style="border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+                <!-- Header con avatar y estado -->
+                <div style="background:linear-gradient(135deg, var(--mud-palette-primary) 0%, var(--mud-palette-secondary) 100%);
+                            padding:20px 20px 12px; display:flex; align-items:flex-start; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        @if (emp.TieneFoto)
+                        {
+                            <img src="@($"api/rrhh/empleados/{emp.EmpleadoID}/foto?v={_cacheBust}")" alt=""
+                                 style="width:52px; height:52px; object-fit:cover; border-radius:50%; border:2px solid rgba(255,255,255,0.4);" />
+                        }
+                        else
+                        {
+                            <MudAvatar Size="Size.Large" Style="background:rgba(255,255,255,0.25); color:#fff; font-weight:600; font-size:1.1rem; border:2px solid rgba(255,255,255,0.4);">
+                                @(emp.Nombres?.Length > 0 ? emp.Nombres[0] : '?')@(emp.Apellidos?.Length > 0 ? emp.Apellidos[0] : ' ')
+                            </MudAvatar>
+                        }
+                        <div>
+                            <MudText Typo="Typo.subtitle1" Style="color:#fff; font-weight:700; line-height:1.2;">@emp.Nombres @emp.Apellidos</MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.8);">@(emp.Cargo ?? "Sin cargo")</MudText>
+                        </div>
+                    </div>
+                    <MudChip T="string" Color="@ColorEstadoLaboral(emp)" Size="Size.Small"
+                             Style="margin:0; font-size:0.7rem;">
+                        @EtiquetaEstadoLaboral(emp)
+                    </MudChip>
+                </div>
+
+                <!-- Cuerpo -->
+                <MudCardContent Style="flex:1; padding:16px; display:flex; flex-direction:column; gap:8px;">
+                    @if (!string.IsNullOrWhiteSpace(emp.Departamento))
+                    {
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <MudIcon Icon="@Icons.Material.Outlined.Business" Size="Size.Small" Color="Color.Secondary" />
+                            <MudText Typo="Typo.body2">@emp.Departamento</MudText>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(emp.CentroCosto))
+                    {
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <MudIcon Icon="@Icons.Material.Outlined.Store" Size="Size.Small" Color="Color.Secondary" />
+                            <MudText Typo="Typo.body2">@emp.CentroCosto</MudText>
+                        </div>
+                    }
+                    @if (emp.FechaIngreso.HasValue)
+                    {
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <MudIcon Icon="@Icons.Material.Outlined.CalendarToday" Size="Size.Small" Color="Color.Secondary" />
+                            <MudText Typo="Typo.body2">Ingreso: @emp.FechaIngreso.Value.ToString("dd/MM/yyyy")</MudText>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(emp.Telefono))
+                    {
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <MudIcon Icon="@Icons.Material.Outlined.Phone" Size="Size.Small" Color="Color.Secondary" />
+                            <MudText Typo="Typo.body2">@emp.Telefono</MudText>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(emp.Email))
+                    {
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <MudIcon Icon="@Icons.Material.Outlined.Email" Size="Size.Small" Color="Color.Secondary" />
+                            <MudText Typo="Typo.body2" Style="word-break:break-word;">@emp.Email</MudText>
+                        </div>
+                    }
+
+                    <!-- Badge sistema -->
+                    <div style="margin-top:auto; padding-top:8px;">
+                        @if (emp.TieneUsuario)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.AccountCircle">Usuario activo</MudChip>
+                        }
+                        else
+                        {
+                            <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined"
+                                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                                       OnClick="@(() => AbrirCrearUsuarioAsync(emp))">
+                                Crear usuario
+                            </MudButton>
+                        }
+                    </div>
+                </MudCardContent>
+
+                <!-- Acciones -->
+                <MudCardActions Style="padding:8px 12px; border-top:1px solid var(--mud-palette-lines-default); justify-content:flex-end; gap:4px;">
+                    <MudTooltip Text="Descargar carnet PDF">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Badge" Size="Size.Small"
+                                       Color="Color.Secondary" OnClick="@(() => DescargarCarnetAsync(emp.EmpleadoID))" />
+                    </MudTooltip>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => AbrirGestionAsync(emp))">Gestionar</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => AbrirEdicionAsync(emp))">Editar</MudButton>
+                </MudCardActions>
+            </MudCard>
+        }
+    </div>
+}
+else
+{
+    <MudTable Items="EmpleadosFiltrados" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Empleado</MudTh>
+            <MudTh>Cargo</MudTh>
+            <MudTh>Departamento</MudTh>
+            <MudTh>Centro de Costo</MudTh>
+            <MudTh>Teléfono</MudTh>
+            <MudTh>Email</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Acción</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Empleado">
+                <span style="font-weight:600">@context.Nombres @context.Apellidos</span>
+            </MudTd>
+            <MudTd DataLabel="Cargo">@(context.Cargo ?? "—")</MudTd>
+            <MudTd DataLabel="Departamento">@(context.Departamento ?? "—")</MudTd>
+            <MudTd DataLabel="Centro de Costo">@(context.CentroCosto ?? "—")</MudTd>
+            <MudTd DataLabel="Teléfono">@(context.Telefono ?? "—")</MudTd>
+            <MudTd DataLabel="Email">@(context.Email ?? "—")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Size="Size.Small" Color="@ColorEstadoLaboral(context)">
+                    @EtiquetaEstadoLaboral(context)
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Acción">
+                <div class="d-flex align-center" style="gap:4px">
+                    <MudTooltip Text="Descargar carnet PDF">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Badge" Size="Size.Small"
+                                       Color="Color.Secondary" OnClick="@(() => DescargarCarnetAsync(context.EmpleadoID))" />
+                    </MudTooltip>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => AbrirGestionAsync(context))">Gestionar</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => AbrirEdicionAsync(context))">Editar</MudButton>
+                </div>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No hay empleados que coincidan con la búsqueda.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private List<EmpleadoItem> _empleados = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private List<CargoItem> _cargos = new();
+    private List<RolItem> _roles = new();
+    private List<AlertaRrhh> _alertas = new();
+    private bool _cargando = true;
+    private bool _exportando;
+    private string? _errorCarga;
+    private string? _busqueda;
+    private long _cacheBust = DateTime.UtcNow.Ticks;
+
+    private IEnumerable<EmpleadoItem> EmpleadosFiltrados =>
+        string.IsNullOrWhiteSpace(_busqueda)
+            ? _empleados
+            : _empleados.Where(e =>
+                (e.Nombres + " " + e.Apellidos).Contains(_busqueda, StringComparison.OrdinalIgnoreCase)
+                || (e.Cargo ?? "").Contains(_busqueda, StringComparison.OrdinalIgnoreCase)
+                || (e.CentroCosto ?? "").Contains(_busqueda, StringComparison.OrdinalIgnoreCase)
+                || (e.Email ?? "").Contains(_busqueda, StringComparison.OrdinalIgnoreCase)
+                || (e.Telefono ?? "").Contains(_busqueda, StringComparison.OrdinalIgnoreCase));
+
+    // Estado laboral: Inactivo (ya no trabaja aqui) gana sobre Ausente (esta
+    // de vacaciones/incapacidad/permiso pero sigue siendo empleado), que a su
+    // vez gana sobre Activo. EnAusencia se calcula en el backend a partir de
+    // Rrhh.Ausencias con Estado=APROBADA cubriendo la fecha de hoy.
+    private static Color ColorEstadoLaboral(EmpleadoItem e) =>
+        !e.Estado ? Color.Error : e.EnAusencia ? Color.Warning : Color.Success;
+
+    private static string EtiquetaEstadoLaboral(EmpleadoItem e) =>
+        !e.Estado ? "Inactivo" : e.EnAusencia ? "Ausente" : "Activo";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaCentrosCosto = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=true");
+            var tareaEmpleados    = ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=false");
+            var tareaCargos       = ApiClient.GetAsync<List<CargoItem>>("api/rrhh/cargos");
+            var tareaRoles        = ApiClient.GetAsync<List<RolItem>>("api/auth/roles");
+            var tareaAlertas      = ApiClient.GetAsync<List<AlertaRrhh>>("api/rrhh/empleados/alertas");
+
+            await Task.WhenAll(tareaCentrosCosto, tareaEmpleados, tareaCargos, tareaRoles, tareaAlertas);
+
+            _centrosCosto = await tareaCentrosCosto ?? new();
+            _empleados    = await tareaEmpleados    ?? new();
+            _cargos       = await tareaCargos       ?? new();
+            _roles        = await tareaRoles        ?? new();
+            try { _alertas = await tareaAlertas ?? new(); } catch { _alertas = new(); }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _errorCarga = "No tienes permisos para ver esta sección. Contacta al Administrador.";
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task CargarEmpleadosAsync()
+    {
+        try
+        {
+            _empleados = await ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=false") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<EmpleadoDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.Cargos, _cargos },
+            { x => x.Empleados, _empleados }
+        };
+
+        var dialogo = await DialogService.ShowAsync<EmpleadoDialog>("Nuevo Empleado", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var dialogoResultado = (EmpleadoDialogResultado)resultado.Data!;
+            var request = (CrearEmpleadoRequest)dialogoResultado.Datos;
+            var creado = await ApiClient.PostAsync<CrearEmpleadoRequest, CrearEmpleadoResponse>("api/rrhh/empleados", request);
+
+            if (dialogoResultado.FotoBase64 is not null && creado is not null)
+            {
+                await ApiClient.PutAsync<ActualizarFotoEmpleadoRequest, object?>(
+                    $"api/rrhh/empleados/{creado.EmpleadoId}/foto",
+                    new ActualizarFotoEmpleadoRequest(dialogoResultado.FotoBase64, dialogoResultado.FotoContentType!));
+                _cacheBust = DateTime.UtcNow.Ticks;
+            }
+
+            await CargarEmpleadosAsync();
+            var empleadoCreado = _empleados.FirstOrDefault(e => e.EmpleadoID == creado?.EmpleadoId);
+            if (empleadoCreado is not null)
+            {
+                Snackbar.Add($"Empleado creado. ¿Crear usuario en el sistema?", Severity.Success,
+                    cfg => { cfg.Action = "Crear usuario"; cfg.ActionColor = Color.Info; cfg.Onclick = _ => AbrirCrearUsuarioAsync(empleadoCreado); });
+            }
+            else
+            {
+                Snackbar.Add("Empleado creado correctamente.", Severity.Success);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirCrearUsuarioAsync(EmpleadoItem empleado)
+    {
+        var parametros = new DialogParameters<UsuarioDialog>
+        {
+            { x => x.Roles, _roles },
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.EmpleadoPrefil, empleado }
+        };
+
+        var dialogo = await DialogService.ShowAsync<UsuarioDialog>(
+            $"Nuevo usuario para {empleado.Nombres} {empleado.Apellidos}", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (CrearUsuarioRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearUsuarioRequest, object?>("api/auth/usuarios", request);
+            Snackbar.Add("Usuario creado y enlazado al empleado.", Severity.Success);
+            await CargarEmpleadosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirEdicionAsync(EmpleadoItem empleado)
+    {
+        var parametros = new DialogParameters<EmpleadoDialog>
+        {
+            { x => x.Empleado, empleado },
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.Cargos, _cargos },
+            { x => x.Empleados, _empleados }
+        };
+
+        var dialogo = await DialogService.ShowAsync<EmpleadoDialog>("Editar Empleado", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var dialogoResultado = (EmpleadoDialogResultado)resultado.Data!;
+            var request = (ActualizarEmpleadoRequest)dialogoResultado.Datos;
+            await ApiClient.PutAsync<ActualizarEmpleadoRequest, object?>(
+                $"api/rrhh/empleados/{empleado.EmpleadoID}", request);
+
+            if (dialogoResultado.FotoBase64 is not null)
+            {
+                await ApiClient.PutAsync<ActualizarFotoEmpleadoRequest, object?>(
+                    $"api/rrhh/empleados/{empleado.EmpleadoID}/foto",
+                    new ActualizarFotoEmpleadoRequest(dialogoResultado.FotoBase64, dialogoResultado.FotoContentType!));
+                _cacheBust = DateTime.UtcNow.Ticks;
+            }
+
+            Snackbar.Add("Empleado actualizado correctamente.", Severity.Success);
+            await CargarEmpleadosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DescargarCarnetAsync(int empleadoId)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/rrhh/empleados/{empleadoId}/carnet");
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", $"carnet-{empleadoId:D5}.pdf", "application/pdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al generar carnet: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ExportarExcelAsync()
+    {
+        _exportando = true;
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync("api/rrhh/empleados/exportar/excel");
+            await JS.InvokeVoidAsync("nexoDescargarArchivo",
+                $"empleados-{NexoWeb.Common.ColombiaClock.Now:yyyyMMdd}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar: {ex.Message}", Severity.Error);
+        }
+        finally { _exportando = false; }
+    }
+
+    private async Task AbrirGestionAsync(EmpleadoItem empleado)
+    {
+        var parametros = new DialogParameters<GestionEmpleadoDialog> { { x => x.Empleado, empleado } };
+        // OJO: ShowAsync resuelve apenas el dialogo se ABRE, no cuando se
+        // CIERRA -- hay que esperar su .Result para refrescar con los cambios reales.
+        var dialogo = await DialogService.ShowAsync<GestionEmpleadoDialog>("Gestionar Empleado", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        await dialogo.Result;
+        await CargarEmpleadosAsync();
+    }
+}

@@ -1,0 +1,163 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3" Style="opacity:.7">
+            Completa los datos necesarios antes de crear el cliente.
+        </MudText>
+        <MudGrid Spacing="2">
+            @if (string.IsNullOrWhiteSpace(Lead.NIT))
+            {
+                <MudItem xs="12" sm="8">
+                    <MudTextField T="string?" Value="_nit" ValueChanged="OnNitCambiado"
+                                  Label="NIT / Número de Documento"
+                                  Variant="Variant.Outlined" FullWidth="true" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <div style="display:flex;align-items:center;height:56px;padding:0 12px;border:1px solid var(--mud-palette-lines-inputs);border-radius:4px;font-size:.85rem;color:var(--mud-palette-text-secondary)">
+                        DV: <strong style="margin-left:4px">@(_dv.HasValue ? _dv.ToString() : "—")</strong>
+                    </div>
+                </MudItem>
+            }
+            @if (string.IsNullOrWhiteSpace(Lead.Telefono))
+            {
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_telefono" Label="Teléfono"
+                                  Variant="Variant.Outlined" FullWidth="true" />
+                </MudItem>
+            }
+            @if (string.IsNullOrWhiteSpace(Lead.Departamento))
+            {
+                <MudItem xs="12" sm="6">
+                    <MudAutocomplete T="DeptItem?" Label="Departamento"
+                                     Value="_deptSeleccionado" ValueChanged="OnDeptChanged"
+                                     SearchFunc="BuscarDept"
+                                     ToStringFunc="@(d => d?.Nombre ?? "")"
+                                     Variant="Variant.Outlined" FullWidth="true"
+                                     Clearable="true" ResetValueOnEmptyText="true"
+                                     MinCharacters="0" MaxItems="10"
+                                     Placeholder="Buscar departamento..." />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudAutocomplete T="MunicipioItem?" Label="Ciudad"
+                                     @bind-Value="_muniSeleccionado"
+                                     SearchFunc="BuscarMunicipio"
+                                     ToStringFunc="@(m => m?.NombreMuni ?? "")"
+                                     Disabled="@(_deptSeleccionado == null)"
+                                     Variant="Variant.Outlined" FullWidth="true"
+                                     Clearable="true" ResetValueOnEmptyText="true"
+                                     MinCharacters="0" MaxItems="10"
+                                     Placeholder="@(_deptSeleccionado == null ? "Seleccione departamento primero" : "Buscar ciudad...")" />
+                </MudItem>
+            }
+            @if (!string.IsNullOrWhiteSpace(Lead.NIT) && !string.IsNullOrWhiteSpace(Lead.Telefono) && !string.IsNullOrWhiteSpace(Lead.Departamento))
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Success" Dense="true">Todos los datos necesarios están completos.</MudAlert>
+                </MudItem>
+            }
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Success" Variant="Variant.Filled" OnClick="Confirmar">
+            Convertir a Cliente
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public LeadItem Lead { get; set; } = default!;
+
+    private string? _nit;
+    private int? _dv;
+    private string? _telefono;
+    private DeptItem? _deptSeleccionado;
+    private MunicipioItem? _muniSeleccionado;
+    private List<MunicipioItem> _todosMunicipios = new();
+    private List<DeptItem> _departamentos = new();
+    private List<MunicipioItem> _municipiosFiltrados = new();
+
+    private record DeptItem(string Codigo, string? Nombre);
+
+    public record ConvertirDatos(string? NIT, int? DigitoVerificacion, string? Telefono,
+        string? Departamento, string? Ciudad, string? CodigoDept, string? CodigoMuni);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _nit = Lead.NIT;
+        _dv = Lead.DigitoVerificacion ?? CalcularDV(Lead.NIT);
+        _telefono = Lead.Telefono;
+        try
+        {
+            _todosMunicipios = await ApiClient.GetAsync<List<MunicipioItem>>("api/crm/municipios") ?? new();
+            _departamentos = _todosMunicipios
+                .GroupBy(m => m.CodigoDept)
+                .Select(g => new DeptItem(g.Key, g.First().NombreDept))
+                .OrderBy(d => d.Nombre)
+                .ToList();
+            if (Lead.CodigoDept != null)
+            {
+                _deptSeleccionado = _departamentos.FirstOrDefault(d => d.Codigo == Lead.CodigoDept);
+                _municipiosFiltrados = _todosMunicipios.Where(m => m.CodigoDept == Lead.CodigoDept).ToList();
+                if (Lead.CodigoMuni != null)
+                    _muniSeleccionado = _municipiosFiltrados.FirstOrDefault(m => m.CodigoMuni == Lead.CodigoMuni);
+            }
+        }
+        catch { }
+    }
+
+    private void OnNitCambiado(string? valor)
+    {
+        _nit = valor;
+        _dv = CalcularDV(valor);
+    }
+
+    private void OnDeptChanged(DeptItem? dept)
+    {
+        _deptSeleccionado = dept;
+        _muniSeleccionado = null;
+        _municipiosFiltrados = dept is null
+            ? new()
+            : _todosMunicipios.Where(m => m.CodigoDept == dept.Codigo).ToList();
+    }
+
+    private Task<IEnumerable<DeptItem?>> BuscarDept(string? texto, CancellationToken ct)
+    {
+        var r = string.IsNullOrWhiteSpace(texto)
+            ? _departamentos.Cast<DeptItem?>()
+            : _departamentos.Where(d => d.Nombre != null && d.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase)).Cast<DeptItem?>();
+        return Task.FromResult(r);
+    }
+
+    private Task<IEnumerable<MunicipioItem?>> BuscarMunicipio(string? texto, CancellationToken ct)
+    {
+        var r = string.IsNullOrWhiteSpace(texto)
+            ? _municipiosFiltrados.Cast<MunicipioItem?>()
+            : _municipiosFiltrados.Where(m => m.NombreMuni != null && m.NombreMuni.Contains(texto, StringComparison.OrdinalIgnoreCase)).Cast<MunicipioItem?>();
+        return Task.FromResult(r);
+    }
+
+    private void Confirmar() =>
+        MudDialog.Close(DialogResult.Ok(new ConvertirDatos(
+            _nit?.Trim(), _dv, _telefono?.Trim(),
+            _deptSeleccionado?.Nombre, _muniSeleccionado?.NombreMuni,
+            _deptSeleccionado?.Codigo, _muniSeleccionado?.CodigoMuni)));
+
+    private void Cancelar() => MudDialog.Cancel();
+
+    private static int? CalcularDV(string? nit)
+    {
+        if (string.IsNullOrWhiteSpace(nit)) return null;
+        var digits = nit.Trim();
+        if (!digits.All(char.IsDigit) || digits.Length == 0) return null;
+        int[] primos = { 0, 3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71 };
+        if (digits.Length >= primos.Length) return null;
+        int total = 0, n = digits.Length;
+        for (int i = 0; i < n; i++) total += (digits[i] - '0') * primos[n - i];
+        int res = total % 11;
+        return res > 1 ? 11 - res : res;
+    }
+}

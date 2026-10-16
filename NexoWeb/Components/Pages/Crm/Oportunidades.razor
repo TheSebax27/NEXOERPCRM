@@ -1,0 +1,312 @@
+﻿@page "/crm/oportunidades"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Oportunidades - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Oportunidades</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Embudo de ventas: cada oportunidad viene de un Lead o de un Cliente existente, con valor estimado y probabilidad de cierre. Muévela entre etapas con las flechas, o márcala Ganada/Perdida directamente." />
+
+<MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+           StartIcon="@Icons.Material.Filled.Add" Class="mb-4">
+    Nueva Oportunidad
+</MudButton>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar las oportunidades: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (Preferencias.VistaListado == "lista")
+{
+    <MudTable Items="_oportunidades" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Cliente/Lead</MudTh>
+            <MudTh Style="text-align:right">Valor</MudTh>
+            <MudTh>Etapa</MudTh>
+            <MudTh>Responsable</MudTh>
+            <MudTh>Cierre</MudTh>
+            <MudTh>Acción</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+            <MudTd DataLabel="Cliente/Lead">@(context.Cliente ?? context.Lead ?? "-")</MudTd>
+            <MudTd DataLabel="Valor" Style="text-align:right">@context.ValorEstimado.ToString("C0")</MudTd>
+            <MudTd DataLabel="Etapa">
+                <MudChip T="string" Size="Size.Small" Color="@(context.Etapa is "GANADA" ? Color.Success : context.Etapa is "PERDIDA" ? Color.Error : Color.Primary)">@context.Etapa</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Responsable">@(context.Responsable ?? "-")</MudTd>
+            <MudTd DataLabel="Cierre">@(context.FechaCierreEsperada?.ToString("dd/MM/yyyy") ?? "-")</MudTd>
+            <MudTd DataLabel="Acción">
+                <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">Editar</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else
+{
+    <div class="nexo-embudo mb-6">
+        @foreach (var columna in _columnas)
+        {
+            var esDestino = _sobreColumna == columna.Etapa;
+            <div class="nexo-embudo__columna @(esDestino ? "nexo-embudo__columna--drop" : "")"
+                 @ondragover:preventDefault="true"
+                 @ondragenter="@(() => _sobreColumna = columna.Etapa)"
+                 @ondragleave="@(() => { if (_sobreColumna == columna.Etapa) _sobreColumna = null; })"
+                 @ondrop="@(async () => await SoltarAsync(columna.Etapa))">
+                <div class="nexo-embudo__columna-titulo">
+                    @columna.Titulo
+                    <span class="nexo-embudo__contador">@OportunidadesActivas.Count(o => o.Etapa == columna.Etapa)</span>
+                </div>
+                <div class="nexo-embudo__columna-valor">
+                    @OportunidadesActivas.Where(o => o.Etapa == columna.Etapa).Sum(o => o.ValorEstimado).ToString("C0")
+                </div>
+                @foreach (var op in OportunidadesActivas.Where(o => o.Etapa == columna.Etapa))
+                {
+                    var arrastrandoEsta = _draggingId == op.OportunidadID;
+                    <div class="nexo-embudo__tarjeta @(arrastrandoEsta ? "nexo-embudo__tarjeta--arrastrando" : "")"
+                         draggable="true"
+                         @ondragstart="@(() => { _draggingId = op.OportunidadID; _sobreColumna = null; })"
+                         @ondragend="@(() => { _draggingId = null; _sobreColumna = null; })">
+                        <div class="nexo-embudo__tarjeta-titulo" @onclick="@(() => AbrirEdicionAsync(op))" style="cursor:pointer;">@op.Nombre</div>
+                        <div class="nexo-embudo__tarjeta-meta">@(op.Cliente ?? op.Lead ?? "-")</div>
+                        <div class="nexo-embudo__tarjeta-meta" style="display:flex;align-items:center;gap:6px">
+                            @op.ValorEstimado.ToString("C0")
+                            <span style="@EstiloConfianza(op.ConfianzaCierre);font-size:0.7rem;padding:1px 6px;border-radius:4px;font-weight:600">
+                                @EtiquetaConfianza(op.ConfianzaCierre)
+                            </span>
+                        </div>
+                        @if (op.FechaCierreEsperada.HasValue)
+                        {
+                            var dias = (op.FechaCierreEsperada.Value.Date - NexoWeb.Common.ColombiaClock.Today).Days;
+                            var colorCierre = dias < 0 ? "var(--mud-palette-error)" : dias <= 7 ? "var(--mud-palette-warning)" : "var(--n-text-3)";
+                            <div class="nexo-embudo__tarjeta-meta" style="color:@colorCierre;">
+                                @(dias < 0 ? "⚠ Venció " : "📅 ") @op.FechaCierreEsperada.Value.ToString("dd/MM/yyyy")
+                            </div>
+                        }
+                        @if (op.Responsable is not null)
+                        {
+                            <div class="nexo-embudo__tarjeta-meta">👤 @op.Responsable</div>
+                        }
+                        <div class="nexo-embudo__tarjeta-acciones">
+                            @if (columna.Etapa != "PROSPECCION")
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small" OnClick="@(() => MoverEtapaAsync(op, ColumnaAnterior(columna.Etapa)))" />
+                            }
+                            @if (columna.Etapa != "NEGOCIACION")
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" OnClick="@(() => MoverEtapaAsync(op, ColumnaSiguiente(columna.Etapa)))" />
+                            }
+                            <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success" Title="Marcar Ganada" OnClick="@(() => MoverEtapaAsync(op, "GANADA"))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Cancel" Size="Size.Small" Color="Color.Error" Title="Marcar Perdida" OnClick="@(() => MoverEtapaAsync(op, "PERDIDA"))" />
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Cerradas (Ganadas / Perdidas)</MudText>
+    @if (OportunidadesCerradas.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin oportunidades cerradas todavía.</MudText>
+    }
+    else
+    {
+        <MudTable Items="OportunidadesCerradas" Dense="true" Hover="true" Striped="true">
+            <HeaderContent>
+                <MudTh>Oportunidad</MudTh>
+                <MudTh>Cliente/Lead</MudTh>
+                <MudTh Style="text-align:right">Valor</MudTh>
+                <MudTh>Resultado</MudTh>
+                <MudTh>Fecha de Cierre</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Oportunidad">@context.Nombre</MudTd>
+                <MudTd DataLabel="Cliente/Lead">@(context.Cliente ?? context.Lead ?? "-")</MudTd>
+                <MudTd DataLabel="Valor" Style="text-align:right">@context.ValorEstimado.ToString("C0")</MudTd>
+                <MudTd DataLabel="Resultado">
+                    <MudChip T="string" Size="Size.Small" Color="@(context.Etapa == "GANADA" ? Color.Success : Color.Error)">
+                        @(context.Etapa == "GANADA" ? "Ganada" : "Perdida")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Fecha de Cierre">@(context.FechaCierre?.ToLocalTime().ToString("dd/MM/yyyy") ?? "-")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+}
+
+@code {
+    private record ColumnaEmbudo(string Etapa, string Titulo);
+    private readonly List<ColumnaEmbudo> _columnas = new()
+    {
+        new("PROSPECCION", "Prospección"),
+        new("CALIFICACION", "Calificación"),
+        new("PROPUESTA", "Propuesta"),
+        new("NEGOCIACION", "Negociación")
+    };
+
+    private List<OportunidadItem> _oportunidades = new();
+    private List<LeadItem> _leads = new();
+    private List<EmpleadoItem> _empleados = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    // Drag-and-drop
+    private int? _draggingId;
+    private string? _sobreColumna;
+
+    private IEnumerable<OportunidadItem> OportunidadesActivas => _oportunidades.Where(o => o.Etapa is not "GANADA" and not "PERDIDA");
+    private List<OportunidadItem> OportunidadesCerradas => _oportunidades.Where(o => o.Etapa is "GANADA" or "PERDIDA").OrderByDescending(o => o.FechaCierre).ToList();
+
+    private static string ColumnaAnterior(string etapa) => etapa switch
+    {
+        "CALIFICACION" => "PROSPECCION",
+        "PROPUESTA" => "CALIFICACION",
+        "NEGOCIACION" => "PROPUESTA",
+        _ => etapa
+    };
+
+    private static string ColumnaSiguiente(string etapa) => etapa switch
+    {
+        "PROSPECCION" => "CALIFICACION",
+        "CALIFICACION" => "PROPUESTA",
+        "PROPUESTA" => "NEGOCIACION",
+        _ => etapa
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaOportunidades = ApiClient.GetAsync<List<OportunidadItem>>("api/crm/oportunidades");
+            var tareaLeads = ApiClient.GetAsync<List<LeadItem>>("api/crm/leads");
+            var tareaEmpleados = ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true");
+
+            await Task.WhenAll(tareaOportunidades, tareaLeads, tareaEmpleados);
+
+            _oportunidades = await tareaOportunidades ?? new();
+            _leads = (await tareaLeads ?? new()).Where(l => l.Etapa != "CONVERTIDO").ToList();
+            _empleados = await tareaEmpleados ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _oportunidades = await ApiClient.GetAsync<List<OportunidadItem>>("api/crm/oportunidades") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<OportunidadDialog>
+        {
+            { x => x.Leads, _leads },
+            { x => x.Empleados, _empleados }
+        };
+
+        var dialogo = await DialogService.ShowAsync<OportunidadDialog>("Nueva Oportunidad", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+
+        try
+        {
+            var request = (CrearOportunidadRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearOportunidadRequest, object?>("api/crm/oportunidades", request);
+            Snackbar.Add("Oportunidad creada correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirEdicionAsync(OportunidadItem oportunidad)
+    {
+        var parametros = new DialogParameters<OportunidadDialog>
+        {
+            { x => x.Oportunidad, oportunidad },
+            { x => x.Empleados, _empleados }
+        };
+
+        var dialogo = await DialogService.ShowAsync<OportunidadDialog>("Editar Oportunidad", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+
+        try
+        {
+            var request = (ActualizarOportunidadRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarOportunidadRequest, object?>($"api/crm/oportunidades/{oportunidad.OportunidadID}", request);
+            Snackbar.Add("Oportunidad actualizada correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task SoltarAsync(string etapaDestino)
+    {
+        _sobreColumna = null;
+        if (_draggingId is null) return;
+        var op = _oportunidades.FirstOrDefault(o => o.OportunidadID == _draggingId);
+        _draggingId = null;
+        if (op is null || op.Etapa == etapaDestino) return;
+        await MoverEtapaAsync(op, etapaDestino);
+    }
+
+    private async Task MoverEtapaAsync(OportunidadItem op, string nuevaEtapa)
+    {
+        try
+        {
+            var request = new ActualizarOportunidadRequest(op.Nombre, op.ValorEstimado, op.ConfianzaCierre, nuevaEtapa, op.FechaCierreEsperada, op.ResponsableID, op.Notas);
+            await ApiClient.PutAsync<ActualizarOportunidadRequest, object?>($"api/crm/oportunidades/{op.OportunidadID}", request);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private static string EtiquetaConfianza(string c) => c switch
+    {
+        "OPTIMISTA" => "↑ Optimista",
+        "BAJA"      => "↓ Baja",
+        _           => "→ Neutro"
+    };
+
+    private static string EstiloConfianza(string c) => c switch
+    {
+        "OPTIMISTA" => "background:#e8f5e9;color:#2e7d32",
+        "BAJA"      => "background:#ffebee;color:#c62828",
+        _           => "background:#fff8e1;color:#f57f17"
+    };
+}

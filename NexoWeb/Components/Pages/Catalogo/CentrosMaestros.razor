@@ -1,0 +1,354 @@
+@page "/catalogo/centros"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Centros - NEXO</PageTitle>
+
+<div class="nexo-page-hero mb-5">
+    <div class="nexo-page-hero__icon">
+        <MudIcon Icon="@Icons.Material.Filled.Business" Style="font-size:1.6rem;" />
+    </div>
+    <div>
+        <div class="nexo-page-hero__title">Centros</div>
+        <div class="nexo-page-hero__sub">Centros de Costo, Centros de Trabajo y Bodegas.</div>
+    </div>
+</div>
+<InfoAyuda Texto="Define centros de costo, centros de trabajo y bodegas usados para clasificar operaciones e inventarios en el sistema." />
+
+<MudTabs Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" Class="nexo-bi-tabs">
+
+    @* ── Centros de Costo ──────────────────────────────────────────────── *@
+    <MudTabPanel Text="Centros de Costo" Icon="@Icons.Material.Filled.BusinessCenter">
+        <div class="d-flex align-center justify-space-between mb-3">
+            <MudText Typo="Typo.subtitle1">Centros de Costo</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrearCCAsync" Size="Size.Small">Nuevo Centro de Costo</MudButton>
+        </div>
+
+        @if (_cargandoCC)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_centrosCosto.Count == 0)
+        {
+            <MudText Style="color: var(--n-text-3);">No hay centros de costo registrados.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_centrosCosto" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Codigo</MudTh>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Codigo">@context.Codigo</MudTd>
+                    <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+                    <MudTd DataLabel="Tipo">@context.TipoCentro</MudTd>
+                    <MudTd DataLabel="Estado">
+                        <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                            @(context.Estado ? "Activo" : "Inactivo")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEditarCCAsync(context))">Editar</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    @* ── Centros de Trabajo ────────────────────────────────────────────── *@
+    <MudTabPanel Text="Centros de Trabajo" Icon="@Icons.Material.Filled.Work">
+        <div class="d-flex align-center justify-space-between mb-3">
+            <MudText Typo="Typo.subtitle1">Centros de Trabajo</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrearCTAsync" Disabled="_centrosCosto.Count == 0" Size="Size.Small">
+                Nuevo Centro de Trabajo
+            </MudButton>
+        </div>
+        @if (_centrosCosto.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-3">Primero crea al menos un Centro de Costo.</MudAlert>
+        }
+
+        @if (_cargandoCT)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_centrosTrabajo.Count == 0)
+        {
+            <MudText Style="color: var(--n-text-3);">No hay centros de trabajo registrados.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_centrosTrabajo" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>Centro de Costo</MudTh>
+                    <MudTh>Costo Hora M.O.</MudTh>
+                    <MudTh>Costo Hora CIF</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+                    <MudTd DataLabel="Centro de Costo">@context.CentroCosto</MudTd>
+                    <MudTd DataLabel="Costo Hora M.O.">@context.CostoHoraManoObra.ToString("C2")</MudTd>
+                    <MudTd DataLabel="Costo Hora CIF">@context.CostoHoraCIF.ToString("C2")</MudTd>
+                    <MudTd DataLabel="Estado">
+                        <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                            @(context.Estado ? "Activo" : "Inactivo")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEditarCTAsync(context))">Editar</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    @* ── Bodegas ───────────────────────────────────────────────────────── *@
+    <MudTabPanel Text="Bodegas" Icon="@Icons.Material.Filled.Warehouse">
+        <div class="d-flex align-center justify-space-between mb-3">
+            <div class="d-flex align-center gap-3">
+                <MudText Typo="Typo.subtitle1">Bodegas</MudText>
+                <AppSelect TValue="int?" Value="_filtroCCBodegas" ValueChanged="OnFiltroBodegasCambiadoAsync"
+                           Label="Filtrar por CC" Placeholder="Todos" Style="min-width:180px;"
+                           Items="@(_centrosCosto.Select(cc => new AppSelectItem<int?>(cc.Nombre, (int?)cc.CentroCostoID)))" />
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AbrirCrearBodegaAsync" Disabled="_centrosCosto.Count == 0" Size="Size.Small">
+                Nueva Bodega
+            </MudButton>
+        </div>
+        @if (_centrosCosto.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-3">Primero crea al menos un Centro de Costo.</MudAlert>
+        }
+
+        @if (_cargandoBodegas)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else if (_bodegas.Count == 0)
+        {
+            <MudText Style="color: var(--n-text-3);">No hay bodegas registradas.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_bodegas" Hover="true" Dense="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>Centro de Costo</MudTh>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh>Virtual</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+                    <MudTd DataLabel="Centro de Costo">@context.CentroCosto</MudTd>
+                    <MudTd DataLabel="Tipo">@context.TipoBodega</MudTd>
+                    <MudTd DataLabel="Virtual">@(context.EsVirtual ? "Si" : "No")</MudTd>
+                    <MudTd DataLabel="Estado">
+                        <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                            @(context.Estado ? "Activa" : "Inactiva")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEditarBodegaAsync(context))">Editar</MudButton>
+                        @if (context.Estado)
+                        {
+                            <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => DesactivarBodegaAsync(context))">Desactivar</MudButton>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+
+</MudTabs>
+
+@code {
+    // ── Centros de Costo ──────────────────────────────────────────────────
+    private List<CentroCostoItem> _centrosCosto = new();
+    private bool _cargandoCC = true;
+
+    // ── Centros de Trabajo ────────────────────────────────────────────────
+    private List<CentroTrabajoItem> _centrosTrabajo = new();
+    private bool _cargandoCT = true;
+
+    // ── Bodegas ───────────────────────────────────────────────────────────
+    private List<BodegaItem> _bodegas = new();
+    private bool _cargandoBodegas = true;
+    private int? _filtroCCBodegas;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(CargarCCAsync(), CargarCTAsync(), CargarBodegasAsync());
+    }
+
+    // ── Carga ─────────────────────────────────────────────────────────────
+
+    private async Task CargarCCAsync()
+    {
+        _cargandoCC = true;
+        _centrosCosto = await ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=false") ?? new();
+        _cargandoCC = false;
+    }
+
+    private async Task CargarCTAsync()
+    {
+        _cargandoCT = true;
+        _centrosTrabajo = await ApiClient.GetAsync<List<CentroTrabajoItem>>("api/catalogo/centros-trabajo?soloActivos=false") ?? new();
+        _cargandoCT = false;
+    }
+
+    private async Task CargarBodegasAsync()
+    {
+        _cargandoBodegas = true;
+        var ruta = _filtroCCBodegas.HasValue
+            ? $"api/catalogo/bodegas?centroCostoId={_filtroCCBodegas}"
+            : "api/catalogo/bodegas";
+        _bodegas = await ApiClient.GetAsync<List<BodegaItem>>(ruta) ?? new();
+        _cargandoBodegas = false;
+    }
+
+    private async Task OnFiltroBodegasCambiadoAsync(int? valor)
+    {
+        _filtroCCBodegas = valor;
+        await CargarBodegasAsync();
+    }
+
+    // ── Centros de Costo CRUD ─────────────────────────────────────────────
+
+    private async Task AbrirCrearCCAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<CentroCostoDialog>("Nuevo Centro de Costo");
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearCentroCostoRequest, object?>(
+                "api/catalogo/centros-costo", (CrearCentroCostoRequest)resultado.Data!);
+            Snackbar.Add("Centro de costo creado.", Severity.Success);
+            await CargarCCAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEditarCCAsync(CentroCostoItem cc)
+    {
+        var dialogo = await DialogService.ShowAsync<CentroCostoDialog>("Editar Centro de Costo",
+            new DialogParameters<CentroCostoDialog> { { x => x.CentroCosto, cc } });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarCentroCostoRequest, object?>(
+                $"api/catalogo/centros-costo/{cc.CentroCostoID}", (ActualizarCentroCostoRequest)resultado.Data!);
+            Snackbar.Add("Centro de costo actualizado.", Severity.Success);
+            await CargarCCAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ── Centros de Trabajo CRUD ───────────────────────────────────────────
+
+    private async Task AbrirCrearCTAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<CentroTrabajoDialog>("Nuevo Centro de Trabajo",
+            new DialogParameters<CentroTrabajoDialog> { { x => x.CentrosCosto, _centrosCosto } });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearCentroTrabajoRequest, object?>(
+                "api/catalogo/centros-trabajo", (CrearCentroTrabajoRequest)resultado.Data!);
+            Snackbar.Add("Centro de trabajo creado.", Severity.Success);
+            await CargarCTAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEditarCTAsync(CentroTrabajoItem ct)
+    {
+        var dialogo = await DialogService.ShowAsync<CentroTrabajoDialog>("Editar Centro de Trabajo",
+            new DialogParameters<CentroTrabajoDialog>
+            {
+                { x => x.CentrosCosto, _centrosCosto },
+                { x => x.CentroTrabajo, ct }
+            });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarCentroTrabajoRequest, object?>(
+                $"api/catalogo/centros-trabajo/{ct.CentroTrabajoID}", (ActualizarCentroTrabajoRequest)resultado.Data!);
+            Snackbar.Add("Centro de trabajo actualizado.", Severity.Success);
+            await CargarCTAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ── Bodegas CRUD ──────────────────────────────────────────────────────
+
+    private async Task AbrirCrearBodegaAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<BodegaDialog>("Nueva Bodega",
+            new DialogParameters<BodegaDialog> { { x => x.CentrosCosto, _centrosCosto } });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearBodegaRequest, object?>(
+                "api/catalogo/bodegas", (CrearBodegaRequest)resultado.Data!);
+            Snackbar.Add("Bodega creada.", Severity.Success);
+            await CargarBodegasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEditarBodegaAsync(BodegaItem bodega)
+    {
+        var dialogo = await DialogService.ShowAsync<BodegaDialog>("Editar Bodega",
+            new DialogParameters<BodegaDialog>
+            {
+                { x => x.CentrosCosto, _centrosCosto },
+                { x => x.Bodega, bodega }
+            });
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarBodegaRequest, object?>(
+                $"api/catalogo/bodegas/{bodega.BodegaID}", (ActualizarBodegaRequest)resultado.Data!);
+            Snackbar.Add("Bodega actualizada.", Severity.Success);
+            await CargarBodegasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DesactivarBodegaAsync(BodegaItem bodega)
+    {
+        var ok = await DialogService.ShowMessageBox("Confirmar",
+            $"¿Desactivar la bodega '{bodega.Nombre}'? No podrá usarse en nuevos movimientos.",
+            yesText: "Desactivar", cancelText: "Cancelar");
+        if (ok != true) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/catalogo/bodegas/{bodega.BodegaID}");
+            Snackbar.Add("Bodega desactivada.", Severity.Success);
+            await CargarBodegasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

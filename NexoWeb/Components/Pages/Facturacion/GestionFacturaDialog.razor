@@ -1,0 +1,549 @@
+﻿@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.Helpers
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.ConfiguracionEmpresaState ConfiguracionEmpresa
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:10px">
+            <MudIcon Icon="@Icons.Material.Outlined.Receipt" Style="color:var(--mud-palette-primary)" />
+            <div>
+                <div style="font-weight:700; font-size:1.05rem">
+                    @_facturaActual.TipDoc
+                    @if (_facturaActual.NroDoc is not null) { <text> — @_facturaActual.NroDoc</text> }
+                </div>
+                <div style="font-size:0.75rem; opacity:.65">
+                    @_facturaActual.Cliente @(_facturaActual.NitCliente is not null ? $"· NIT {_facturaActual.NitCliente}" : "")
+                    · @_facturaActual.Fecha.ToString("dd/MM/yyyy")
+                </div>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-wrap mb-3" style="gap: 0.4rem;">
+            <MudChip T="string" Size="Size.Small" Color="@ColorEstado(_facturaActual.Estado)">@EtiquetaEstado(_facturaActual.Estado)</MudChip>
+            <MudChip T="string" Size="Size.Small">Total: @_facturaActual.Total.ToString("C0")</MudChip>
+            <MudChip T="string" Size="Size.Small" Color="Color.Success">Pagado: @_facturaActual.TotalPagado.ToString("C0")</MudChip>
+            @if (_facturaActual.SaldoPendiente > 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Error">Saldo: @_facturaActual.SaldoPendiente.ToString("C0")</MudChip>
+            }
+            @if (_facturaActual.StockDescontado)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Icon="@Icons.Material.Filled.Inventory2">Stock descontado</MudChip>
+            }
+            @if (ConfiguracionEmpresa.UsaVisions)
+            {
+                @if (_facturaActual.VisionsConfirmado)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.VerifiedUser">Visions confirmado</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Icon="@Icons.Material.Filled.HourglassTop">Pendiente Visions</MudChip>
+                }
+            }
+        </div>
+
+        <MudTabs Class="nexo-bi-tabs">
+            <MudTabPanel Text="Artículos">
+                @if (_lineas.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin artículos.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_lineas" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Articulo</MudTh>
+                            <MudTh Style="text-align:right">Cantidad</MudTh>
+                            <MudTh Style="text-align:right">Precio Unit.</MudTh>
+                            <MudTh Style="text-align:right">Subtotal</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Articulo">
+                                @if (context.EsCombo)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Icon="@Icons.Material.Filled.LocalOffer" Class="mr-1">COMBO</MudChip>
+                                    @context.NombreArticulo
+                                }
+                                else
+                                {
+                                    @($"{context.SkuArticulo} - {context.NombreArticulo}")
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Cantidad" Style="text-align:right">
+                                @if (!context.EsCombo && context.EsUnidadCaja)
+                                {
+                                    @StockHelper.FormatearCajaUnidades(context.Cantidad, context.UnidadesPorEmbalaje!.Value)
+                                }
+                                else
+                                {
+                                    @($"{context.Cantidad:0.##}{(string.IsNullOrWhiteSpace(context.Unidad) || context.Unidad.All(char.IsDigit) ? "" : " " + context.Unidad)}")
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Precio Unit." Style="text-align:right">@context.PrecioUnitario.ToString("C0")</MudTd>
+                            <MudTd DataLabel="Subtotal" Style="text-align:right">@context.Subtotal.ToString("C0")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+
+                    <div class="mt-4">
+                        @if (_facturaActual.StockDescontado)
+                        {
+                            <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.CheckCircle" Dense="true">
+                                El inventario de esta factura ya fue descontado del stock.
+                            </MudAlert>
+                        }
+                        else if (_mostrandoStock)
+                        {
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Disponibilidad de stock</MudText>
+                            @if (_cargandoStock)
+                            {
+                                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                            }
+                            else if (_lineasStock.Count == 0)
+                            {
+                                <MudAlert Severity="Severity.Warning" Dense="true">No se encontraron líneas para verificar.</MudAlert>
+                            }
+                            else
+                            {
+                                <MudTable Items="_lineasStock" Dense="true" Elevation="0" Class="mb-3">
+                                    <HeaderContent>
+                                        <MudTh>Artículo</MudTh>
+                                        <MudTh Style="text-align:right">Facturado</MudTh>
+                                        <MudTh Style="text-align:right">Disponible</MudTh>
+                                        <MudTh>Estado</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="Artículo">@context.SkuArticulo - @context.NombreArticulo</MudTd>
+                                        <MudTd DataLabel="Facturado" Style="text-align:right">@context.CantidadFacturada.ToString("0.##")</MudTd>
+                                        <MudTd DataLabel="Disponible" Style="text-align:right">
+                                            <span style="color: @(context.EsInsuficiente ? "var(--mud-palette-error)" : "var(--mud-palette-success)");">
+                                                @context.StockDisponible.ToString("0.##")
+                                            </span>
+                                        </MudTd>
+                                        <MudTd DataLabel="Estado">
+                                            @if (context.EsInsuficiente)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Filled.Warning">Sin stock</MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">OK</MudChip>
+                                            }
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+
+                                @if (_hayInsuficientes)
+                                {
+                                    <MudAlert Severity="Severity.Error" Class="mb-2">
+                                        No hay stock suficiente para uno o más artículos. No es posible realizar la venta hasta reponer el inventario.
+                                    </MudAlert>
+                                    <MudButton Variant="Variant.Outlined" OnClick="OcultarStock">Cancelar</MudButton>
+                                }
+                                else
+                                {
+                                    <div class="d-flex align-center" style="gap: 0.5rem;">
+                                        <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                                                   OnClick="ConfirmarDescuentoAsync" Disabled="_descontando"
+                                                   StartIcon="@Icons.Material.Filled.Inventory2">
+                                            @(_descontando ? "Descontando..." : "Confirmar descuento de stock")
+                                        </MudButton>
+                                        <MudButton Variant="Variant.Outlined" OnClick="OcultarStock" Disabled="_descontando">Cancelar</MudButton>
+                                    </div>
+                                }
+                            }
+                        }
+                        else if (_mostrandoProduccion)
+                        {
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Verificación de ingredientes</MudText>
+                            @if (_cargandoProduccion)
+                            {
+                                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                            }
+                            else if (_lineasProduccion.Count == 0)
+                            {
+                                <MudAlert Severity="Severity.Info" Dense="true">
+                                    Ningún artículo de esta factura tiene receta de producción configurada.
+                                </MudAlert>
+                                <MudButton Variant="Variant.Outlined" Class="mt-2" OnClick="OcultarProduccion">Cerrar</MudButton>
+                            }
+                            else
+                            {
+                                @foreach (var pt in _lineasProduccion)
+                                {
+                                    <MudPaper Outlined="true" Class="pa-3 mb-3">
+                                        <div class="d-flex align-center mb-1" style="gap:0.5rem">
+                                            <MudText Typo="Typo.subtitle2">@pt.SKU — @pt.Nombre</MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">(@pt.CantidadFacturada und)</MudText>
+                                            @if (!pt.TieneReceta)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Default">Sin receta</MudChip>
+                                            }
+                                            else if (pt.TieneInsuficientes)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Filled.Warning">Faltan insumos</MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">Stock OK</MudChip>
+                                            }
+                                        </div>
+                                        @if (pt.TieneReceta)
+                                        {
+                                            <MudTable Items="pt.Insumos" Dense="true" Elevation="0">
+                                                <HeaderContent>
+                                                    <MudTh>Insumo</MudTh>
+                                                    <MudTh Style="text-align:right">Necesario</MudTh>
+                                                    <MudTh Style="text-align:right">Disponible</MudTh>
+                                                </HeaderContent>
+                                                <RowTemplate>
+                                                    <MudTd DataLabel="Insumo">@context.Nombre</MudTd>
+                                                    <MudTd DataLabel="Necesario" Style="text-align:right">@($"{context.CantidadRequerida:0.##}{(string.IsNullOrWhiteSpace(context.Unidad) || context.Unidad.All(char.IsDigit) ? "" : " " + context.Unidad)}")</MudTd>
+                                                    <MudTd DataLabel="Disponible" Style="text-align:right">
+                                                        <span style="color: @(context.EsInsuficiente ? "var(--mud-palette-error)" : "var(--mud-palette-success)");">
+                                                            @($"{context.StockDisponible:0.##}{(string.IsNullOrWhiteSpace(context.Unidad) || context.Unidad.All(char.IsDigit) ? "" : " " + context.Unidad)}")
+                                                        </span>
+                                                    </MudTd>
+                                                </RowTemplate>
+                                            </MudTable>
+                                        }
+                                    </MudPaper>
+                                }
+
+                                @if (_lineasProduccion.Any(p => p.TieneInsuficientes))
+                                {
+                                    <MudAlert Severity="Severity.Warning" Class="mb-2" Dense="true">
+                                        Hay insumos insuficientes. Se crearán órdenes igualmente pero pueden fallar al iniciar o cerrar.
+                                    </MudAlert>
+                                }
+
+                                @if (_resultadosAutoProduccion.Count > 0)
+                                {
+                                    <MudAlert Severity="@(_resultadosAutoProduccion.All(r => r.Exitoso) ? Severity.Success : Severity.Warning)" Class="mb-2" Dense="true">
+                                        @_resultadosAutoProduccion.Count(r => r.Exitoso) de @_resultadosAutoProduccion.Count producidos correctamente.
+                                    </MudAlert>
+                                    @foreach (var r in _resultadosAutoProduccion.Where(r => !r.Exitoso))
+                                    {
+                                        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-1">@r.Nombre: @r.Error</MudAlert>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="d-flex align-center" style="gap: 0.5rem; margin-top: 0.5rem;">
+                                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.Factory"
+                                                   Disabled="_ejecutandoProduccion"
+                                                   OnClick="EjecutarAutoProduccionAsync">
+                                            @(_ejecutandoProduccion ? "Produciendo..." : "Ejecutar auto-producción")
+                                        </MudButton>
+                                        <MudButton Variant="Variant.Outlined" OnClick="OcultarProduccion" Disabled="_ejecutandoProduccion">Cancelar</MudButton>
+                                    </div>
+                                }
+                            }
+                        }
+                        else
+                        {
+                            <div class="d-flex flex-wrap" style="gap:0.5rem">
+                                @* Botón Confirmar Visions — solo cuando la empresa usa Visions y el doc aun no esta confirmado *@
+                                @if (ConfiguracionEmpresa.UsaVisions && !_facturaActual.VisionsConfirmado)
+                                {
+                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                                               StartIcon="@Icons.Material.Filled.VerifiedUser"
+                                               Disabled="_confirmandoVisions"
+                                               OnClick="ConfirmarVisionsAsync">
+                                        @(_confirmandoVisions ? "Confirmando..." : "Confirmar desde Visions")
+                                    </MudButton>
+                                }
+                                <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                                           StartIcon="@Icons.Material.Filled.Inventory2"
+                                           OnClick="MostrarStockAsync">
+                                    ¿Descontar del stock?
+                                </MudButton>
+                                @if (!_facturaActual.ProduccionAutoEjecutada)
+                                {
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.Factory"
+                                               OnClick="MostrarProduccionAsync">
+                                        Auto-producir
+                                    </MudButton>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Pagos">
+                @if (CcTieneVisions)
+                {
+                    <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.Store" Class="mb-3">
+                        Los pagos de este documento son administrados por <strong>Visions</strong>.
+                        No es posible registrar pagos desde NEXO.
+                    </MudAlert>
+                }
+                else if (_facturaActual.SaldoPendiente > 0)
+                {
+                    <MudForm @ref="_formPago" Class="mb-3">
+                        <div class="d-flex align-center flex-wrap" style="gap: 0.5rem;">
+                            <MudNumericField T="decimal" @bind-Value="_montoPago" Label="Monto" Style="flex: 1; min-width: 120px;" Min="0.01m" Format="N0" />
+                            <AppSelect TValue="string" @bind-Value="_metodoPago" Label="Método de Pago" Style="flex: 1; min-width: 150px;"
+                                       Items="@(new AppSelectItem<string>[]{ new("Efectivo","EFECTIVO"), new("Transferencia","TRANSFERENCIA"), new("Tarjeta","TARJETA"), new("Cheque","CHEQUE"), new("Otro","OTRO") })" />
+                            <MudDatePicker @bind-Date="_fechaPago" Label="Fecha de pago" Style="flex: 1; min-width: 140px;" />
+                            <MudTextField @bind-Value="_notasPago" Label="Notas (opcional)" Style="flex: 2; min-width: 160px;" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" OnClick="RegistrarPagoAsync" Disabled="_guardandoPago" />
+                        </div>
+                    </MudForm>
+                }
+                else if (!CcTieneVisions)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3">Esta factura ya está pagada por completo.</MudAlert>
+                }
+
+                @if (_pagos.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin pagos registrados todavía.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_pagos" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh Style="text-align:right">Monto</MudTh>
+                            <MudTh>Método</MudTh>
+                            <MudTh>Fecha</MudTh>
+                            <MudTh>Notas</MudTh>
+                            <MudTh>Usuario</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Monto" Style="text-align:right">@context.Monto.ToString("C0")</MudTd>
+                            <MudTd DataLabel="Método">@EtiquetaMetodoPago(context.MetodoPago)</MudTd>
+                            <MudTd DataLabel="Fecha">@context.FechaPago.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Notas">@(context.Notas ?? "-")</MudTd>
+                            <MudTd DataLabel="Usuario">@(context.Usuario ?? "-")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public FacturaItem Factura { get; set; } = default!;
+    [Parameter] public bool CcTieneVisions { get; set; }
+
+    private MudForm _formPago = default!;
+    private List<FacturaLineaItem> _lineas = new();
+    private List<PagoItem> _pagos = new();
+    private List<FacturaLineaStockItem> _lineasStock = new();
+
+    private FacturaItem _facturaActual = default!;
+    private bool _guardandoPago;
+    private bool _confirmandoVisions;
+    private bool _mostrandoStock;
+    private bool _cargandoStock;
+    private bool _descontando;
+    private bool _mostrandoProduccion;
+    private bool _cargandoProduccion;
+    private bool _ejecutandoProduccion;
+    private List<VerificarProduccionItem> _lineasProduccion = [];
+    private List<AutoProducirResultItem> _resultadosAutoProduccion = [];
+
+    private decimal _montoPago;
+    private string _metodoPago = "EFECTIVO";
+    private DateTime? _fechaPago = NexoWeb.Common.ColombiaClock.Today;
+    private string? _notasPago;
+
+    private bool _hayInsuficientes => _lineasStock.Any(l => l.EsInsuficiente);
+
+    private Color ColorEstado(string estado) => estado switch
+    {
+        "PAGADA" => Color.Success,
+        "PARCIAL" => Color.Warning,
+        _ => Color.Error
+    };
+
+    private static string EtiquetaEstado(string estado) => estado switch
+    {
+        "PAGADA" => "Pagada",
+        "PARCIAL" => "Pago parcial",
+        _ => "Pendiente"
+    };
+
+    private async Task ConfirmarVisionsAsync()
+    {
+        _confirmandoVisions = true;
+        try
+        {
+            await ApiClient.PostAsync($"api/facturacion/facturas/{_facturaActual.FacturaID}/confirmar-visions");
+            _facturaActual = _facturaActual with { VisionsConfirmado = true };
+            Snackbar.Add("Documento confirmado desde Visions. Ahora puede descontar el inventario.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _confirmandoVisions = false;
+        }
+    }
+
+    private static string EtiquetaMetodoPago(string metodo) => metodo switch
+    {
+        "EFECTIVO" => "Efectivo",
+        "TRANSFERENCIA" => "Transferencia",
+        "TARJETA" => "Tarjeta",
+        "CHEQUE" => "Cheque",
+        _ => "Otro"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _facturaActual = Factura;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        var tLineas = ApiClient.GetAsync<List<FacturaLineaItem>>($"api/facturacion/facturas/{_facturaActual.FacturaID}/lineas");
+        var tPagos  = ApiClient.GetAsync<List<PagoItem>>($"api/facturacion/facturas/{_facturaActual.FacturaID}/pagos");
+        await Task.WhenAll(tLineas, tPagos);
+        _lineas = tLineas.Result ?? new();
+        _pagos  = tPagos.Result  ?? new();
+        _montoPago = _facturaActual.SaldoPendiente > 0 ? _facturaActual.SaldoPendiente : 0;
+    }
+
+    private async Task MostrarStockAsync()
+    {
+        _mostrandoStock = true;
+        _cargandoStock = true;
+        _lineasStock = new();
+        try
+        {
+            _lineasStock = await ApiClient.GetAsync<List<FacturaLineaStockItem>>($"api/facturacion/facturas/{_facturaActual.FacturaID}/stock-lineas") ?? new();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            _mostrandoStock = false;
+        }
+        finally
+        {
+            _cargandoStock = false;
+        }
+    }
+
+    private void OcultarStock()
+    {
+        _mostrandoStock = false;
+        _lineasStock = new();
+    }
+
+    private async Task MostrarProduccionAsync()
+    {
+        _mostrandoProduccion = true;
+        _cargandoProduccion = true;
+        _lineasProduccion = [];
+        _resultadosAutoProduccion = [];
+        try
+        {
+            _lineasProduccion = await ApiClient.GetAsync<List<VerificarProduccionItem>>(
+                $"api/facturacion/facturas/{_facturaActual.FacturaID}/verificar-produccion") ?? [];
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            _mostrandoProduccion = false;
+        }
+        finally { _cargandoProduccion = false; }
+    }
+
+    private void OcultarProduccion()
+    {
+        _mostrandoProduccion = false;
+        _lineasProduccion = [];
+        _resultadosAutoProduccion = [];
+    }
+
+    private async Task EjecutarAutoProduccionAsync()
+    {
+        _ejecutandoProduccion = true;
+        try
+        {
+            _resultadosAutoProduccion = await ApiClient.PostAsync<object, List<AutoProducirResultItem>>(
+                $"api/facturacion/facturas/{_facturaActual.FacturaID}/auto-producir", new { }) ?? [];
+            var exitosos = _resultadosAutoProduccion.Count(r => r.Exitoso);
+            if (exitosos > 0)
+                Snackbar.Add($"{exitosos} orden(es) de producción ejecutadas automáticamente.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally { _ejecutandoProduccion = false; }
+    }
+
+    private async Task ConfirmarDescuentoAsync()
+    {
+        _descontando = true;
+        try
+        {
+            await ApiClient.PostAsync($"api/facturacion/facturas/{_facturaActual.FacturaID}/descontar-stock");
+            _facturaActual = _facturaActual with { StockDescontado = true };
+            _mostrandoStock = false;
+            _lineasStock = new();
+            Snackbar.Add("Stock descontado correctamente del inventario.", Severity.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _descontando = false;
+        }
+    }
+
+    private async Task RegistrarPagoAsync()
+    {
+        if (_montoPago <= 0 || _fechaPago is null)
+        {
+            Snackbar.Add("Ingresa un monto mayor a cero y una fecha.", Severity.Warning);
+            return;
+        }
+
+        _guardandoPago = true;
+        try
+        {
+            var monto = _montoPago;
+            var request = new CrearPagoRequest(_facturaActual.FacturaID, monto, _fechaPago.Value, _metodoPago, _notasPago);
+            await ApiClient.PostAsync<CrearPagoRequest, object?>("api/facturacion/pagos", request);
+
+            var nuevoTotalPagado = _facturaActual.TotalPagado + monto;
+            var nuevoSaldo = _facturaActual.Total - nuevoTotalPagado;
+            var nuevoEstado = nuevoTotalPagado <= 0 ? "PENDIENTE" : nuevoSaldo > 0 ? "PARCIAL" : "PAGADA";
+            _facturaActual = _facturaActual with { TotalPagado = nuevoTotalPagado, SaldoPendiente = nuevoSaldo, Estado = nuevoEstado };
+
+            Snackbar.Add("Pago registrado.", Severity.Success);
+            _notasPago = null;
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _guardandoPago = false;
+        }
+    }
+
+    private void Cerrar() => MudDialog.Close(DialogResult.Ok(true));
+}

@@ -1,0 +1,267 @@
+﻿@page "/crm/clientes"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject NavigationManager Navigation
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Clientes - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <div class="d-flex align-center" style="gap:0.25rem">
+        <MudText Typo="Typo.h5">Clientes</MudText>
+    </div>
+    <div class="d-flex align-center" style="gap:8px">
+        <VistaToggle OnCambio="StateHasChanged" />
+        <ExportButton Endpoint="api/crm/clientes/exportar/excel"
+                      EndpointPdf="api/crm/clientes/exportar/pdf"
+                      NombreArchivo="clientes" />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Map"
+                   OnClick="AbrirMapaAsync" Size="Size.Small">
+            Ver mapa
+        </MudButton>
+    </div>
+</div>
+<InfoAyuda Texto="Registra los clientes de la empresa, con seguimiento comercial: de dónde vinieron, qué tipo de cliente son y quién los atiende. Usa 'Gestionar' para ver contactos, bitácora, historial completo y documentos de cada uno." />
+
+<MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+           StartIcon="@Icons.Material.Filled.PersonAdd" Class="mb-4">
+    Nuevo Cliente
+</MudButton>
+
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="4">
+        <MudTextField T="string" Value="_filtroBusqueda" ValueChanged="OnFiltroBusquedaCambiadoAsync"
+                      Label="Buscar por nombre o NIT"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="false" DebounceInterval="400" Clearable="true"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <AppSelect TValue="int?" Value="_filtroResponsableId" ValueChanged="OnFiltroCambiadoAsync" Label="Responsable"
+                   Items="@(_empleados.Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+    </MudItem>
+    <MudItem xs="12" sm="2">
+        <AppSelect TValue="string" Value="_filtroTipoCliente" ValueChanged="OnFiltroTipoCambiadoAsync" Label="Tipo de Cliente"
+                   Items="@(new AppSelectItem<string>[]{ new("Empresa","Empresa"), new("Persona Natural","Persona Natural") })" />
+    </MudItem>
+    <MudItem xs="12" sm="2">
+        <AppSelect TValue="string" Value="_filtroFuenteContacto" ValueChanged="OnFiltroFuenteCambiadoAsync" Label="Fuente del Contacto"
+                   Items="@(new AppSelectItem<string>[]{ new("Referido","Referido"), new("Redes Sociales","Redes Sociales"), new("Llamada en Frío","Llamada en Frio"), new("Página Web","Pagina Web"), new("Otro","Otro") })" />
+    </MudItem>
+</MudGrid>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los clientes: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (!_clientes.Any())
+{
+    <MudText>No hay clientes que coincidan con el filtro.</MudText>
+}
+else if (Preferencias.VistaListado == "tarjetas")
+{
+    @if (_totalPaginas > 1)
+    {
+        <div class="d-flex justify-center align-center gap-2 mb-3">
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                           Disabled="@(_pagina <= 1)" OnClick="@(() => IrPaginaAsync(_pagina - 1))" />
+            <MudText Typo="Typo.body2">Página <strong>@_pagina</strong> de <strong>@_totalPaginas</strong> &nbsp;·&nbsp; @_total clientes</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                           Disabled="@(_pagina >= _totalPaginas)" OnClick="@(() => IrPaginaAsync(_pagina + 1))" />
+        </div>
+    }
+    <div class="nexo-card-grid">
+        @foreach (var cliente in _clientes)
+        {
+            <div class="nexo-item-card">
+                <div class="d-flex align-center justify-space-between">
+                    <div class="nexo-item-card__title">@cliente.Nombre</div>
+                    <MudChip T="string" Color="@(cliente.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                        @(cliente.Estado ? "Activo" : "Inactivo")
+                    </MudChip>
+                </div>
+                <div class="nexo-item-card__sub">@(cliente.NIT ?? "Sin NIT") @(cliente.TipoCliente is not null ? $"· {cliente.TipoCliente}" : "")</div>
+                <div class="nexo-item-card__row"><span>Responsable</span><strong>@(cliente.Responsable ?? "-")</strong></div>
+                <div class="nexo-item-card__row"><span>Contactos</span><strong>@cliente.TotalContactos</strong></div>
+                <div class="nexo-item-card__row"><span>Teléfono</span><strong>@(cliente.Telefono ?? "-")</strong></div>
+                <div class="nexo-item-card__row"><span>Última interacción</span><strong>@(cliente.UltimaInteraccion?.ToLocalTime().ToString("dd/MM/yyyy") ?? "-")</strong></div>
+                <div class="nexo-item-card__actions">
+                    <MudButton Size="Size.Small" OnClick="@(() => Navigation.NavigateTo($"/crm/clientes/{cliente.ExternalId}"))">Gestionar</MudButton>
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(cliente))">Editar</MudButton>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    @if (_totalPaginas > 1)
+    {
+        <div class="d-flex justify-center align-center gap-2 mb-3">
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                           Disabled="@(_pagina <= 1)" OnClick="@(() => IrPaginaAsync(_pagina - 1))" />
+            <MudText Typo="Typo.body2">Página <strong>@_pagina</strong> de <strong>@_totalPaginas</strong> &nbsp;·&nbsp; @_total clientes</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                           Disabled="@(_pagina >= _totalPaginas)" OnClick="@(() => IrPaginaAsync(_pagina + 1))" />
+        </div>
+    }
+    <MudTable Items="_clientes" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre / Empresa</MudTh>
+            <MudTh>NIT</MudTh>
+            <MudTh>Tipo</MudTh>
+            <MudTh>Responsable</MudTh>
+            <MudTh>Contactos</MudTh>
+            <MudTh>Última Interacción</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Accion</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">
+                <div style="line-height:1.3;">
+                    <div style="font-weight:600;">@context.Nombre</div>
+                    @if (!string.IsNullOrWhiteSpace(context.Contacto))
+                    {
+                        <div style="font-size:0.78rem; color:var(--n-text-3);">@context.Contacto</div>
+                    }
+                </div>
+            </MudTd>
+            <MudTd DataLabel="NIT">@(context.NIT ?? "-")</MudTd>
+            <MudTd DataLabel="Tipo">@(context.TipoCliente ?? "-")</MudTd>
+            <MudTd DataLabel="Responsable">@(context.Responsable ?? "-")</MudTd>
+            <MudTd DataLabel="Contactos">@context.TotalContactos</MudTd>
+            <MudTd DataLabel="Última Interacción">@(context.UltimaInteraccion?.ToLocalTime().ToString("dd/MM/yyyy") ?? "-")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                    @(context.Estado ? "Activo" : "Inactivo")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Accion">
+                <MudButton Size="Size.Small" OnClick="@(() => Navigation.NavigateTo($"/crm/clientes/{context.ExternalId}"))">Gestionar</MudButton>
+                <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">Editar</MudButton>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No hay clientes registrados.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+    @if (_totalPaginas > 1)
+    {
+        <div class="d-flex justify-center align-center gap-2 mt-3">
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                           Disabled="@(_pagina <= 1)" OnClick="@(() => IrPaginaAsync(_pagina - 1))" />
+            <MudText Typo="Typo.body2">Página <strong>@_pagina</strong> de <strong>@_totalPaginas</strong> &nbsp;·&nbsp; @_total clientes</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                           Disabled="@(_pagina >= _totalPaginas)" OnClick="@(() => IrPaginaAsync(_pagina + 1))" />
+        </div>
+    }
+}
+
+@code {
+    private List<ClienteItem> _clientes = new();
+    private List<EmpleadoItem> _empleados = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    private int? _filtroResponsableId;
+    private string? _filtroTipoCliente;
+    private string? _filtroFuenteContacto;
+    private string? _filtroBusqueda;
+
+    private int _pagina  = 1;
+    private int _tamano  = 100;
+    private int _total   = 0;
+    private int _totalPaginas => (int)Math.Ceiling((double)_total / _tamano);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tareaEmpleados = ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true");
+            var tareaClientes  = CargarClientesApiAsync();
+            await Task.WhenAll(tareaEmpleados, tareaClientes);
+            _empleados = await tareaEmpleados ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarClientesApiAsync()
+    {
+        var q = new List<string> { $"pagina={_pagina}", $"tamano={_tamano}" };
+        if (!string.IsNullOrWhiteSpace(_filtroBusqueda))   q.Add($"texto={Uri.EscapeDataString(_filtroBusqueda)}");
+        if (_filtroResponsableId.HasValue)                 q.Add($"responsableId={_filtroResponsableId}");
+        if (!string.IsNullOrWhiteSpace(_filtroTipoCliente)) q.Add($"tipoCliente={Uri.EscapeDataString(_filtroTipoCliente)}");
+        if (!string.IsNullOrWhiteSpace(_filtroFuenteContacto)) q.Add($"fuenteContacto={Uri.EscapeDataString(_filtroFuenteContacto)}");
+
+        var resp = await ApiClient.GetAsync<ClientesPaginadosResponse>($"api/crm/clientes/paginados?{string.Join('&', q)}");
+        _clientes = resp?.Items ?? new();
+        _total    = resp?.Total ?? 0;
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        _errorCarga = null;
+        StateHasChanged();
+        try   { await CargarClientesApiAsync(); }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task OnFiltroCambiadoAsync(int? v)           { _filtroResponsableId  = v; _pagina = 1; await CargarAsync(); }
+    private async Task OnFiltroTipoCambiadoAsync(string? v)    { _filtroTipoCliente    = v; _pagina = 1; await CargarAsync(); }
+    private async Task OnFiltroFuenteCambiadoAsync(string? v)  { _filtroFuenteContacto = v; _pagina = 1; await CargarAsync(); }
+    private async Task OnFiltroBusquedaCambiadoAsync(string? v){ _filtroBusqueda       = v; _pagina = 1; await CargarAsync(); }
+    private async Task IrPaginaAsync(int p)                    { _pagina = p; await CargarAsync(); }
+
+    private async Task AbrirMapaAsync()
+    {
+        await DialogService.ShowAsync<MapaClientesDialog>("Mapa de Clientes",
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<ClienteDialog> { { x => x.Empleados, _empleados } };
+        var dialogo = await DialogService.ShowAsync<ClienteDialog>("Nuevo Cliente", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            var request = (CrearClienteRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearClienteRequest, object?>("api/crm/clientes", request);
+            Snackbar.Add("Cliente creado correctamente.", Severity.Success);
+            _pagina = 1;
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEdicionAsync(ClienteItem cliente)
+    {
+        var parametros = new DialogParameters<ClienteDialog>
+        {
+            { x => x.Cliente, cliente },
+            { x => x.Empleados, _empleados }
+        };
+        var dialogo = await DialogService.ShowAsync<ClienteDialog>("Editar Cliente", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+        try
+        {
+            var request = (ActualizarClienteRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarClienteRequest, object?>($"api/crm/clientes/{cliente.ClienteID}", request);
+            Snackbar.Add("Cliente actualizado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

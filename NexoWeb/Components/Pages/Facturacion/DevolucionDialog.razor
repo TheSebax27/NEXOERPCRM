@@ -1,0 +1,176 @@
+﻿@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.AssignmentReturn" Class="mr-2" Style="vertical-align:middle" />
+            Nueva Devolución
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <AppSelect TValue="string" @bind-Value="_tipo" Label="Tipo de devolución"
+                           Items="@(new AppSelectItem<string>[]{ new("Cliente devuelve mercancía","CLIENTE"), new("Devolucion a proveedor","PROVEEDOR") })" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_fecha" Label="Fecha" DateFormat="dd/MM/yyyy"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <AppSelect TValue="int?" @bind-Value="_centroCostoId" Label="Centro de Costo" Placeholder="Seleccione CC"
+                           Items="@(_centrosCosto.Select(cc => new AppSelectItem<int?>(cc.Nombre, (int?)cc.CentroCostoID)))" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_nroDoc" Label="Nro. Documento (opcional)"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                @if (_tipo == "CLIENTE")
+                {
+                    <ClienteAutocomplete Value="_clienteSeleccionado"
+                                        ValueChanged="@(c => { _clienteSeleccionado = c; _clienteId = c?.ClienteID; })"
+                                        Label="Cliente" />
+                }
+                else
+                {
+                    <AppSelect TValue="int?" @bind-Value="_proveedorId" Label="Proveedor"
+                               Items="@(_proveedores.Select(p => new AppSelectItem<int?>(p.RazonSocial, (int?)p.ProveedorID)))" />
+                }
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_motivo" Label="Motivo" Variant="Variant.Outlined"
+                              Margin="Margin.Dense" Lines="2" />
+            </MudItem>
+        </MudGrid>
+
+        <MudDivider Class="my-4" />
+        <div class="d-flex justify-space-between align-center mb-2">
+            <MudText Typo="Typo.subtitle2">Artículos devueltos</MudText>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AgregarLinea">Agregar artículo</MudButton>
+        </div>
+
+        @foreach (var (linea, idx) in _lineas.Select((l, i) => (l, i)))
+        {
+            <MudGrid Spacing="1" Class="mb-1">
+                <MudItem xs="5">
+                    <ArticuloAutocomplete Value="linea.Articulo"
+                                         ValueChanged="@(a => linea.Articulo = a)"
+                                         Label="Artículo" />
+                </MudItem>
+                <MudItem xs="3">
+                    <MudNumericField @bind-Value="linea.Cantidad" Label="Cantidad"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.001m" />
+                </MudItem>
+                <MudItem xs="3">
+                    <MudNumericField @bind-Value="linea.Costo" Label="Costo unit."
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Min="0m" />
+                </MudItem>
+                <MudItem xs="1" Class="d-flex align-center">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error" OnClick="@(() => _lineas.RemoveAt(idx))" />
+                </MudItem>
+            </MudGrid>
+        }
+
+        @if (_lineas.Count > 0)
+        {
+            <div class="d-flex justify-end mt-2">
+                <MudText Typo="Typo.subtitle2">
+                    Total: @(_lineas.Sum(l => l.Cantidad * l.Costo).ToString("C0"))
+                </MudText>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   Disabled="@(!Valido || _guardando)" OnClick="GuardarAsync">
+            @(_guardando ? "Guardando…" : "Registrar devolución")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+
+    private string _tipo = "CLIENTE";
+    private DateTime? _fecha = NexoWeb.Common.ColombiaClock.Today;
+    private string? _nroDoc;
+    private string? _motivo;
+    private int? _clienteId;
+    private int? _proveedorId;
+    private int? _centroCostoId;
+    private bool _guardando;
+
+    private ClienteItem? _clienteSeleccionado;
+    private List<ProveedorItem> _proveedores = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+
+    private List<LineaDevolucion> _lineas = new();
+
+    private class LineaDevolucion
+    {
+        public ArticuloItem? Articulo;
+        public decimal Cantidad = 1;
+        public decimal Costo = 0;
+    }
+
+    private bool Valido =>
+        !string.IsNullOrWhiteSpace(_tipo) &&
+        _centroCostoId.HasValue &&
+        _lineas.Any(l => l.Articulo is not null && l.Cantidad > 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var tareaProveedores = ApiClient.GetAsync<List<ProveedorItem>>("api/catalogo/proveedores");
+        var tareaCc          = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=true");
+
+        await Task.WhenAll(tareaProveedores, tareaCc);
+
+        _proveedores  = (await tareaProveedores ?? new()).OrderBy(p => p.RazonSocial).ToList();
+        _centrosCosto = ((await tareaCc) ?? new()).OrderBy(c => c.Nombre).ToList();
+    }
+
+
+    private void AgregarLinea() => _lineas.Add(new LineaDevolucion());
+
+    private void Cancelar() => MudDialog.Cancel();
+
+    private async Task GuardarAsync()
+    {
+        _guardando = true;
+        try
+        {
+            var request = new CrearDevolucionRequest(
+                TipoDevolucion: _tipo,
+                FacturaOrigenID: null,
+                ClienteID:  _tipo == "CLIENTE"   ? _clienteId   : null,
+                ProveedorID: _tipo == "PROVEEDOR" ? _proveedorId : null,
+                CentroCostoID: _centroCostoId,
+                Fecha: _fecha ?? NexoWeb.Common.ColombiaClock.Today,
+                Motivo: _motivo,
+                NroDoc: _nroDoc,
+                Lineas: _lineas
+                    .Where(l => l.Articulo is not null && l.Cantidad > 0)
+                    .Select(l => new DevolucionLineaInput(l.Articulo!.ArticuloID, l.Cantidad, l.Costo))
+                    .ToList()
+            );
+
+            await ApiClient.PostAsync("api/facturacion/devoluciones", request);
+            Snackbar.Add("Devolución registrada. Stock actualizado.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+}

@@ -1,0 +1,34 @@
+@inject NavigationManager Nav
+
+<nav class="inv-nav">
+    <a class="inv-nav__link @(EsActiva("/inventario/stock") ? "inv-nav__link--active" : "")"
+       href="/inventario/stock">
+        <span class="inv-nav__icon">📦</span>
+        <span class="inv-nav__label">Stock</span>
+    </a>
+    <a class="inv-nav__link @(EsActiva("/inventario/kardex") ? "inv-nav__link--active" : "")"
+       href="/inventario/kardex">
+        <span class="inv-nav__icon">📋</span>
+        <span class="inv-nav__label">Kardex</span>
+    </a>
+    <a class="inv-nav__link @(EsActiva("/inventario/ajustes") ? "inv-nav__link--active" : "")"
+       href="/inventario/ajustes">
+        <span class="inv-nav__icon">⚖️</span>
+        <span class="inv-nav__label">Ajustes</span>
+    </a>
+    <a class="inv-nav__link @(EsActiva("/inventario/bajas") ? "inv-nav__link--active" : "")"
+       href="/inventario/bajas">
+        <span class="inv-nav__icon">🗑️</span>
+        <span class="inv-nav__label">Bajas</span>
+    </a>
+    <a class="inv-nav__link @(EsActiva("/inventario/traspasos") ? "inv-nav__link--active" : "")"
+       href="/inventario/traspasos">
+        <span class="inv-nav__icon">🔄</span>
+        <span class="inv-nav__label">Traspasos</span>
+    </a>
+</nav>
+
+@code {
+    private bool EsActiva(string href) =>
+        Nav.Uri.TrimEnd('/').EndsWith(href.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+}

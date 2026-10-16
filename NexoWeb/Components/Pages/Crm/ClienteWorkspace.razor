@@ -1,0 +1,686 @@
+﻿@page "/crm/clientes/{ExternalId}"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@using NexoWeb.Common.Dtos
+
+<PageTitle>@(_cliente?.Nombre ?? "Cliente") - NEXO</PageTitle>
+
+<MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack"
+           OnClick="@(() => Navigation.NavigateTo("/crm/clientes"))" Class="mb-2">
+    Clientes
+</MudButton>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudo cargar el cliente: @_errorCarga</MudAlert>
+}
+else if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_cliente is null)
+{
+    <MudAlert Severity="Severity.Warning">No se encontró este cliente.</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4">
+        <div class="d-flex align-center flex-wrap mb-3" style="gap:0.75rem">
+            <div style="width:44px;height:44px;border-radius:50%;background:var(--mud-palette-primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.15rem;flex-shrink:0">
+                @(_cliente.Nombre.Length > 0 ? _cliente.Nombre[0].ToString().ToUpper() : "C")
+            </div>
+            <div style="flex:1;min-width:0">
+                <MudText Typo="Typo.h5" Style="line-height:1.2">@_cliente.Nombre</MudText>
+                @if (_cliente.NIT is not null)
+                {
+                    <MudText Typo="Typo.body2" Style="opacity:.6">NIT: @_cliente.NIT</MudText>
+                }
+            </div>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="AbrirEdicionAsync">Editar</MudButton>
+        </div>
+        <MudChip T="string" Size="Size.Small" Color="@(_cliente.Estado ? Color.Success : Color.Error)">
+            @(_cliente.Estado ? "Activo" : "Inactivo")
+        </MudChip>
+        <MudChip T="string" Size="Size.Small">Responsable: @(_cliente.Responsable ?? "Sin asignar")</MudChip>
+        @if (_cliente.ProximoContacto is not null)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Info">
+                Próximo contacto: @_cliente.ProximoContacto.Value.ToString("dd/MM/yyyy")
+            </MudChip>
+        }
+        @if (_segmento is not null)
+        {
+            var segColor = _segmento.Segmento switch {
+                "VIP"       => Color.Warning,
+                "Frecuente" => Color.Success,
+                "Dormido"   => Color.Error,
+                "Nuevo"     => Color.Info,
+                _           => Color.Default
+            };
+            <MudChip T="string" Size="Size.Small" Color="@segColor" Icon="@Icons.Material.Filled.Star">
+                @_segmento.Segmento
+            </MudChip>
+        }
+        @if (_prediccion?.ProximaCompraEsperada is not null)
+        {
+            var diasRestantes = (int)(_prediccion.ProximaCompraEsperada.Value.Date - NexoWeb.Common.ColombiaClock.Today).TotalDays;
+            var colorPred = diasRestantes < 0 ? Color.Error : diasRestantes <= 5 ? Color.Warning : Color.Primary;
+            var labelDias = diasRestantes > 0 ? $"+{diasRestantes}d" : diasRestantes < 0 ? $"{diasRestantes}d" : "hoy";
+            <MudChip T="string" Size="Size.Small" Color="@colorPred" Icon="@Icons.Material.Filled.CalendarToday">
+                Próxima compra: @_prediccion.ProximaCompraEsperada.Value.ToString("dd MMM") (@labelDias)
+            </MudChip>
+        }
+    </MudPaper>
+
+    @* ── Banner dual-rol ──────────────────────────────────────────────── *@
+    @if (_dualRol is not null)
+    {
+        @if (_dualRol.EsProveedor && _dualRol.ProveedorID is not null)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3"
+                      Icon="@Icons.Material.Filled.SyncAlt">
+                Este cliente también está registrado como
+                <strong>Proveedor</strong>.
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                           OnClick="@(() => Navigation.NavigateTo($"/catalogo/proveedores/{_dualRol.ProveedorID}"))">
+                    Ver workspace de proveedor →
+                </MudButton>
+            </MudAlert>
+        }
+        else if (!_dualRol.EsProveedor && _cliente?.NIT is not null)
+        {
+            <MudAlert Severity="Severity.Normal" Dense="true" Class="mb-3"
+                      Icon="@Icons.Material.Filled.Store">
+                Este cliente no está registrado como proveedor.
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                           OnClick="RegistrarComoProveedorAsync" Disabled="_procesandoDualRol">
+                    @(_procesandoDualRol ? "Procesando..." : "Registrar como Proveedor")
+                </MudButton>
+            </MudAlert>
+        }
+    }
+
+    <MudPaper Class="pa-0">
+        <MudTabs Class="nexo-bi-tabs">
+            <MudTabPanel Text="Contactos">
+                <MudForm @ref="_formContacto" Class="mb-3">
+                    <div class="d-flex align-center flex-wrap mb-2" style="gap: 0.5rem;">
+                        <MudTextField @bind-Value="_nombresContacto" Label="Nombre" Style="flex: 2;" />
+                        <MudTextField @bind-Value="_cargoContacto" Label="Cargo" Style="flex: 1;" />
+                        <MudTextField @bind-Value="_telefonoContacto" Label="Telefono" Style="flex: 1;" />
+                        <MudTextField @bind-Value="_emailContacto" Label="Email" Style="flex: 1;" />
+                        <MudCheckBox T="bool" @bind-Value="_esPrincipalContacto" Label="Principal" Dense="true" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" OnClick="AgregarContactoAsync" />
+                    </div>
+                </MudForm>
+
+                @if (_contactos.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin contactos registrados todavía.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_contactos" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Nombre</MudTh>
+                            <MudTh>Cargo</MudTh>
+                            <MudTh>Telefono</MudTh>
+                            <MudTh>Email</MudTh>
+                            <MudTh>Principal</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Nombre">@context.Nombres</MudTd>
+                            <MudTd DataLabel="Cargo">@(context.Cargo ?? "-")</MudTd>
+                            <MudTd DataLabel="Telefono">@(context.Telefono ?? "-")</MudTd>
+                            <MudTd DataLabel="Email">@(context.Email ?? "-")</MudTd>
+                            <MudTd DataLabel="Principal">
+                                @if (context.EsPrincipal)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Star" Color="Color.Warning" Size="Size.Small" />
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Bitacora">
+                <MudForm @ref="_formInteraccion" Class="mb-3">
+                    <AppSelect TValue="string" @bind-Value="_tipoInteraccion" Label="Tipo" Class="mb-2"
+                               Items="@(new AppSelectItem<string>[]{ new("Llamada","Llamada"), new("Correo","Correo"), new("Reunión","Reunion"), new("Otro","Otro") })" />
+                    <MudTextField @bind-Value="_notasInteraccion" Label="Notas" Lines="3" Required="true"
+                                  RequiredError="Escribe una nota" Class="mb-2" />
+                    <MudDatePicker @bind-Date="_proximoContactoInteraccion" Label="Agendar proximo contacto (opcional)" Class="mb-2" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RegistrarInteraccionAsync" Size="Size.Small">
+                        Registrar
+                    </MudButton>
+                </MudForm>
+
+                <MudDivider Class="mb-3" />
+
+                @if (_interacciones.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin interacciones registradas todavía.</MudText>
+                }
+                else
+                {
+                    @foreach (var i in _interacciones)
+                    {
+                        <div class="mb-3">
+                            <div class="d-flex justify-space-between">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@i.Tipo</MudChip>
+                                <MudText Typo="Typo.caption" Style="color: var(--n-text-3, #9B9BB4);">
+                                    @i.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm") @(i.Usuario is not null ? $"· {i.Usuario}" : "")
+                                </MudText>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mt-1">@i.Notas</MudText>
+                        </div>
+                    }
+                }
+                @if (_notasLead.Count > 0)
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.caption" Class="mb-2" Style="opacity:.55;text-transform:uppercase;letter-spacing:.05em;font-size:0.7rem">
+                        Historial del lead original
+                    </MudText>
+                    @foreach (var nota in _notasLead)
+                    {
+                        var (hex, label) = nota.Tipo switch
+                        {
+                            "AVANCE_ETAPA" => ("var(--mud-palette-primary)", "↑ Avance"),
+                            "CONVERSION"   => ("#66BB6A", "✓ Conversión"),
+                            _              => ("var(--mud-palette-text-secondary)", "Nota")
+                        };
+                        <div style="border-left:3px solid @hex;padding:0.5rem 0.75rem;background:var(--mud-palette-background-grey);border-radius:0 6px 6px 0;margin-bottom:0.5rem">
+                            <div class="d-flex align-center flex-wrap mb-1" style="gap:0.4rem">
+                                <span style="font-size:0.67rem;font-weight:700;color:@hex;text-transform:uppercase;letter-spacing:.04em">@label</span>
+                                @if (!string.IsNullOrEmpty(nota.EtapaOrigen) && !string.IsNullOrEmpty(nota.EtapaDestino))
+                                {
+                                    <span style="font-size:0.67rem;opacity:.5">@nota.EtapaOrigen → @nota.EtapaDestino</span>
+                                }
+                                <span style="font-size:0.67rem;opacity:.45;margin-left:auto">@nota.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                                @if (!string.IsNullOrEmpty(nota.Usuario))
+                                {
+                                    <span style="font-size:0.67rem;opacity:.45">· @nota.Usuario</span>
+                                }
+                            </div>
+                            <MudText Typo="Typo.body2">@nota.Texto</MudText>
+                        </div>
+                    }
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Historial">
+                <MudText Typo="Typo.caption" Class="mb-3" Style="color: var(--n-text-3, #9B9BB4);">
+                    Todo lo que ha pasado con este cliente: interacciones, pedidos, despachos y facturas, en orden.
+                </MudText>
+                @if (_historial.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin eventos todavía.</MudText>
+                }
+                else
+                {
+                    @foreach (var ev in _historial)
+                    {
+                        <div class="mb-3">
+                            <div class="d-flex justify-space-between">
+                                <MudChip T="string" Size="Size.Small" Color="@ColorTipoEvento(ev.TipoEvento)">@ev.TipoEvento</MudChip>
+                                <MudText Typo="Typo.caption" Style="color: var(--n-text-3, #9B9BB4);">
+                                    @ev.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                </MudText>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mt-1"><strong>@ev.Titulo</strong></MudText>
+                            @if (ev.Detalle is not null)
+                            {
+                                <MudText Typo="Typo.body2">@ev.Detalle</MudText>
+                            }
+                        </div>
+                    }
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Documentos">
+                <div class="d-flex align-center flex-wrap mb-3" style="gap: 0.5rem;">
+                    <AppSelect TValue="string" @bind-Value="_tipoDocumento" Label="Tipo" Style="max-width: 200px;"
+                               Items="@(new AppSelectItem<string>[]{ new("RUT","RUT"), new("Cámara de Comercio","CAMARA_COMERCIO"), new("Contrato","CONTRATO"), new("Otro","OTRO") })" />
+                    <InputFile id="nexo-cliente-doc-input" OnChange="OnDocumentoSeleccionadoAsync" style="display:none;" />
+                    <label for="nexo-cliente-doc-input" class="nexo-perfil-panel__btn-archivo">
+                        Subir Documento
+                    </label>
+                </div>
+                <MudText Typo="Typo.caption" Class="mb-3 d-block" Style="color: var(--n-text-3, #9B9BB4);">Maximo 5 MB por documento.</MudText>
+
+                @if (_documentos.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin documentos todavía.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_documentos" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Archivo</MudTh>
+                            <MudTh>Fecha</MudTh>
+                            <MudTh>Accion</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Tipo">@context.TipoDocumento</MudTd>
+                            <MudTd DataLabel="Archivo">@context.NombreArchivo</MudTd>
+                            <MudTd DataLabel="Fecha">@context.FechaSubida.ToLocalTime().ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Accion">
+                                <MudButton Size="Size.Small" OnClick="@(() => DescargarDocumentoAsync(context))">Descargar</MudButton>
+                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => EliminarDocumentoAsync(context))">Eliminar</MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Tickets" Icon="@Icons.Material.Outlined.BugReport">
+                <MudText Typo="Typo.caption" Class="mb-3 d-block" Style="color:var(--n-text-3)">
+                    Tickets de soporte asociados a este cliente.
+                </MudText>
+                @if (_tickets.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color:var(--n-text-3)">Sin tickets registrados.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_tickets" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Título</MudTh>
+                            <MudTh>Prioridad</MudTh>
+                            <MudTh>Estado</MudTh>
+                            <MudTh>Fecha</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Título">@context.Titulo</MudTd>
+                            <MudTd DataLabel="Prioridad">
+                                <MudChip T="string" Size="Size.Small" Color="@ColorPrioridad(context.Prioridad)">@context.Prioridad</MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Estado">@context.Estado</MudTd>
+                            <MudTd DataLabel="Fecha">@context.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Crédito" Icon="@Icons.Material.Outlined.CreditCard">
+                @if (_disponibilidad is not null && _disponibilidad.CupoCredito > 0)
+                {
+                    var pct = (double)(_disponibilidad.Utilizado / _disponibilidad.CupoCredito * 100);
+                    <div class="d-flex flex-wrap mb-4" style="gap:1rem;">
+                        <div style="min-width:140px;">
+                            <div style="font-size:0.75rem;color:var(--n-text-3)">Cupo total</div>
+                            <div style="font-size:1.4rem;font-weight:700">@_disponibilidad.CupoCredito.ToString("C0")</div>
+                        </div>
+                        <div style="min-width:140px;">
+                            <div style="font-size:0.75rem;color:var(--n-text-3)">Utilizado (cot. abiertas)</div>
+                            <div style="font-size:1.4rem;font-weight:700;color:@(pct > 80 ? "var(--mud-palette-error)" : "inherit")">@_disponibilidad.Utilizado.ToString("C0")</div>
+                        </div>
+                        <div style="min-width:140px;">
+                            <div style="font-size:0.75rem;color:var(--n-text-3)">Disponible</div>
+                            <div style="font-size:1.4rem;font-weight:700;color:var(--mud-palette-success)">@_disponibilidad.Disponible.ToString("C0")</div>
+                        </div>
+                    </div>
+                    <MudProgressLinear Value="@pct" Color="@(pct > 80 ? Color.Error : Color.Primary)" Rounded="true" Class="mb-4" Style="height:10px;" />
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">Sin línea de crédito configurada. Cualquier monto está permitido.</MudAlert>
+                }
+
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Configurar línea de crédito</MudText>
+                <div class="d-flex align-center flex-wrap" style="gap:8px;">
+                    <MudNumericField T="decimal" @bind-Value="_nuevoCupo" Label="Cupo máximo ($)" Variant="Variant.Outlined"
+                                     Margin="Margin.Dense" Style="max-width:200px;" Min="0" />
+                    <MudTextField @bind-Value="_nuevaObsCredito" Label="Observaciones" Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" Style="max-width:280px;" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               OnClick="GuardarLineaCreditoAsync" Disabled="_guardandoCredito">
+                        @(_guardandoCredito ? "Guardando…" : "Guardar")
+                    </MudButton>
+                </div>
+            </MudTabPanel>
+        </MudTabs>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public string ExternalId { get; set; } = "";
+
+    private ClienteItem? _cliente;
+    private List<EmpleadoItem> _empleados = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    // Contactos
+    private MudForm _formContacto = default!;
+    private List<ContactoItem> _contactos = new();
+    private string _nombresContacto = string.Empty;
+    private string? _cargoContacto;
+    private string? _telefonoContacto;
+    private string? _emailContacto;
+    private bool _esPrincipalContacto;
+
+    // Bitacora
+    private MudForm _formInteraccion = default!;
+    private List<InteraccionItem> _interacciones = new();
+    private string _tipoInteraccion = "Llamada";
+    private string _notasInteraccion = string.Empty;
+    private DateTime? _proximoContactoInteraccion;
+
+    // Tickets
+    private List<TicketItem> _tickets = new();
+    private async Task CargarTicketsAsync() =>
+        _tickets = await ApiClient.GetAsync<List<TicketItem>>($"api/soporte/tickets?clienteId={_cliente!.ClienteID}") ?? new();
+    private static Color ColorPrioridad(string? p) => p switch
+    {
+        "CRITICA" => Color.Error,
+        "ALTA"    => Color.Warning,
+        "MEDIA"   => Color.Primary,
+        _         => Color.Default
+    };
+
+    // Historial
+    private List<EventoHistorialItem> _historial = new();
+
+    // Documentos
+    private List<ClienteDocumentoItem> _documentos = new();
+    private string _tipoDocumento = "RUT";
+
+    private Color ColorTipoEvento(string tipo) => tipo switch
+    {
+        "PEDIDO" => Color.Info,
+        "DESPACHO" => Color.Success,
+        "FACTURA" => Color.Warning,
+        _ => Color.Primary
+    };
+
+    // OnParametersSetAsync corre en cada navegacion a esta pagina (primera vez
+    // y re-navegacion con mismo o diferente ExternalId). Siempre recargamos para
+    // evitar que Blazor sirva datos viejos cuando el cliente fue editado desde
+    // la lista y el usuario regresa al workspace.
+    protected override async Task OnParametersSetAsync() => await CargarTodoAsync();
+
+    private async Task CargarTodoAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var tareaCliente = ApiClient.GetAsync<ClienteItem>($"api/crm/clientes/{ExternalId}");
+            var tareaEmpleados = ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true");
+
+            await Task.WhenAll(tareaCliente, tareaEmpleados);
+
+            _cliente = await tareaCliente;
+            _empleados = await tareaEmpleados ?? new();
+
+            if (_cliente is not null)
+            {
+                await CargarContactosAsync();
+                await CargarInteraccionesAsync();
+                await CargarHistorialAsync();
+                await CargarDocumentosAsync();
+                await CargarTicketsAsync();
+                await CargarSegmentoYCreditoAsync();
+                await CargarDualRolAsync();
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task CargarContactosAsync() =>
+        _contactos = await ApiClient.GetAsync<List<ContactoItem>>($"api/crm/clientes/{_cliente!.ClienteID}/contactos") ?? new();
+
+    private List<NotaLeadItem> _notasLead = new();
+
+    private async Task CargarInteraccionesAsync()
+    {
+        _interacciones = await ApiClient.GetAsync<List<InteraccionItem>>($"api/crm/clientes/{_cliente!.ClienteID}/interacciones") ?? new();
+        _notasLead = await ApiClient.GetAsync<List<NotaLeadItem>>($"api/crm/clientes/{_cliente!.ClienteID}/notas-lead") ?? new();
+    }
+
+    private async Task CargarHistorialAsync() =>
+        _historial = await ApiClient.GetAsync<List<EventoHistorialItem>>($"api/crm/clientes/{_cliente!.ClienteID}/historial") ?? new();
+
+    private async Task CargarDocumentosAsync() =>
+        _documentos = await ApiClient.GetAsync<List<ClienteDocumentoItem>>($"api/crm/clientes/{_cliente!.ClienteID}/documentos") ?? new();
+
+    private async Task AbrirEdicionAsync()
+    {
+        var parametros = new DialogParameters<ClienteDialog>
+        {
+            { x => x.Cliente, _cliente },
+            { x => x.Empleados, _empleados }
+        };
+
+        var dialogo = await DialogService.ShowAsync<ClienteDialog>("Editar Cliente", parametros);
+        var resultado = await dialogo.Result;
+        if (resultado is null || resultado.Canceled) return;
+
+        try
+        {
+            var request = (ActualizarClienteRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarClienteRequest, object?>($"api/crm/clientes/{_cliente!.ClienteID}", request);
+            Snackbar.Add("Cliente actualizado correctamente.", Severity.Success);
+            _cliente = await ApiClient.GetAsync<ClienteItem>($"api/crm/clientes/{ExternalId}");
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AgregarContactoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombresContacto))
+            return;
+
+        try
+        {
+            var request = new CrearContactoRequest(_cliente!.ClienteID, _nombresContacto.Trim(), _cargoContacto, _telefonoContacto, _emailContacto, _esPrincipalContacto);
+            await ApiClient.PostAsync<CrearContactoRequest, object?>("api/crm/contactos", request);
+            _nombresContacto = string.Empty;
+            _cargoContacto = null;
+            _telefonoContacto = null;
+            _emailContacto = null;
+            _esPrincipalContacto = false;
+            await CargarContactosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RegistrarInteraccionAsync()
+    {
+        await _formInteraccion.Validate();
+        if (!_formInteraccion.IsValid)
+            return;
+
+        try
+        {
+            var request = new CrearInteraccionRequest(_cliente!.ClienteID, _tipoInteraccion, _notasInteraccion.Trim(), _proximoContactoInteraccion);
+            await ApiClient.PostAsync<CrearInteraccionRequest, object?>("api/crm/interacciones", request);
+
+            if (_proximoContactoInteraccion.HasValue)
+            {
+                try
+                {
+                    var inicio = DateTime.SpecifyKind(_proximoContactoInteraccion.Value.Date.AddHours(9), DateTimeKind.Local).ToUniversalTime();
+                    var evReq = new CrearEventoRequest(
+                        $"Seguimiento: {_cliente.Nombre}",
+                        "SEGUIMIENTO", inicio, inicio.AddHours(1),
+                        null, null,
+                        _notasInteraccion.Trim(),
+                        null, new List<int>());
+                    await ApiClient.PostAsync<CrearEventoRequest, object?>("api/calendario/eventos", evReq);
+                    Snackbar.Add("Evento agendado en el calendario", Severity.Info);
+                }
+                catch { }
+            }
+
+            _notasInteraccion = string.Empty;
+            _proximoContactoInteraccion = null;
+            await CargarInteraccionesAsync();
+
+            // Si se agendo proximo contacto, recargar por ExternalId para que
+            // el chip de Proximo Contacto del encabezado se actualice.
+            _cliente = await ApiClient.GetAsync<ClienteItem>($"api/crm/clientes/{ExternalId}");
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task OnDocumentoSeleccionadoAsync(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 5_000_000;
+
+        if (e.File.Size > maxBytes)
+        {
+            Snackbar.Add("El documento es muy grande (máximo 5 MB).", Severity.Warning);
+            return;
+        }
+
+        using var stream = e.File.OpenReadStream(maxBytes);
+        using var memoria = new MemoryStream();
+        await stream.CopyToAsync(memoria);
+        var base64 = Convert.ToBase64String(memoria.ToArray());
+
+        try
+        {
+            var request = new SubirDocumentoRequest(_tipoDocumento, e.File.Name, e.File.ContentType, base64);
+            await ApiClient.PostAsync<SubirDocumentoRequest, object?>($"api/crm/clientes/{_cliente!.ClienteID}/documentos", request);
+            Snackbar.Add("Documento subido.", Severity.Success);
+            await CargarDocumentosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DescargarDocumentoAsync(ClienteDocumentoItem documento)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/crm/documentos/{documento.DocumentoID}");
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", documento.NombreArchivo, documento.ContentType, streamRef);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task EliminarDocumentoAsync(ClienteDocumentoItem documento)
+    {
+        var ok = await DialogService.ShowMessageBox(
+            "Eliminar documento",
+            $"¿Eliminar \"{documento.NombreArchivo}\"? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (ok != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/crm/documentos/{documento.DocumentoID}");
+            Snackbar.Add("Documento eliminado.", Severity.Success);
+            await CargarDocumentosAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // ── Dual-rol ─────────────────────────────────────────────────────────
+    private DualRolInfo? _dualRol;
+    private bool _procesandoDualRol;
+
+    private async Task CargarDualRolAsync()
+    {
+        if (_cliente?.NIT is null) return;
+        try
+        {
+            _dualRol = await ApiClient.GetAsync<DualRolInfo>(
+                $"api/catalogo/verificar-dual-rol?nit={Uri.EscapeDataString(_cliente.NIT)}");
+        }
+        catch { }
+    }
+
+    private async Task RegistrarComoProveedorAsync()
+    {
+        if (_cliente is null) return;
+        _procesandoDualRol = true;
+        try
+        {
+            await ApiClient.PostAsync<object?, object?>($"api/catalogo/proveedores/desde-cliente/{_cliente.ClienteID}", null);
+            Snackbar.Add("Cliente registrado como proveedor correctamente.", Severity.Success);
+            await CargarDualRolAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _procesandoDualRol = false; }
+    }
+
+    // ── Segmento y crédito ────────────────────────────────────────────────
+    private ClienteSegmentoItem? _segmento;
+    private DisponibilidadCreditoItem? _disponibilidad;
+    private LineaCreditoItem? _lineaCredito;
+    private PrediccionCompraItem? _prediccion;
+    private decimal _nuevoCupo;
+    private string? _nuevaObsCredito;
+    private bool _guardandoCredito;
+
+    private async Task CargarSegmentoYCreditoAsync()
+    {
+        if (_cliente is null) return;
+        try
+        {
+            var id = _cliente.ClienteID;
+            var ts = ApiClient.GetAsync<ClienteSegmentoItem>($"api/crm/clientes/{id}/segmento");
+            var td = ApiClient.GetAsync<DisponibilidadCreditoItem>($"api/crm/clientes/{id}/linea-credito/disponible");
+            var tl = ApiClient.GetAsync<LineaCreditoItem>($"api/crm/clientes/{id}/linea-credito");
+            var tp = ApiClient.GetAsync<PrediccionCompraItem>($"api/crm/clientes/{id}/prediccion-compra");
+            await Task.WhenAll(ts, td, tl, tp);
+            _segmento       = await ts;
+            _disponibilidad = await td;
+            _lineaCredito   = await tl;
+            _prediccion     = await tp;
+            if (_lineaCredito is not null) { _nuevoCupo = _lineaCredito.CupoCredito; _nuevaObsCredito = _lineaCredito.Observaciones; }
+        }
+        catch { }
+    }
+
+    private async Task GuardarLineaCreditoAsync()
+    {
+        if (_cliente is null) return;
+        _guardandoCredito = true;
+        try
+        {
+            await ApiClient.PutAsync($"api/crm/clientes/{_cliente.ClienteID}/linea-credito",
+                new ActualizarLineaCreditoRequest(_nuevoCupo, _nuevaObsCredito));
+            _disponibilidad = await ApiClient.GetAsync<DisponibilidadCreditoItem>(
+                $"api/crm/clientes/{_cliente.ClienteID}/linea-credito/disponible");
+            Snackbar.Add("Línea de crédito actualizada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardandoCredito = false; }
+    }
+}

@@ -1,0 +1,225 @@
+@page "/formularios"
+@inject INexoApiClient Api
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IConfiguration Config
+
+<PageTitle>Formularios | NEXO ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+
+    <div class="d-flex align-center justify-space-between mb-4">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Formularios</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Crea formularios y recibe respuestas desde un enlace público.</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="NuevoFormulario">
+            Nuevo Formulario
+        </MudButton>
+    </div>
+    <InfoAyuda Texto="Crea formularios personalizados y compártelos con un enlace público para recopilar respuestas de clientes o empleados." />
+
+    @if (_cargando)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-3" />
+    }
+
+    @if (!_cargando && !_formularios.Any())
+    {
+        <MudPaper Class="pa-4 pa-sm-12 text-center" Elevation="0"
+                  Style="border:2px dashed var(--mud-palette-lines-default);border-radius:16px">
+            <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">Aún no hay formularios</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Crea tu primer formulario y comparte el enlace para recibir respuestas.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="NuevoFormulario">
+                Crear formulario
+            </MudButton>
+        </MudPaper>
+    }
+
+    <div class="frm-grid">
+        @foreach (var f in _formularios)
+        {
+            <div class="frm-card @(f.Activo ? "" : "frm-card--inactivo")">
+                <div class="frm-card-header">
+                    <div class="frm-card-icon">
+                        <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Small" />
+                    </div>
+                    <div class="frm-card-status">
+                        @if (f.Activo && f.AceptaRespuestas)
+                        {
+                            <span class="frm-badge frm-badge--activo">Activo</span>
+                        }
+                        else if (f.Activo && !f.AceptaRespuestas)
+                        {
+                            <span class="frm-badge frm-badge--pausado">Pausado</span>
+                        }
+                        else
+                        {
+                            <span class="frm-badge frm-badge--inactivo">Inactivo</span>
+                        }
+                    </div>
+                </div>
+
+                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-1">@f.Titulo</MudText>
+                @if (!string.IsNullOrWhiteSpace(f.Descripcion))
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3 frm-desc">@f.Descripcion</MudText>
+                }
+
+                <div class="frm-stats">
+                    <div class="frm-stat">
+                        <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Small" Color="Color.Primary" />
+                        <span>@f.TotalRespuestas respuesta(s)</span>
+                    </div>
+                    <div class="frm-stat">
+                        <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Color="Color.Secondary" />
+                        <span>@f.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy")</span>
+                    </div>
+                </div>
+
+                <MudDivider Class="my-2" />
+
+                <div class="frm-link-row">
+                    <a href="/f/@f.Token" target="_blank"
+                       style="font-size:0.75rem;color:var(--mud-palette-text-secondary);text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                        /f/@f.Token
+                    </a>
+                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small"
+                                   Href="@($"/f/{f.Token}")" Target="_blank"
+                                   Title="Abrir formulario público" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                                   OnClick="@(() => CopiarEnlace(f.Token))"
+                                   Title="Copiar enlace público" />
+                    <MudIconButton Icon="@Icons.Material.Filled.QrCode" Size="Size.Small"
+                                   OnClick="@(() => MostrarQr(f))"
+                                   Title="Ver QR del formulario" />
+                </div>
+
+                <div class="d-flex gap-2 mt-2">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Edit"
+                               OnClick="@(() => Nav.NavigateTo($"/formularios/{f.FormularioID}/builder"))">
+                        Editar
+                    </MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.BarChart"
+                               OnClick="@(() => Nav.NavigateTo($"/formularios/{f.FormularioID}/respuestas"))">
+                        Respuestas (@f.TotalRespuestas)
+                    </MudButton>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                   OnClick="@(() => Eliminar(f))" />
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (_qrFormulario is not null)
+    {
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;"
+             @onclick="@(() => _qrFormulario = null)">
+            <div style="background:var(--mud-palette-background);border-radius:16px;padding:28px 32px;
+                        display:flex;flex-direction:column;align-items:center;gap:14px;max-width:320px;width:90%;"
+                 @onclick:stopPropagation="true">
+                <div style="font-weight:700;font-size:1rem;text-align:center;">@_qrFormulario.Titulo</div>
+                <img src="@($"{Config["NexoApi:BaseUrl"]!.TrimEnd('/')}/api/formularios/{_qrFormulario.FormularioID}/qr-png?frontendUrl={Uri.EscapeDataString(Nav.BaseUri.TrimEnd('/'))}")"
+                     alt="QR" style="width:200px;height:200px;border-radius:8px;" />
+                <div style="font-size:.75rem;color:var(--mud-palette-text-secondary);text-align:center;word-break:break-all;">
+                    @Nav.BaseUri.TrimEnd('/')/f/@_qrFormulario.Token
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               OnClick="@(() => CopiarEnlace(_qrFormulario!.Token))">
+                        Copiar enlace
+                    </MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               OnClick="@(() => _qrFormulario = null)">
+                        Cerrar
+                    </MudButton>
+                </div>
+            </div>
+        </div>
+    }
+
+</MudContainer>
+
+@code {
+    private List<FormularioItem> _formularios = new();
+    private bool _cargando;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        try
+        {
+            _formularios = (await Api.GetAsync<List<FormularioItem>>("api/formularios") ?? []);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar formularios: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task NuevoFormulario()
+    {
+        try
+        {
+            var req = new CrearFormularioRequest("Nuevo formulario", null, null);
+            var resp = await Api.PostAsync<CrearFormularioRequest, NuevoFormularioResp>(
+                "api/formularios", req);
+            if (resp is not null)
+                Nav.NavigateTo($"/formularios/{resp.FormularioID}/builder");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al crear formulario: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private record NuevoFormularioResp(int FormularioID);
+
+    private async Task CopiarEnlace(string token)
+    {
+        var url = $"{Nav.BaseUri}f/{token}";
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            Snackbar.Add("Enlace copiado", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add($"Copia el enlace manualmente: {url}", Severity.Info);
+        }
+    }
+
+    private FormularioItem? _qrFormulario;
+
+    private void MostrarQr(FormularioItem f) => _qrFormulario = f;
+
+    private async Task Eliminar(FormularioItem f)
+    {
+        var confirm = await Dialogs.ShowMessageBox(
+            "Eliminar formulario",
+            $"¿Eliminar '{f.Titulo}'? Se borrarán todas las respuestas. Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (confirm == true)
+        {
+            await Api.DeleteAsync($"api/formularios/{f.FormularioID}");
+            Snackbar.Add("Formulario eliminado", Severity.Success);
+            await Cargar();
+        }
+    }
+}

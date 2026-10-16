@@ -1,0 +1,199 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog Style="min-width:680px;">
+    <DialogContent>
+        <MudText Typo="Typo.subtitle2" Class="mb-3">
+            Etapas de fabricación — Orden: <strong>@CodigoOP</strong>
+        </MudText>
+
+        @if (_etapas.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-3">
+                Sin etapas. Inicializa con las etapas estándar o personaliza.
+            </MudAlert>
+            <div class="d-flex align-center mb-2" style="gap:0.5rem; flex-wrap:wrap;">
+                @foreach (var e in _etapasCustom)
+                {
+                    <MudChip T="string" Text="@e" OnClose="() => QuitarEtapa(e)" Color="Color.Default" />
+                }
+                <MudTextField @bind-Value="_nuevaEtapa" Placeholder="Agregar etapa..."
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Style="min-width:160px;" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Add" Color="Color.Primary"
+                               Size="Size.Small" OnClick="AgregarEtapaCustom" />
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Outlined.PlaylistAddCheck"
+                       OnClick="InicializarAsync" Disabled="_guardando">
+                Inicializar etapas
+            </MudButton>
+        }
+        else
+        {
+            <MudTable Items="_etapas" Dense="true" Hover="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>#</MudTh>
+                    <MudTh>Etapa</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Terminadas</MudTh>
+                    <MudTh>Rechazadas</MudTh>
+                    <MudTh>Responsable</MudTh>
+                    <MudTh>Tiempo (min)</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Orden</MudTd>
+                    <MudTd><strong>@context.NombreEtapa</strong></MudTd>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@EstadoColor(context.Estado)">
+                            @context.Estado
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>@(context.CantidadTerminada?.ToString("N0") ?? "-")</MudTd>
+                    <MudTd>@(context.CantidadRechazada?.ToString("N0") ?? "-")</MudTd>
+                    <MudTd>@(context.NombreEmpleado ?? "-")</MudTd>
+                    <MudTd>@(context.TiempoMinutos?.ToString() ?? "-")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit"
+                                       Size="Size.Small" Color="Color.Default"
+                                       OnClick="() => AbrirEdicion(context)" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            @if (_editando is not null)
+            {
+                <MudPaper Class="pa-3 mt-3" Elevation="1">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Actualizar: @_editando.NombreEtapa</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" sm="4">
+                            <MudSelect T="string" @bind-Value="_editEstado" Label="Estado" Variant="Variant.Outlined">
+                                <MudSelectItem Value=@("PENDIENTE")>PENDIENTE</MudSelectItem>
+                                <MudSelectItem Value=@("EN_PROCESO")>EN PROCESO</MudSelectItem>
+                                <MudSelectItem Value=@("COMPLETADA")>COMPLETADA</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6" sm="2">
+                            <MudNumericField T="decimal?" @bind-Value="_editTerminadas" Label="Terminadas"
+                                             Variant="Variant.Outlined" HideSpinButtons="true" />
+                        </MudItem>
+                        <MudItem xs="6" sm="2">
+                            <MudNumericField T="decimal?" @bind-Value="_editRechazadas" Label="Rechazadas"
+                                             Variant="Variant.Outlined" HideSpinButtons="true" />
+                        </MudItem>
+                        <MudItem xs="6" sm="2">
+                            <MudNumericField T="int?" @bind-Value="_editTiempo" Label="Tiempo (min)"
+                                             Variant="Variant.Outlined" HideSpinButtons="true" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_editNotas" Label="Notas" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="2" Class="d-flex align-end" Style="gap:0.5rem;">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="GuardarEtapaAsync" Disabled="_guardando">
+                                Guardar
+                            </MudButton>
+                            <MudButton OnClick="() => _editando = null">Cancelar</MudButton>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Close()">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int OrdenProduccionID { get; set; }
+    [Parameter] public string CodigoOP { get; set; } = "";
+
+    private List<OrdenEtapaItem> _etapas = new();
+    private List<string> _etapasCustom = new() { "CORTE", "MECANIZADO", "ARMADO", "LIJADO", "PINTURA", "DESPACHO" };
+    private string _nuevaEtapa = "";
+    private bool _guardando;
+
+    private OrdenEtapaItem? _editando;
+    private string   _editEstado      = "PENDIENTE";
+    private decimal? _editTerminadas, _editRechazadas;
+    private int?     _editTiempo;
+    private string?  _editNotas;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _etapas = await ApiClient.GetAsync<List<OrdenEtapaItem>>(
+                $"api/produccion/ordenes/{OrdenProduccionID}/etapas") ?? new();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private void AgregarEtapaCustom()
+    {
+        var v = _nuevaEtapa.Trim().ToUpperInvariant();
+        if (!string.IsNullOrEmpty(v) && !_etapasCustom.Contains(v))
+            _etapasCustom.Add(v);
+        _nuevaEtapa = "";
+    }
+
+    private void QuitarEtapa(string etapa) => _etapasCustom.Remove(etapa);
+
+    private async Task InicializarAsync()
+    {
+        _guardando = true;
+        try
+        {
+            var req = new InicializarEtapasRequest(_etapasCustom.Count > 0 ? _etapasCustom : null);
+            await ApiClient.PostAsync<InicializarEtapasRequest, object?>(
+                $"api/produccion/ordenes/{OrdenProduccionID}/etapas/inicializar", req);
+            _etapas = await ApiClient.GetAsync<List<OrdenEtapaItem>>(
+                $"api/produccion/ordenes/{OrdenProduccionID}/etapas") ?? new();
+            Snackbar.Add("Etapas inicializadas.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private void AbrirEdicion(OrdenEtapaItem etapa)
+    {
+        _editando      = etapa;
+        _editEstado    = etapa.Estado;
+        _editTerminadas = etapa.CantidadTerminada;
+        _editRechazadas = etapa.CantidadRechazada;
+        _editTiempo    = etapa.TiempoMinutos;
+        _editNotas     = etapa.Notas;
+    }
+
+    private async Task GuardarEtapaAsync()
+    {
+        if (_editando is null) return;
+        _guardando = true;
+        try
+        {
+            var req = new ActualizarEtapaRequest(_editEstado, null, _editTerminadas,
+                                                 _editRechazadas, null, null, null,
+                                                 _editTiempo, _editNotas);
+            await ApiClient.PatchAsync<ActualizarEtapaRequest, object?>(
+                $"api/produccion/etapas/{_editando.OrdenEtapaID}", req);
+            _etapas = await ApiClient.GetAsync<List<OrdenEtapaItem>>(
+                $"api/produccion/ordenes/{OrdenProduccionID}/etapas") ?? new();
+            _editando = null;
+            Snackbar.Add("Etapa actualizada.", Severity.Success);
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private static Color EstadoColor(string estado) => estado switch
+    {
+        "EN_PROCESO"  => Color.Warning,
+        "COMPLETADA"  => Color.Success,
+        _             => Color.Default
+    };
+}

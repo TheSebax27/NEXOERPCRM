@@ -1,0 +1,144 @@
+﻿@page "/rrhh/comisiones"
+@using NexoWeb.Common.ApiClient
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialog
+
+<PageTitle>Comisiones — NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Comisiones en Tiempo Real</h1>
+        </div>
+    </div>
+    <div class="d-flex align-center" style="gap:8px">
+        <MudSelect T="int" @bind-Value="_mes" Label="Mes" Style="width:130px">
+            <MudSelectItem T="int" Value="1">Enero</MudSelectItem>
+            <MudSelectItem T="int" Value="2">Febrero</MudSelectItem>
+            <MudSelectItem T="int" Value="3">Marzo</MudSelectItem>
+            <MudSelectItem T="int" Value="4">Abril</MudSelectItem>
+            <MudSelectItem T="int" Value="5">Mayo</MudSelectItem>
+            <MudSelectItem T="int" Value="6">Junio</MudSelectItem>
+            <MudSelectItem T="int" Value="7">Julio</MudSelectItem>
+            <MudSelectItem T="int" Value="8">Agosto</MudSelectItem>
+            <MudSelectItem T="int" Value="9">Septiembre</MudSelectItem>
+            <MudSelectItem T="int" Value="10">Octubre</MudSelectItem>
+            <MudSelectItem T="int" Value="11">Noviembre</MudSelectItem>
+            <MudSelectItem T="int" Value="12">Diciembre</MudSelectItem>
+        </MudSelect>
+        <MudNumericField T="int" @bind-Value="_anio" Label="Año" Min="2020" Max="2099" Style="width:100px" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="CargarResumenAsync">Actualizar</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.Settings"
+                   OnClick="AbrirConfigAsync">Configurar</MudButton>
+    </div>
+</div>
+
+@if (_errorAcceso is not null)
+{
+    <MudAlert Severity="Severity.Error">@_errorAcceso</MudAlert>
+}
+else if (_cargando)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+}
+else if (_resumen is not null && !_resumen.Any())
+{
+    <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Outlined.Info" Class="mt-4">
+        No hay comisiones configuradas. Usa el botón <strong>CONFIGURAR</strong> para asignar porcentaje y meta mensual a cada vendedor.
+    </MudAlert>
+}
+else if (_resumen is not null)
+{
+    <MudGrid Spacing="3">
+        @foreach (var emp in _resumen)
+        {
+            var pct = Math.Min(emp.PorcentajeMeta, 100);
+            var color = pct >= 100 ? Color.Success : pct >= 70 ? Color.Warning : Color.Error;
+            <MudItem xs="12" sm="6" md="4">
+                <MudPaper Elevation="2" Class="pa-4">
+                    <div class="d-flex justify-space-between align-center mb-2">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:600">@emp.NombreEmpleado</MudText>
+                        <MudChip T="string" Color="@color" Size="Size.Small" Label="true">
+                            @pct.ToString("0")%
+                        </MudChip>
+                    </div>
+
+                    <MudProgressLinear Value="@pct" Color="@color" Rounded="true" Size="Size.Medium" Class="mb-3" />
+
+                    <MudGrid Spacing="1">
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Ventas del mes</MudText>
+                            <MudText Typo="Typo.body2" Style="font-weight:500">@emp.TotalVentas.ToString("C0")</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Meta</MudText>
+                            <MudText Typo="Typo.body2">@emp.MetaMensual.ToString("C0")</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Comisión</MudText>
+                            <MudText Typo="Typo.body1" Color="@color" Style="font-weight:700">@emp.TotalComision.ToString("C0")</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Facturas</MudText>
+                            <MudText Typo="Typo.body2">@emp.TotalFacturas</MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private record ResumenComisionesItem(int EmpleadoID, string NombreEmpleado, decimal MetaMensual,
+        decimal TotalVentas, decimal TotalComision, double PorcentajeMeta, int TotalFacturas);
+
+    private record ConfigComisionItem(int ConfigID, int EmpleadoID, string NombreEmpleado,
+        decimal PorcentajeBase, decimal MetaMensual, decimal BonoPorMeta, bool Activo);
+
+    private IEnumerable<ResumenComisionesItem>? _resumen;
+    private bool _cargando;
+    private int _mes  = NexoWeb.Common.ColombiaClock.Now.Month;
+    private int _anio = NexoWeb.Common.ColombiaClock.Now.Year;
+
+    protected override async Task OnInitializedAsync() => await CargarResumenAsync();
+
+    private string? _errorAcceso;
+
+    private async Task CargarResumenAsync()
+    {
+        _cargando = true;
+        _errorAcceso = null;
+        try
+        {
+            _resumen = await Api.GetAsync<IEnumerable<ResumenComisionesItem>>(
+                $"api/comisiones/resumen?mes={_mes}&anio={_anio}");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _errorAcceso = "Sin acceso. Requiere rol Administracion o RRHH.";
+        }
+        catch (Exception ex)
+        {
+            _errorAcceso = $"Error al cargar comisiones: {ex.Message}";
+        }
+        finally { _cargando = false; }
+    }
+
+    private async Task AbrirConfigAsync()
+    {
+        var parametros = new DialogParameters<ConfigComisionesDialog>();
+        var options    = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var dialog     = await Dialog.ShowAsync<ConfigComisionesDialog>("Configurar comisiones", parametros, options);
+        var result     = await dialog.Result;
+        if (!result!.Canceled)
+            await CargarResumenAsync();
+    }
+}

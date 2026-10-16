@@ -1,0 +1,612 @@
+@page "/crm/pipeline"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject NavigationManager Navigation
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@using NexoWeb.Common.Helpers
+
+<PageTitle>Pipeline CRM - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Pipeline CRM</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Vista unificada del embudo: Leads en etapas tempranas y Oportunidades en etapas avanzadas. Al calificar un lead puedes convertirlo en oportunidad con un click." />
+
+@if (_metricas is not null)
+{
+    <div class="nexo-pipeline-kpis mb-4">
+        <div class="nexo-pipeline-kpi">
+            <div class="nexo-pipeline-kpi__left">
+                <div class="nexo-pipeline-kpi__icon" style="background:color-mix(in srgb,#42A5F5 14%,transparent)">
+                    <MudIcon Icon="@Icons.Material.Filled.PeopleAlt" Style="color:#42A5F5" Size="Size.Small" />
+                </div>
+                <div>
+                    <div class="nexo-pipeline-kpi__val">@_metricas.LeadsActivos</div>
+                    <div class="nexo-pipeline-kpi__lbl">Leads activos</div>
+                </div>
+            </div>
+            <svg class="nexo-pipeline-kpi__spark" viewBox="0 0 80 30" preserveAspectRatio="none">
+                <polyline points="0,25 20,18 40,20 60,12 80,8" fill="none" stroke="#42A5F5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <div class="nexo-pipeline-kpi">
+            <div class="nexo-pipeline-kpi__left">
+                <div class="nexo-pipeline-kpi__icon" style="background:color-mix(in srgb,#26C6DA 14%,transparent)">
+                    <MudIcon Icon="@Icons.Material.Filled.Adjust" Style="color:#26C6DA" Size="Size.Small" />
+                </div>
+                <div>
+                    <div class="nexo-pipeline-kpi__val">@_metricas.OportunidadesActivas</div>
+                    <div class="nexo-pipeline-kpi__lbl">Oportunidades</div>
+                </div>
+            </div>
+            <svg class="nexo-pipeline-kpi__spark" viewBox="0 0 80 30" preserveAspectRatio="none">
+                <polyline points="0,22 20,16 40,19 60,10 80,6" fill="none" stroke="#26C6DA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <div class="nexo-pipeline-kpi nexo-pipeline-kpi--accent">
+            <div class="nexo-pipeline-kpi__left">
+                <div class="nexo-pipeline-kpi__icon" style="background:color-mix(in srgb,var(--mud-palette-primary) 14%,transparent)">
+                    <MudIcon Icon="@Icons.Material.Filled.MonetizationOn" Style="color:var(--mud-palette-primary)" Size="Size.Small" />
+                </div>
+                <div>
+                    <div class="nexo-pipeline-kpi__val">@_metricas.ValorTotalOportunidades.ToString("C0")</div>
+                    <div class="nexo-pipeline-kpi__lbl">Valor en embudo</div>
+                </div>
+            </div>
+            <svg class="nexo-pipeline-kpi__spark" viewBox="0 0 80 30" preserveAspectRatio="none">
+                <polyline points="0,24 20,20 40,16 60,11 80,7" fill="none" stroke="var(--mud-palette-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <div class="nexo-pipeline-kpi">
+            <div class="nexo-pipeline-kpi__left">
+                <div class="nexo-pipeline-kpi__icon" style="background:color-mix(in srgb,#66BB6A 14%,transparent)">
+                    <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Style="color:#66BB6A" Size="Size.Small" />
+                </div>
+                <div>
+                    <div class="nexo-pipeline-kpi__val">@_metricas.TasaConversion.ToString("0.#")%</div>
+                    <div class="nexo-pipeline-kpi__lbl">Conversión 90d</div>
+                </div>
+            </div>
+            <svg class="nexo-pipeline-kpi__spark" viewBox="0 0 80 30" preserveAspectRatio="none">
+                <polyline points="0,26 20,22 40,18 60,13 80,9" fill="none" stroke="#66BB6A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        @if (_metricas.DiasPromedioCierre.HasValue)
+        {
+            <div class="nexo-pipeline-kpi">
+                <div class="nexo-pipeline-kpi__left">
+                    <div class="nexo-pipeline-kpi__icon" style="background:color-mix(in srgb,#FFA726 14%,transparent)">
+                        <MudIcon Icon="@Icons.Material.Filled.HourglassBottom" Style="color:#FFA726" Size="Size.Small" />
+                    </div>
+                    <div>
+                        <div class="nexo-pipeline-kpi__val">@_metricas.DiasPromedioCierre.Value.ToString("0") d</div>
+                        <div class="nexo-pipeline-kpi__lbl">Días promedio cierre</div>
+                    </div>
+                </div>
+                <svg class="nexo-pipeline-kpi__spark" viewBox="0 0 80 30" preserveAspectRatio="none">
+                    <polyline points="0,20 20,15 40,18 60,11 80,8" fill="none" stroke="#FFA726" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        }
+    </div>
+}
+
+<div class="d-flex align-center flex-wrap mb-4" style="gap:1rem">
+    <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.PersonAddAlt"
+               OnClick="AbrirNuevoLeadAsync">Nuevo Lead</MudButton>
+    <AppSelect TValue="string?" Value="_filtroEtapa" ValueChanged="OnFiltroEtapaCambiadoAsync"
+               Label="Filtrar por etapa" Style="max-width:200px"
+               Items="@(_etapasFlujo.Select(e => new AppSelectItem<string?>(e.Etiqueta, e.Clave)))" />
+    <AppSelect TValue="int?" Value="_filtroResponsableId" ValueChanged="OnFiltroResponsableCambiadoAsync"
+               Label="Responsable" Placeholder="Todos" Style="max-width:200px"
+               Items="@(_empleados.Select(emp => new AppSelectItem<int?>($"{emp.Nombres} {emp.Apellidos}", (int?)emp.EmpleadoID)))" />
+    <MudTooltip Text="Mostrar solo ítems con cierre vencido o lead sin actividad >30 días">
+        <MudChip T="string" Color="@(_soloVencidos ? Color.Error : Color.Default)"
+                 Variant="@(_soloVencidos ? Variant.Filled : Variant.Outlined)"
+                 OnClick="@(() => { _soloVencidos = !_soloVencidos; StateHasChanged(); })"
+                 Size="Size.Small" Icon="@Icons.Material.Filled.Warning">
+            Vencidos @(_itemsVencidos > 0 ? $"({_itemsVencidos})" : "")
+        </MudChip>
+    </MudTooltip>
+    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+        <MudButton StartIcon="@Icons.Material.Outlined.ViewWeek"
+                   Color="@(_vistaKanban ? Color.Primary : Color.Default)"
+                   Variant="@(_vistaKanban ? Variant.Filled : Variant.Outlined)"
+                   OnClick="@(() => _vistaKanban = true)">Kanban</MudButton>
+        <MudButton StartIcon="@Icons.Material.Filled.ViewList"
+                   Color="@(!_vistaKanban ? Color.Primary : Color.Default)"
+                   Variant="@(!_vistaKanban ? Variant.Filled : Variant.Outlined)"
+                   OnClick="@(() => _vistaKanban = false)">Lista</MudButton>
+    </MudButtonGroup>
+</div>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudo cargar el pipeline: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (!ItemsFiltrados.Any())
+{
+    <div class="nexo-pipeline-empty">
+        <div class="nexo-pipeline-empty__blob">
+            <MudIcon Icon="@Icons.Material.Filled.PersonAddAlt1" Class="nexo-pipeline-empty__ico" />
+            <div class="nexo-pipeline-empty__plus">+</div>
+        </div>
+        <MudText Typo="Typo.h6" Class="nexo-pipeline-empty__title">No hay registros en el pipeline.</MudText>
+        <MudText Class="nexo-pipeline-empty__sub">Cuando agregues un lead u oportunidad, aparecerán aquí.</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AbrirNuevoLeadAsync" Size="Size.Medium">Crear nuevo lead</MudButton>
+    </div>
+}
+else
+{
+    @if (_vistaKanban)
+    {
+        var todosK = ItemsFiltrados.ToList();
+        <div style="display:flex;gap:0.75rem;overflow-x:auto;align-items:flex-start;padding-bottom:0.5rem">
+            @foreach (var (Clave, Etiqueta, Hex) in _etapasFlujo)
+            {
+                var col = todosK.Where(i => MapEtapaKanban(i.Etapa) == Clave).ToList();
+                <div style="min-width:230px;max-width:270px;flex-shrink:0;background:var(--mud-palette-background-grey);border-radius:10px;overflow:hidden">
+                    <div style="padding:0.6rem 0.875rem;border-top:3px solid @Hex;background:var(--mud-palette-surface);display:flex;align-items:center;gap:6px">
+                        <span style="font-size:0.78rem;font-weight:700;color:var(--mud-palette-text-primary)">@Etiqueta</span>
+                        <MudChip T="string" Size="Size.Small" Style="margin-left:auto;height:18px;font-size:0.68rem;padding:0 6px;min-width:24px">@col.Count</MudChip>
+                    </div>
+                    <div style="padding:0.4rem;display:flex;flex-direction:column;gap:0.4rem;min-height:80px;max-height:70vh;overflow-y:auto">
+                        @foreach (var item in col)
+                        {
+                            <div style="background:var(--mud-palette-surface);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);cursor:pointer"
+                                 @onclick="@(() => Navigation.NavigateTo(ResolverRutaItem(item)))">
+                                <div style="height:2px;background:@Hex"></div>
+                                <div style="padding:0.6rem">
+                                    <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;flex-wrap:wrap">
+                                        <span style="font-weight:600;font-size:0.8rem;color:var(--mud-palette-text-primary)">@item.Nombre</span>
+                                        @if (item.Tipo == "OPORTUNIDAD")
+                                        {
+                                            <span style="font-size:0.62rem;background:rgba(38,198,218,.15);color:#26C6DA;padding:1px 5px;border-radius:3px;white-space:nowrap">Oportunidad</span>
+                                        }
+                                        @if (item.Score.HasValue)
+                                        {
+                                            <span style="@ScoreBadgeStyle(item.Score.Value)" title="Score">@item.Score</span>
+                                        }
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(item.Empresa))
+                                    {
+                                        <div style="font-size:0.7rem;color:var(--mud-palette-text-secondary);margin-bottom:4px">@item.Empresa</div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(item.Telefono))
+                                    {
+                                        <div style="font-size:0.68rem;color:var(--mud-palette-text-secondary);margin-bottom:2px">📞 @item.Telefono</div>
+                                    }
+                                    @if (item.ValorEstimado.HasValue && item.ValorEstimado > 0)
+                                    {
+                                        <div style="font-size:0.68rem;color:var(--mud-palette-text-secondary);margin-bottom:2px">💰 @item.ValorEstimado.Value.ToString("C0")</div>
+                                    }
+                                    <div class="d-flex flex-wrap" style="gap:2px;margin-top:4px" @onclick:stopPropagation="true">
+                                        @AccionesItem(item)
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        @if (col.Count == 0)
+                        {
+                            <div style="text-align:center;padding:1rem;opacity:.35;font-size:0.75rem;color:var(--mud-palette-text-primary)">Sin registros</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (Preferencias.VistaListado == "lista")
+    {
+        <MudTable Items="@ItemsFiltrados.ToList()" Hover="true" Dense="true" Striped="true">
+            <HeaderContent>
+                <MudTh>Nombre</MudTh>
+                <MudTh>Empresa</MudTh>
+                <MudTh>Etapa</MudTh>
+                <MudTh>Score</MudTh>
+                <MudTh Style="text-align:right">Valor Est.</MudTh>
+                <MudTh>Responsable</MudTh>
+                <MudTh>Cierre Esp.</MudTh>
+                <MudTh>Acción</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nombre">
+                    <div style="font-weight:600">@context.Nombre</div>
+                    @if (context.Tipo == "OPORTUNIDAD")
+                    {
+                        <div style="font-size:0.72rem;color:var(--n-text-3)">Oportunidad</div>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Empresa">@(context.Empresa ?? "-")</MudTd>
+                <MudTd DataLabel="Etapa">
+                    <MudChip T="string" Size="Size.Small" Color="@ColorEtapa(context.Etapa)" Style="font-size:0.72rem">
+                        @EtiquetaEtapa(context.Etapa)
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Score">
+                    @if (context.Score.HasValue)
+                    {
+                        <span style="@ScoreBadgeStyle(context.Score.Value)">@context.Score</span>
+                    }
+                    else { <span style="opacity:.4">—</span> }
+                </MudTd>
+                <MudTd DataLabel="Valor Est." Style="text-align:right">
+                    @(context.ValorEstimado.HasValue && context.ValorEstimado > 0
+                        ? context.ValorEstimado.Value.ToString("C0")
+                        : "-")
+                </MudTd>
+                <MudTd DataLabel="Responsable">@(context.Responsable ?? "-")</MudTd>
+                <MudTd DataLabel="Cierre Esp.">@(context.FechaCierreEsperada?.ToString("dd/MM/yyyy") ?? "-")</MudTd>
+                <MudTd DataLabel="Acción">
+                    <div class="d-flex flex-wrap" style="gap:0.25rem">
+                        @AccionesItem(context)
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.OpenInNew"
+                                       Color="Color.Info" Title="Abrir workspace"
+                                       OnClick="@(() => Navigation.NavigateTo(ResolverRutaItem(context)))" />
+                    </div>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+    else
+    {
+        <div class="nexo-cards-grid">
+            @foreach (var item in ItemsFiltrados)
+            {
+                <div class="nexo-ec nexo-ec--crm"
+                     style="cursor:pointer;border-top:3px solid @HexEtapa(item.Etapa)"
+                     @onclick="@(() => Navigation.NavigateTo(ResolverRutaItem(item)))">
+                    <div class="nexo-ec__header">
+                        <div class="nexo-ec__avatar" style="background:@HexEtapa(item.Etapa);color:#fff">
+                            @(item.Nombre.Length > 0 ? item.Nombre[0].ToString().ToUpper() : "?")
+                        </div>
+                        <div class="nexo-ec__title-block">
+                            <div class="nexo-ec__name">@item.Nombre</div>
+                            @if (!string.IsNullOrEmpty(item.Empresa))
+                            {
+                                <div class="nexo-ec__sub">@item.Empresa</div>
+                            }
+                        </div>
+                        <div class="d-flex align-center" style="margin-left:auto;gap:4px;flex-shrink:0">
+                            @if (item.Score.HasValue)
+                            {
+                                <span style="@ScoreBadgeStyle(item.Score.Value)" title="Score de lead">@item.Score</span>
+                            }
+                            @if (EsVencido(item))
+                            {
+                                <MudTooltip Text="@MensajeVencido(item)">
+                                    <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Color="Color.Error" />
+                                </MudTooltip>
+                            }
+                            @if (item.Tipo == "OPORTUNIDAD")
+                            {
+                                <MudIcon Icon="@Icons.Material.Outlined.TrendingUp" Size="Size.Small"
+                                         Style="opacity:.5" Title="Oportunidad" />
+                            }
+                        </div>
+                    </div>
+                    <div class="nexo-ec__body">
+                        @if (!string.IsNullOrEmpty(item.Telefono))
+                        {
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.Phone" Size="Size.Small" />
+                                <span>@item.Telefono</span>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(item.Email))
+                        {
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.Email" Size="Size.Small" />
+                                <span>@item.Email</span>
+                            </div>
+                        }
+                        @if (item.ValorEstimado.HasValue && item.ValorEstimado > 0)
+                        {
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.AttachMoney" Size="Size.Small" />
+                                <span style="font-weight:600">@item.ValorEstimado.Value.ToString("C0")</span>
+                                @if (!string.IsNullOrEmpty(item.ConfianzaCierre))
+                                {
+                                    <span style="font-size:0.7rem;opacity:.6;margin-left:4px">(@item.ConfianzaCierre)</span>
+                                }
+                            </div>
+                        }
+                        @if (item.FechaCierreEsperada.HasValue)
+                        {
+                            <div class="nexo-ec__row">
+                                <MudIcon Icon="@Icons.Material.Outlined.Event" Size="Size.Small" />
+                                <span>Cierre: @item.FechaCierreEsperada.Value.ToString("dd/MM/yyyy")</span>
+                            </div>
+                        }
+                    </div>
+                    <div class="nexo-ec__footer">
+                        <MudChip T="string" Size="Size.Small" Color="@ColorEtapa(item.Etapa)"
+                                 Style="font-size:0.68rem;height:22px">
+                            @EtiquetaEtapa(item.Etapa)
+                        </MudChip>
+                        <div class="d-flex flex-wrap" style="gap:0.25rem" @onclick:stopPropagation="true">
+                            @AccionesItem(item)
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<PipelineItem> _items = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+    private string? _filtroEtapa;
+    private int? _filtroResponsableId;
+    private bool _vistaKanban;
+    private bool _soloVencidos;
+    private PipelineMetricasDto? _metricas;
+
+    private IEnumerable<PipelineItem> ItemsFiltrados =>
+        _soloVencidos ? _items.Where(EsVencido) : _items;
+    private int _itemsVencidos => _items.Count(EsVencido);
+
+    private static bool EsVencido(PipelineItem item)
+    {
+        if (item.Tipo == "OPORTUNIDAD")
+            return item.FechaCierreEsperada.HasValue
+                && item.FechaCierreEsperada.Value.Date < DateTime.UtcNow.Date
+                && item.Etapa != "GANADA" && item.Etapa != "PERDIDA" && item.Etapa != "VENTA_GANADA";
+        // Lead: sin movimiento hace más de 30 días
+        return (DateTime.UtcNow - item.FechaCreacion).TotalDays > 30
+            && item.Etapa != "CONVERTIDO" && item.Etapa != "DESCARTADO" && item.Etapa != "CONTACTO_NO_UTIL";
+    }
+
+    private static string MensajeVencido(PipelineItem item)
+    {
+        if (item.Tipo == "OPORTUNIDAD")
+            return $"Cierre esperado {item.FechaCierreEsperada!.Value:dd/MM/yyyy} — vencida";
+        var dias = (int)(DateTime.UtcNow - item.FechaCreacion).TotalDays;
+        return $"Sin movimiento hace {dias} días";
+    }
+
+    private static readonly (string Clave, string Etiqueta, string Hex)[] _etapasFlujo =
+    [
+        // Etapas de Lead (NUEVO se mapea a CONTACTO_INICIAL vía MapEtapaKanban)
+        ("CONTACTO_INICIAL", "Contacto Inicial", "#90A4AE"),
+        ("PRESENTACION",     "Presentación",     "#42A5F5"),
+        ("REVISITA",         "Revisita",         "#FFA726"),
+        ("VENTA_GANADA",     "Venta Ganada",     "#66BB6A"),
+        ("CONTACTO_NO_UTIL", "No Útil",          "#EF5350"),
+        ("CONVERTIDO",       "Convertido",       "#26A69A"),
+        ("DESCARTADO",       "Descartado",       "#EF5350"),
+        // Etapas de Oportunidad
+        ("PROSPECCION",      "Prospección",      "#FFA726"),
+        ("PROPUESTA",        "Propuesta",        "#7E57C2"),
+        ("NEGOCIACION",      "Negociación",      "#AB47BC"),
+        ("GANADA",           "Ganada",           "#26A69A"),
+        ("PERDIDA",          "Perdida",          "#EF5350"),
+    ];
+
+    // OnInitializedAsync overridden below near AbrirNuevoLeadAsync
+
+    private async Task CargarAsync()
+    {
+        _cargando = true; _errorCarga = null;
+        try
+        {
+            var qs = new System.Text.StringBuilder("api/crm/pipeline?");
+            if (_filtroEtapa is not null)        qs.Append($"etapa={Uri.EscapeDataString(_filtroEtapa)}&");
+            if (_filtroResponsableId.HasValue)   qs.Append($"responsableId={_filtroResponsableId.Value}&");
+            _items = (await ApiClient.GetAsync<IEnumerable<PipelineItem>>(qs.ToString().TrimEnd('&', '?')) ?? []).ToList();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task OnFiltroEtapaCambiadoAsync(string? etapa)
+    {
+        _filtroEtapa = etapa;
+        await CargarAsync();
+    }
+
+    private async Task OnFiltroResponsableCambiadoAsync(int? id)
+    {
+        _filtroResponsableId = id;
+        await CargarAsync();
+    }
+
+    private static string ScoreBadgeStyle(int score) => CrmEtapaHelper.ScoreBadgeStyle(score);
+    private static Color ColorEtapa(string etapa)   => CrmEtapaHelper.ColorEtapa(etapa);
+    private static string EtiquetaEtapa(string etapa) => CrmEtapaHelper.EtiquetaEtapa(etapa);
+
+    private RenderFragment AccionesItem(PipelineItem item) => __builder =>
+    {
+        if (item.Tipo == "LEAD")
+        {
+            if (item.Etapa == "VENTA_GANADA")
+            {
+                <button class="nexo-pill-btn nexo-pill-btn--primary"
+                        @onclick="@(() => CrearOportunidadAsync(item))">
+                    ↑ Crear Oportunidad
+                </button>
+            }
+            else if (item.Etapa is not ("CONTACTO_NO_UTIL" or "DESCARTADO" or "CONVERTIDO"))
+            {
+                var siguienteEtapa = item.Etapa switch
+                {
+                    "CONTACTO_INICIAL" => "PRESENTACION",
+                    "PRESENTACION"     => "REVISITA",
+                    "REVISITA"         => "VENTA_GANADA",
+                    "NUEVO" or "CONTACTADO" or "CALIFICADO" => "PRESENTACION",
+                    _                  => null
+                };
+                if (siguienteEtapa is not null)
+                {
+                    <button class="nexo-pill-btn nexo-pill-btn--next"
+                            @onclick="@(() => IniciarAvanceEtapaAsync(item, siguienteEtapa))">
+                        → @EtiquetaEtapa(siguienteEtapa)
+                    </button>
+                }
+                <button class="nexo-pill-btn nexo-pill-btn--danger"
+                        @onclick="@(() => IniciarAvanceEtapaAsync(item, "CONTACTO_NO_UTIL"))">
+                    No útil
+                </button>
+            }
+        }
+        else // OPORTUNIDAD
+        {
+            if (item.Etapa is not ("GANADA" or "PERDIDA"))
+            {
+                var sig = item.Etapa switch
+                {
+                    "PROSPECCION" => "PROPUESTA",
+                    "PROPUESTA"   => "NEGOCIACION",
+                    "NEGOCIACION" => "GANADA",
+                    _             => null
+                };
+                if (sig is not null)
+                {
+                    <button class="nexo-pill-btn nexo-pill-btn--next"
+                            @onclick="@(() => CambiarEtapaOportunidadAsync(item, sig))">
+                        → @EtiquetaEtapa(sig)
+                    </button>
+                }
+                <button class="nexo-pill-btn nexo-pill-btn--danger"
+                        @onclick="@(() => CambiarEtapaOportunidadAsync(item, "PERDIDA"))">
+                    Perder
+                </button>
+            }
+        }
+    };
+
+    private async Task CrearOportunidadAsync(PipelineItem lead)
+    {
+        var req = new CrearOportunidadDesdeLeadRequest(
+            Nombre: lead.Nombre, ValorEstimado: 0, ConfianzaCierre: "NEUTRO",
+            FechaCierreEsperada: null, Notas: null);
+        try
+        {
+            await ApiClient.PostAsync<CrearOportunidadDesdeLeadRequest, object>(
+                $"api/crm/pipeline/lead/{lead.ID}/oportunidad", req);
+            Snackbar.Add("Oportunidad creada en etapa Prospección", Severity.Success);
+            await CargarAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task IniciarAvanceEtapaAsync(PipelineItem item, string nuevaEtapa)
+    {
+        var etiqueta = EtiquetaEtapa(nuevaEtapa);
+        var dialogParams = new DialogParameters { ["EtapaDestino"] = etiqueta };
+        var opts = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<AvanzarEtapaDialog>($"Avanzar a {etiqueta}", dialogParams, opts);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+        var data = (AvanzarEtapaDialog.AvanzarEtapaResult)result.Data!;
+        await CambiarEtapaLeadAsync(item, nuevaEtapa);
+        if (data.ProximoContacto.HasValue)
+        {
+            try
+            {
+                var inicio = DateTime.SpecifyKind(data.ProximoContacto.Value.Date.AddHours(9), DateTimeKind.Local).ToUniversalTime();
+                var req = new CrearEventoRequest(
+                    $"Seguimiento CRM: {item.Nombre}",
+                    "SEGUIMIENTO", inicio, inicio.AddHours(1),
+                    null, null,
+                    $"Etapa: {etiqueta}. {data.Nota}",
+                    null, new List<int>());
+                await ApiClient.PostAsync<CrearEventoRequest, object>("api/calendario/eventos", req);
+                Snackbar.Add("Evento agendado en el calendario", Severity.Info);
+            }
+            catch { }
+        }
+    }
+
+    private async Task CambiarEtapaLeadAsync(PipelineItem item, string nuevaEtapa)
+    {
+        try
+        {
+            await ApiClient.PatchAsync<object, object>($"api/crm/leads/{item.ID}/etapa",
+                new { Etapa = nuevaEtapa });
+            await CargarAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task CambiarEtapaOportunidadAsync(PipelineItem item, string nuevaEtapa)
+    {
+        if (item.OportunidadID is null) return;
+        try
+        {
+            var req = new ActualizarOportunidadRequest(
+                item.Nombre,
+                item.ValorEstimado ?? 0m,
+                item.ConfianzaCierre ?? "NEUTRO",
+                nuevaEtapa,
+                item.FechaCierreEsperada,
+                item.ResponsableID,
+                item.Notas);
+            await ApiClient.PutAsync<ActualizarOportunidadRequest>($"api/crm/oportunidades/{item.OportunidadID}", req);
+            await CargarAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private static string ResolverRutaItem(PipelineItem item)
+    {
+        if (item.Tipo == "LEAD")
+            return $"/crm/leads/{item.ID}";
+        // Oportunidad: ir al lead workspace (pestaña oportunidades) si tiene lead
+        if (item.LeadID.HasValue)
+            return $"/crm/leads/{item.LeadID.Value}?tab=oportunidades";
+        if (!string.IsNullOrEmpty(item.ExternalIdCliente))
+            return $"/crm/clientes/{item.ExternalIdCliente}";
+        return "/crm/pipeline";
+    }
+
+    private static string MapEtapaKanban(string etapa) => etapa switch
+    {
+        "NUEVO" or "CONTACTADO" => "CONTACTO_INICIAL",
+        "CALIFICADO"            => "PRESENTACION",
+        _                       => etapa
+    };
+
+    private static string HexEtapa(string etapa) => CrmEtapaHelper.HexEtapa(etapa);
+
+    private List<EmpleadoItem> _empleados = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var tareaEmpleados = ApiClient.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados?soloActivos=true");
+        var tareaMetricas  = ApiClient.GetAsync<PipelineMetricasDto>("api/crm/pipeline/metricas");
+        var tareaPipeline  = CargarAsync();
+        await Task.WhenAll(tareaEmpleados, tareaMetricas, tareaPipeline);
+        _empleados = await tareaEmpleados ?? new();
+        _metricas  = await tareaMetricas;
+    }
+
+    private async Task AbrirNuevoLeadAsync()
+    {
+        var parametros = new DialogParameters<LeadDialog> { { x => x.Empleados, _empleados } };
+        var dialogo = await DialogService.ShowAsync<LeadDialog>("Nuevo Lead", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialogo.Result;
+        if (result is { Canceled: false, Data: CrearLeadRequest req })
+        {
+            try
+            {
+                await ApiClient.PostAsync<CrearLeadRequest, object>("api/crm/leads", req);
+                Snackbar.Add("Lead creado", Severity.Success);
+                await CargarAsync();
+            }
+            catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        }
+    }
+}

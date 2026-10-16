@@ -1,0 +1,163 @@
+﻿@page "/catalogo/centros-costo"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Centros de Costo - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Centros de Costo</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Un Centro de Costo representa una planta, sede u operaci�n. Agrupa Bodegas, Centros de Trabajo y Usuarios, y sirve para separar el costo e inventario de cada operaci�n." />
+
+<MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+           StartIcon="@Icons.Material.Filled.Add" Class="mb-4">
+    Nuevo Centro de Costo
+</MudButton>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los centros de costo: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_centrosCosto.Count == 0)
+{
+    <MudText>No hay centros de costo registrados.</MudText>
+}
+else if (Preferencias.VistaListado == "tarjetas")
+{
+    <div class="nexo-card-grid">
+        @foreach (var cc in _centrosCosto)
+        {
+            <div class="nexo-item-card">
+                <div class="d-flex align-center justify-space-between">
+                    <div class="nexo-item-card__title">@cc.Nombre</div>
+                    <MudChip T="string" Color="@(cc.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                        @(cc.Estado ? "Activo" : "Inactivo")
+                    </MudChip>
+                </div>
+                <div class="nexo-item-card__sub">@cc.Codigo � @cc.TipoCentro</div>
+                <div class="nexo-item-card__row"><span>Direcci�n</span><strong>@cc.Direccion</strong></div>
+                <div class="nexo-item-card__actions">
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(cc))">Editar</MudButton>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <MudTable Items="_centrosCosto" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Codigo</MudTh>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Tipo</MudTh>
+            <MudTh>Direccion</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Accion</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Codigo">@context.Codigo</MudTd>
+            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+            <MudTd DataLabel="Tipo">@context.TipoCentro</MudTd>
+            <MudTd DataLabel="Direccion">@context.Direccion</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                    @(context.Estado ? "Activo" : "Inactivo")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Accion">
+                <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">
+                    Editar
+                </MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private List<CentroCostoItem> _centrosCosto = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        _errorCarga = null;
+
+        try
+        {
+            // soloActivos=false para que el Administracion tambien vea los inactivos
+            _centrosCosto = await ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=false") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var dialogo = await DialogService.ShowAsync<CentroCostoDialog>("Nuevo Centro de Costo");
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (CrearCentroCostoRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearCentroCostoRequest, object?>("api/catalogo/centros-costo", request);
+            Snackbar.Add("Centro de costo creado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirEdicionAsync(CentroCostoItem centroCosto)
+    {
+        var parametros = new DialogParameters<CentroCostoDialog>
+        {
+            { x => x.CentroCosto, centroCosto }
+        };
+
+        var dialogo = await DialogService.ShowAsync<CentroCostoDialog>("Editar Centro de Costo", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (ActualizarCentroCostoRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarCentroCostoRequest, object?>(
+                $"api/catalogo/centros-costo/{centroCosto.CentroCostoID}", request);
+            Snackbar.Add("Centro de costo actualizado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+}

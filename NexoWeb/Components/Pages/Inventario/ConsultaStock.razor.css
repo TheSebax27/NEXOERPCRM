@@ -1,0 +1,197 @@
+/* ── Header ──────────────────────────────────────────────────────────── */
+.inv-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+.inv-header__left { display: flex; flex-direction: column; gap: 0.25rem; }
+.inv-header__title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--n-text-1);
+}
+.inv-header__icon { color: var(--n-purple); }
+.inv-header__sub { margin: 0; font-size: 0.84rem; color: var(--n-text-3); }
+
+/* ── Filtros ─────────────────────────────────────────────────────────── */
+.inv-filtros {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+/* ── KPIs ────────────────────────────────────────────────────────────── */
+.inv-kpis {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+.inv-kpi {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background: var(--n-card);
+    border: 1px solid var(--n-border);
+    border-radius: var(--n-radius);
+    min-width: 90px;
+}
+.inv-kpi--alerta { border-color: rgba(244,67,54,.3); background: rgba(244,67,54,.06); }
+.inv-kpi--warn   { border-color: rgba(255,152,0,.3); background: rgba(255,152,0,.06); }
+.inv-kpi__label  { font-size: 0.72rem; color: var(--n-text-3); text-transform: uppercase; letter-spacing: .04em; }
+.inv-kpi__value  { font-size: 1.25rem; font-weight: 700; color: var(--n-text-1); }
+
+/* ── Skeleton ────────────────────────────────────────────────────────── */
+.inv-skeleton { display: flex; flex-direction: column; gap: 0.5rem; }
+.inv-skeleton__row {
+    height: 44px;
+    border-radius: var(--n-radius);
+    background: linear-gradient(90deg, var(--n-border) 25%, rgba(124,92,255,.06) 50%, var(--n-border) 75%);
+    background-size: 200% 100%;
+    animation: inv-shimmer 1.4s infinite;
+}
+@keyframes inv-shimmer { to { background-position: -200% 0; } }
+
+/* ── Vacío ───────────────────────────────────────────────────────────── */
+.inv-vacio {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--n-text-3);
+}
+
+/* ── Grid de tarjetas ────────────────────────────────────────────────── */
+.inv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+}
+.inv-card {
+    background: var(--n-card);
+    border: 1px solid var(--n-border);
+    border-radius: var(--n-radius);
+    overflow: hidden;
+    box-shadow: var(--n-shadow);
+    transition: box-shadow .15s, border-color .15s;
+}
+.inv-card:hover    { box-shadow: 0 4px 16px rgba(124,92,255,.15); border-color: var(--n-purple); }
+.inv-card--agotado { border-left: 3px solid rgb(244,67,54); }
+.inv-card--warn    { border-left: 3px solid rgb(255,152,0); }
+.inv-card__img     { width: 100%; height: 120px; object-fit: cover; }
+.inv-card__body    { padding: 0.85rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.inv-card__title   { font-weight: 600; font-size: 0.9rem; color: var(--n-text-1); }
+.inv-card__meta    { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.inv-card__row     { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--n-text-2); }
+.inv-card__alerta  { margin-top: 0.4rem; }
+.inv-card__footer  { margin-top: 0.4rem; }
+
+/* ── Tabla ───────────────────────────────────────────────────────────── */
+.inv-table-wrap {
+    overflow-x: auto;
+    border-radius: var(--n-radius);
+    border: 1px solid var(--n-border);
+    box-shadow: var(--n-shadow);
+}
+.inv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+    background: var(--n-card);
+}
+.inv-table thead { background: rgba(124,92,255,.07); }
+.inv-table th {
+    padding: 0.65rem 0.75rem;
+    text-align: left;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--n-text-3);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--n-border);
+}
+.inv-table__num { text-align: right !important; }
+.inv-table__th-img { width: 44px; }
+.inv-table__th-exp { width: 28px; }
+.inv-table__row {
+    border-bottom: 1px solid var(--n-border);
+    transition: background .1s;
+}
+.inv-table__row:hover       { background: rgba(124,92,255,.04); }
+.inv-table__row--agotado    { background: rgba(244,67,54,.04); }
+.inv-table__row--warn       { background: rgba(255,152,0,.04); }
+.inv-table td { padding: 0.5rem 0.75rem; color: var(--n-text-1); vertical-align: middle; }
+.inv-table__td-img { padding: 0.35rem 0.5rem; }
+.inv-table__td-exp { text-align: center; }
+.inv-table__thumb  { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; }
+.inv-table__nombre { max-width: 220px; }
+.inv-table__lote   { background: rgba(124,92,255,.03); border-bottom: 1px dashed var(--n-border); }
+.inv-table__lote td { font-size: 0.8rem; padding: 0.3rem 0.75rem; color: var(--n-text-2); }
+
+/* ── Expand btn ──────────────────────────────────────────────────────── */
+.inv-expand-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--n-purple);
+    padding: 2px 4px;
+}
+
+/* ── Badges y chips ──────────────────────────────────────────────────── */
+.inv-sku {
+    font-family: monospace;
+    font-size: 0.78rem;
+    background: rgba(124,92,255,.1);
+    color: var(--n-purple);
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.inv-tipo {
+    font-size: 0.75rem;
+    background: rgba(0,0,0,.06);
+    color: var(--n-text-3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.inv-pres     { font-size: 0.82rem; font-weight: 600; color: var(--n-text-1); }
+.inv-pres-sub { font-size: 0.75rem; color: var(--n-text-3); }
+.inv-muted    { color: var(--n-text-3); font-size: 0.8rem; }
+.inv-sub      { font-size: 0.72rem; color: var(--n-text-3); }
+.inv-valor--rojo    { color: rgb(244,67,54); }
+.inv-valor--naranja { color: rgb(255,152,0); font-weight: 600; }
+.inv-valor--verde   { color: rgb(76,175,80); }
+.inv-lote-tag     { font-size: 0.72rem; background: rgba(124,92,255,.1); color: var(--n-purple); padding: 1px 5px; border-radius: 3px; margin-right: 4px; }
+
+/* ── Lotes en tarjeta ────────────────────────────────────────────────── */
+.inv-lotes-btn {
+    background: none;
+    border: 1px solid var(--n-border);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--n-purple);
+    padding: 3px 8px;
+    margin-top: 0.3rem;
+    width: 100%;
+    text-align: left;
+}
+.inv-lote-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    color: var(--n-text-2);
+    padding: 2px 0;
+    border-bottom: 1px dashed var(--n-border);
+}

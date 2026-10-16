@@ -1,0 +1,252 @@
+﻿@page "/produccion/control-consumos"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Control de Consumos — NEXO</PageTitle>
+
+<div class="nexo-page-header">
+    <div class="nexo-page-header__body">
+        <div>
+            <h1 class="nexo-page-header__title">Control de Consumos</h1>
+            <p class="nexo-page-header__sub">Faltantes de materiales en órdenes activas y desviaciones de consumo en órdenes cerradas.</p>
+        </div>
+    </div>
+</div>
+
+<MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true" PanelClass="pt-4" Class="nexo-bi-tabs" @bind-ActivePanelIndex="_tabActiva">
+
+    @* ── Tab 1: Faltantes ── *@
+    <MudTabPanel Text="Faltantes de materiales" Icon="@Icons.Material.Filled.Warning">
+        @if (_cargandoFaltantes)
+        {
+            <div class="d-flex justify-center pa-8"><MudProgressCircular Indeterminate="true" /></div>
+        }
+        else if (_errorFaltantes is not null)
+        {
+            <MudAlert Severity="Severity.Error">@_errorFaltantes</MudAlert>
+        }
+        else if (!_faltantes.Any())
+        {
+            <div class="nexo-section" style="padding:2rem; text-align:center;">
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Style="color:var(--n-green); font-size:2.5rem;" />
+                <p style="margin-top:0.5rem; color:var(--n-text-2);">Sin faltantes — todas las órdenes activas tienen stock suficiente.</p>
+            </div>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3" Dense="true">
+                <strong>@_opsConFaltante OP(s)</strong> tienen insumos con stock insuficiente.
+            </MudAlert>
+
+            @foreach (var grupo in _faltantes.GroupBy(f => new { f.OrdenProduccionID, f.CodigoOP, f.Producto, f.Estado }))
+            {
+                var colorEstado = grupo.Key.Estado == "Retrasada" ? "#EF4444" : "#F59E0B";
+                <div class="nexo-section mb-3">
+                    <div class="nexo-section__header" style="padding:0.75rem 1rem;">
+                        <div style="display:flex; align-items:center; gap:0.6rem; flex:1;">
+                            <MudIcon Icon="@Icons.Material.Filled.Assignment" Style="@($"color:{colorEstado}; font-size:1.1rem;")" />
+                            <div>
+                                <span style="font-weight:700; font-size:0.95rem;">@grupo.Key.CodigoOP</span>
+                                <span style="margin-left:8px; color:var(--n-text-2); font-size:0.85rem;">@grupo.Key.Producto</span>
+                            </div>
+                        </div>
+                        <MudChip T="string" Size="Size.Small" Style="@($"background:{colorEstado}22; color:{colorEstado}; font-weight:600;")">
+                            @grupo.Key.Estado
+                        </MudChip>
+                    </div>
+                    <div class="nexo-section__body" style="padding:0;">
+                        <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                            <thead>
+                                <tr style="background:var(--n-bg-2); color:var(--n-text-2); font-size:0.72rem; text-transform:uppercase; letter-spacing:.04em;">
+                                    <th style="padding:0.5rem 1rem; text-align:left;">Insumo</th>
+                                    <th style="padding:0.5rem 0.75rem; text-align:right;">Requerido</th>
+                                    <th style="padding:0.5rem 0.75rem; text-align:right;">En bodega</th>
+                                    <th style="padding:0.5rem 1rem; text-align:right;">Faltante</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var linea in grupo)
+                                {
+                                    <tr style="border-top:1px solid var(--n-border);">
+                                        <td style="padding:0.45rem 1rem;">@linea.Insumo</td>
+                                        <td style="padding:0.45rem 0.75rem; text-align:right; font-family:monospace;">
+                                            @linea.CantidadRequerida.ToString("N3") @linea.Unidad
+                                        </td>
+                                        <td style="padding:0.45rem 0.75rem; text-align:right; font-family:monospace; color:var(--n-text-2);">
+                                            @linea.StockDisponible.ToString("N3") @linea.Unidad
+                                        </td>
+                                        <td style="padding:0.45rem 1rem; text-align:right; font-family:monospace; font-weight:700; color:#EF4444;">
+                                            −@linea.Faltante.ToString("N3") @linea.Unidad
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+    </MudTabPanel>
+
+    @* ── Tab 2: Desviaciones ── *@
+    <MudTabPanel Text="Desviaciones de consumo" Icon="@Icons.Material.Filled.Analytics">
+        <div style="display:flex; gap:1rem; align-items:flex-end; margin-bottom:1rem; flex-wrap:wrap;">
+            <MudDatePicker @bind-Date="_desde" Label="Desde" Variant="Variant.Outlined"
+                           Editable="true" DateFormat="dd/MM/yyyy" Style="max-width:180px;" />
+            <MudDatePicker @bind-Date="_hasta" Label="Hasta" Variant="Variant.Outlined"
+                           Editable="true" DateFormat="dd/MM/yyyy" Style="max-width:180px;" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="CargarDesviacionesAsync" Disabled="_cargandoDesviaciones">
+                Consultar
+            </MudButton>
+        </div>
+
+        @if (_cargandoDesviaciones)
+        {
+            <div class="d-flex justify-center pa-8"><MudProgressCircular Indeterminate="true" /></div>
+        }
+        else if (_errorDesviaciones is not null)
+        {
+            <MudAlert Severity="Severity.Error">@_errorDesviaciones</MudAlert>
+        }
+        else if (_desviaciones is null)
+        {
+            <div style="color:var(--n-text-2); text-align:center; padding:2rem;">Selecciona un rango y presiona Consultar.</div>
+        }
+        else if (!_desviaciones.Any())
+        {
+            <div class="nexo-section" style="padding:2rem; text-align:center;">
+                <p style="color:var(--n-text-2);">Sin órdenes cerradas en el período seleccionado.</p>
+            </div>
+        }
+        else
+        {
+            var totalSobrante = _desviaciones.Where(d => d.Desviacion < 0).Sum(d => Math.Abs(d.Desviacion));
+            var totalExceso   = _desviaciones.Where(d => d.Desviacion > 0).Sum(d => d.Desviacion);
+
+            <div style="display:flex; gap:1rem; margin-bottom:1rem; flex-wrap:wrap;">
+                <div class="nexo-section" style="flex:1; min-width:200px; padding:0.75rem 1rem;">
+                    <div style="font-size:0.72rem; color:var(--n-text-2); text-transform:uppercase; letter-spacing:.05em;">Sobrante total</div>
+                    <div style="font-size:1.4rem; font-weight:700; color:#10B981; font-family:monospace;">@totalSobrante.ToString("N3")</div>
+                    <div style="font-size:0.75rem; color:var(--n-text-2);">unidades devueltas a bodega</div>
+                </div>
+                <div class="nexo-section" style="flex:1; min-width:200px; padding:0.75rem 1rem;">
+                    <div style="font-size:0.72rem; color:var(--n-text-2); text-transform:uppercase; letter-spacing:.05em;">Exceso total</div>
+                    <div style="font-size:1.4rem; font-weight:700; color:#EF4444; font-family:monospace;">@totalExceso.ToString("N3")</div>
+                    <div style="font-size:0.75rem; color:var(--n-text-2);">unidades consumidas de más</div>
+                </div>
+            </div>
+
+            @foreach (var grupo in _desviaciones.GroupBy(d => new { d.OrdenProduccionID, d.CodigoOP, d.Producto, d.FechaFin }))
+            {
+                <div class="nexo-section mb-3">
+                    <div class="nexo-section__header" style="padding:0.75rem 1rem;">
+                        <div style="display:flex; align-items:center; gap:0.6rem; flex:1;">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircleOutline" Style="color:#10B981; font-size:1.1rem;" />
+                            <div>
+                                <span style="font-weight:700; font-size:0.95rem;">@grupo.Key.CodigoOP</span>
+                                <span style="margin-left:8px; color:var(--n-text-2); font-size:0.85rem;">@grupo.Key.Producto</span>
+                            </div>
+                        </div>
+                        <span style="font-size:0.8rem; color:var(--n-text-2);">
+                            Cerrada @grupo.Key.FechaFin?.ToString("dd/MM/yyyy")
+                        </span>
+                    </div>
+                    <div class="nexo-section__body" style="padding:0;">
+                        <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                            <thead>
+                                <tr style="background:var(--n-bg-2); color:var(--n-text-2); font-size:0.72rem; text-transform:uppercase; letter-spacing:.04em;">
+                                    <th style="padding:0.5rem 1rem; text-align:left;">Insumo</th>
+                                    <th style="padding:0.5rem 0.75rem; text-align:right;">Teórico</th>
+                                    <th style="padding:0.5rem 0.75rem; text-align:right;">Real</th>
+                                    <th style="padding:0.5rem 0.75rem; text-align:right;">Desviación</th>
+                                    <th style="padding:0.5rem 1rem; text-align:right;">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var linea in grupo)
+                                {
+                                    var esExceso   = linea.Desviacion > 0;
+                                    var esSobrante = linea.Desviacion < 0;
+                                    var colorDev   = esExceso ? "#EF4444" : esSobrante ? "#10B981" : "var(--n-text-1)";
+                                    var pct        = linea.CantidadTeorica == 0 ? 0m
+                                                     : Math.Abs(linea.Desviacion) / linea.CantidadTeorica * 100m;
+                                    <tr style="border-top:1px solid var(--n-border);">
+                                        <td style="padding:0.45rem 1rem;">@linea.Insumo</td>
+                                        <td style="padding:0.45rem 0.75rem; text-align:right; font-family:monospace; color:var(--n-text-2);">
+                                            @linea.CantidadTeorica.ToString("N3") @linea.Unidad
+                                        </td>
+                                        <td style="padding:0.45rem 0.75rem; text-align:right; font-family:monospace;">
+                                            @linea.CantidadReal.ToString("N3") @linea.Unidad
+                                        </td>
+                                        <td style="padding:0.45rem 0.75rem; text-align:right; font-family:monospace; font-weight:700; color:@colorDev;">
+                                            @(esExceso ? "+" : "")@linea.Desviacion.ToString("N3") @linea.Unidad
+                                        </td>
+                                        <td style="padding:0.45rem 1rem; text-align:right; font-size:0.78rem; color:@colorDev;">
+                                            @(linea.Desviacion == 0 ? "—" : $"{(esExceso ? "+" : "-")}{pct:N1}%")
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+    </MudTabPanel>
+
+</MudTabs>
+
+@code {
+    private int _tabActiva = 0;
+
+    // Faltantes
+    private bool _cargandoFaltantes = true;
+    private string? _errorFaltantes;
+    private List<FaltanteMaterialItem> _faltantes = new();
+    private int _opsConFaltante;
+
+    // Desviaciones
+    private bool _cargandoDesviaciones;
+    private string? _errorDesviaciones;
+    private List<DesviacionConsumoItem>? _desviaciones;
+    private DateTime? _desde = NexoWeb.Common.ColombiaClock.Today.AddDays(-30);
+    private DateTime? _hasta = NexoWeb.Common.ColombiaClock.Today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarFaltantesAsync();
+    }
+
+    private async Task CargarFaltantesAsync()
+    {
+        _cargandoFaltantes = true;
+        _errorFaltantes = null;
+        try
+        {
+            _faltantes = await ApiClient.GetAsync<List<FaltanteMaterialItem>>(
+                "api/produccion/ordenes/control-consumos/faltantes") ?? new();
+            _opsConFaltante = _faltantes.Select(f => f.OrdenProduccionID).Distinct().Count();
+        }
+        catch (Exception ex) { _errorFaltantes = ex.Message; }
+        finally { _cargandoFaltantes = false; }
+    }
+
+    private async Task CargarDesviacionesAsync()
+    {
+        _cargandoDesviaciones = true;
+        _errorDesviaciones = null;
+        try
+        {
+            var q = new List<string>();
+            if (_desde.HasValue) q.Add($"desde={_desde.Value:yyyy-MM-dd}");
+            if (_hasta.HasValue) q.Add($"hasta={_hasta.Value:yyyy-MM-dd}");
+            var url = "api/produccion/ordenes/control-consumos/desviaciones"
+                      + (q.Any() ? "?" + string.Join("&", q) : "");
+            _desviaciones = await ApiClient.GetAsync<List<DesviacionConsumoItem>>(url) ?? new();
+        }
+        catch (Exception ex) { _errorDesviaciones = ex.Message; }
+        finally { _cargandoDesviaciones = false; }
+    }
+}

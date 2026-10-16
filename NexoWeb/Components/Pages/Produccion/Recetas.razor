@@ -1,0 +1,267 @@
+﻿@page "/produccion/recetas"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navegacion
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Recetas (BOM) — NEXO</PageTitle>
+
+<div class="prod-header">
+    <div class="prod-header__left">
+        <h1 class="prod-header__title">
+            <MudIcon Icon="@Icons.Material.Filled.MenuBook" Class="prod-header__icon" />
+            Recetas (BOM)
+        </h1>
+        <p class="prod-header__sub">Define los insumos y cantidades por corrida. Cada cambio importante crea una nueva versión.</p>
+    </div>
+    <div class="prod-header__actions" style="display:flex;align-items:center;gap:8px;">
+        <VistaToggle OnCambio="StateHasChanged" />
+        @if (_cargando || _recetas.Count > 0 || _filtroProductoId is not null)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/produccion/recetas/crear"
+                       StartIcon="@Icons.Material.Filled.Add">
+                Nueva Receta
+            </MudButton>
+        }
+    </div>
+</div>
+<InfoAyuda Texto="Define insumos y cantidades por corrida de producción (BOM). Cada cambio importante genera una nueva versión versionada de la receta." />
+
+
+@* ── Filtros ─────────────────────────────────────────────────────────── *@
+<div class="prod-filtros">
+    <ArticuloAutocomplete Value="_filtroArticulo"
+                          ValueChanged="@(async a => { _filtroArticulo = a; await OnFiltroCambiadoAsync(a?.ArticuloID); })"
+                          Label="Filtrar por producto terminado"
+                          SoloTerminados="true" />
+    <MudSwitch T="bool" @bind-Value="_soloActivas" Label="Solo versiones activas"
+               Color="Color.Primary" @bind-Value:after="CargarAsync" />
+</div>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_errorCarga</MudAlert>
+}
+
+@if (_cargando)
+{
+    <div class="prod-skeleton">
+        @for (int i = 0; i < 5; i++) { <div class="prod-skeleton__row"></div> }
+    </div>
+}
+else if (_recetas.Count == 0)
+{
+    @if (_filtroProductoId is null)
+    {
+        <NexoEmptyState
+            Icono="@Icons.Material.Outlined.MenuBook"
+            Titulo="Crea tu primera receta"
+            Descripcion="Una receta (BOM) define los insumos y cantidades necesarios por corrida de producción. Cada cambio genera una nueva versión."
+            BotonTexto="Nueva receta"
+            BotonHref="/produccion/recetas/crear" />
+    }
+    else
+    {
+        <div class="prod-vacio">
+            <MudIcon Icon="@Icons.Material.Outlined.SearchOff" Style="font-size:3rem; color:var(--n-text-3); display:block; margin-bottom:.75rem;" />
+            <p>No hay recetas para ese producto.</p>
+        </div>
+    }
+}
+else if (Preferencias.VistaListado == "tarjetas")
+{
+    <div class="prod-grid">
+        @foreach (var receta in _recetas)
+        {
+            <div class="rec2-card">
+                @* Top: hat + badge *@
+                <div class="rec2-top">
+                    <svg class="rec2-hat" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2.5c-1.9 0-3.5 1.2-4.1 2.8A4.3 4.3 0 0 0 4 9.5c0 1.7 1 3.1 2.5 3.8V16c0 .6.4 1 1 1h9c.6 0 1-.4 1-1v-2.7A4.3 4.3 0 0 0 20 9.5a4.3 4.3 0 0 0-3.9-4.2A4.4 4.4 0 0 0 12 2.5zM6.5 18.5h11V20c0 .6-.4 1-1 1h-9c-.6 0-1-.4-1-1v-1.5z"/>
+                    </svg>
+                    <div class="rec2-badge @(receta.Estado ? "rec2-badge--activa" : "rec2-badge--off")">
+                        <span class="rec2-dot"></span>
+                        @(receta.Estado ? "Activa" : "Reemplazada")
+                    </div>
+                </div>
+
+                @* Título + subtítulo *@
+                <div class="rec2-title">@receta.ProductoTerminado.ToUpperInvariant()</div>
+                <div class="rec2-sub">@receta.NombreReceta <span class="prod-version">v@receta.Version</span></div>
+
+                @* Rendimiento *@
+                <div class="rec2-yield">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 3v7a2 2 0 0 0 2 2v9M4 3v6M10 3v6M6 3v7M17 21V3c-2.2 1.3-3.5 4-3.5 7.5 0 1.5.9 2.5 2 2.5h1.5"/>
+                    </svg>
+                    <div>
+                        <small>Rendimiento</small>
+                        <strong>@receta.CantidadRendimientoBase.ToString("N2") @receta.UnidadRendimiento</strong>
+                    </div>
+                </div>
+
+                @* Tiles insumos / subproductos *@
+                <div class="rec2-grid">
+                    <button class="rec2-tile" @onclick="@(() => VerDetalleAsync(receta))">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/>
+                        </svg>
+                        <span class="rec2-tile__label">Insumos</span>
+                        <div class="rec2-tile__l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></div>
+                    </button>
+                    <button class="rec2-tile rec2-tile--red" @onclick="@(() => VerSubproductosAsync(receta))">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M7 19H4.8a1.8 1.8 0 0 1-1.6-2.6L5 13.5M11 19h7.2a1.8 1.8 0 0 0 1.6-2.6l-1-1.8M14 16l-3 3 3 3M8.2 8.5L9.5 5.8a1.8 1.8 0 0 1 3.1 0l1.3 2.2M12.6 5.8l3.9-.6M9.5 5.8L6.7 3.7M4.8 10.8l-2 2.6M21.2 12.3l-2.2-3.4-3.2.9"/>
+                        </svg>
+                        <span class="rec2-tile__label">Subproductos</span>
+                        <div class="rec2-tile__l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></div>
+                    </button>
+                </div>
+
+                @* Acciones *@
+                @if (receta.Estado)
+                {
+                    <a class="rec2-btn rec2-btn--blue" href="@($"/produccion/recetas/{receta.RecetaID}/nueva-version")">
+                        <svg viewBox="0 0 24 24" fill="currentColor" style="width:15px;height:15px">
+                            <path d="M10 3l1.8 4.7L16.5 9.5l-4.7 1.8L10 16l-1.8-4.7L3.5 9.5l4.7-1.8L10 3zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9L18 14z"/>
+                        </svg>
+                        Nueva Versión
+                    </a>
+                    <button class="rec2-btn rec2-btn--off" @onclick="@(() => DesactivarAsync(receta))">
+                        <span class="rec2-x"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" style="width:10px;height:10px"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+                        Desactivar
+                    </button>
+                }
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="prod-table-wrap">
+        <table class="prod-table">
+            <thead>
+                <tr>
+                    <th>Producto Terminado</th>
+                    <th>Receta</th>
+                    <th>Versión</th>
+                    <th class="prod-table__num">Rendimiento</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _recetas)
+                {
+                    <tr class="prod-table__row">
+                        <td class="prod-table__nombre">@r.ProductoTerminado</td>
+                        <td>@r.NombreReceta</td>
+                        <td><span class="prod-version">v@r.Version</span></td>
+                        <td class="prod-table__num">
+                            <strong>@r.CantidadRendimientoBase.ToString("N2")</strong>
+                            <span class="inv-muted"> @r.UnidadRendimiento</span>
+                        </td>
+                        <td>
+                            <span class="prod-receta-estado @(r.Estado ? "prod-receta-estado--activa" : "prod-receta-estado--reemplazada")">
+                                @(r.Estado ? "Activa" : "Reemplazada")
+                            </span>
+                        </td>
+                        <td>
+                            <div class="prod-acciones">
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                           OnClick="@(() => VerDetalleAsync(r))">
+                                    Ver Insumos
+                                </MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary"
+                                           StartIcon="@Icons.Material.Filled.Recycling"
+                                           OnClick="@(() => VerSubproductosAsync(r))">
+                                    Subproductos
+                                </MudButton>
+                                @if (r.Estado)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                               Href="@($"/produccion/recetas/{r.RecetaID}/nueva-version")">
+                                        Nueva Versión
+                                    </MudButton>
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                               OnClick="@(() => DesactivarAsync(r))">
+                                        Desactivar
+                                    </MudButton>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<RecetaResumen>  _recetas   = new();
+    private ArticuloItem? _filtroArticulo;
+    private int?  _filtroProductoId;
+    private bool  _soloActivas = true;
+    private bool  _cargando    = true;
+    private string? _errorCarga;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await CargarAsync(); }
+        catch (Exception ex) { _errorCarga = ex.Message; _cargando = false; }
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true; _errorCarga = null;
+        try
+        {
+            var q = new List<string> { $"soloActivas={_soloActivas.ToString().ToLower()}" };
+            if (_filtroProductoId.HasValue) q.Add($"productoTerminadoId={_filtroProductoId}");
+            _recetas = await ApiClient.GetAsync<List<RecetaResumen>>("api/produccion/recetas?" + string.Join("&", q)) ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task OnFiltroCambiadoAsync(int? v) { _filtroProductoId = v; await CargarAsync(); }
+
+    private async Task DesactivarAsync(RecetaResumen receta)
+    {
+        if (await DialogService.ShowMessageBox("Desactivar Receta",
+            $"Esta receta no volverá a estar disponible para crear órdenes. No se borra: las órdenes que ya la usaron mantienen su historial.\n\n" +
+            $"Receta: {receta.NombreReceta} (v{receta.Version})\n\n¿Confirmar?",
+            yesText: "Sí, desactivar", noText: "Cancelar") != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/produccion/recetas/{receta.RecetaID}");
+            Snackbar.Add("Receta desactivada correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task VerDetalleAsync(RecetaResumen receta)
+    {
+        var p = new DialogParameters<RecetaDetalleDialog> { { x => x.RecetaID, receta.RecetaID } };
+        await DialogService.ShowAsync<RecetaDetalleDialog>(
+            $"Insumos de: {receta.NombreReceta} (v{receta.Version})", p);
+    }
+
+    private async Task VerSubproductosAsync(RecetaResumen receta)
+    {
+        var p = new DialogParameters<SubproductosRecetaDialog>
+        {
+            { x => x.RecetaID, receta.RecetaID },
+            { x => x.NombreReceta, $"{receta.NombreReceta} (v{receta.Version})" }
+        };
+        var opts = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        await DialogService.ShowAsync<SubproductosRecetaDialog>(
+            $"Subproductos/Residuos — {receta.NombreReceta}", p, opts);
+    }
+}
+

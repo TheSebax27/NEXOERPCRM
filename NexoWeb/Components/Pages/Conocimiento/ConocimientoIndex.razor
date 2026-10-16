@@ -1,0 +1,120 @@
+﻿@page "/conocimiento"
+@attribute [Authorize]
+@inject INexoApiClient Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Base de Conocimiento | NEXO ERP</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Conocimiento</p>
+            <h1 class="nexo-page-hero__title">Base de Conocimiento</h1>
+        </div>
+    </div>
+</div>
+<InfoAyuda Texto="Artículos internos de soporte: procedimientos, FAQs y guías que los agentes pueden consultar y adjuntar a tickets." />
+
+<MudGrid Class="mb-4" Spacing="2">
+    <MudItem xs="12" sm="5">
+        <MudTextField T="string" @bind-Value="_busqueda" Label="Buscar artículos"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="false" DebounceInterval="400" Clearable="true"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      @bind-Value:after="Cargar" />
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <AppSelect TValue="string" Value="_categoriaFiltro"
+                   ValueChanged="@(async (string v) => { _categoriaFiltro = v; await Cargar(); })"
+                   Label="Categoría"
+                   Items="@(_categorias.Select(cat => new AppSelectItem<string>(cat, cat)))" />
+    </MudItem>
+    <MudItem xs="12" sm="3" Class="d-flex align-center">
+        <MudButton Variant="Variant.Filled" Color="Color.Success"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="NuevoArticulo" FullWidth="true">
+            Nuevo artículo
+        </MudButton>
+    </MudItem>
+</MudGrid>
+
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="d-block mx-auto mt-8" />
+}
+else if (_articulos.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No hay artículos. ¡Crea el primero!</MudAlert>
+}
+else
+{
+    <MudGrid Spacing="3">
+        @foreach (var art in _articulos)
+        {
+            <MudItem xs="12" sm="6" lg="4">
+                <MudPaper Class="pa-4 knw-card" Elevation="0"
+                          Style="border:1px solid var(--mud-palette-lines-default);border-radius:12px;cursor:pointer;height:100%"
+                          @onclick="@(() => AbrirArticulo(art.ArticuloID))">
+                    <div class="d-flex justify-space-between align-start mb-2">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                            @art.Categoria
+                        </MudChip>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @art.Vistas 👁 · @art.FechaActualizacion.ToString("dd/MM/yy")
+                        </MudText>
+                    </div>
+                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-1" Style="line-height:1.3">
+                        @art.Titulo
+                    </MudText>
+                    @if (!string.IsNullOrWhiteSpace(art.Tags))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">🏷 @art.Tags</MudText>
+                    }
+                    <div class="d-flex justify-space-between align-center mt-3">
+                        <MudText Typo="Typo.caption" Color="Color.Tertiary">@art.AutorNombre</MudText>
+                        <div @onclick:stopPropagation="true">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           Color="Color.Default"
+                                           OnClick="@(() => EditarArticulo(art.ArticuloID))" />
+                        </div>
+                    </div>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private List<ArticuloResumenItem> _articulos = [];
+    private List<string> _categorias = [];
+    private string? _busqueda;
+    private string? _categoriaFiltro;
+    private bool _cargando = true;
+
+    private record ArticuloResumenItem(
+        int ArticuloID, string Titulo, string Categoria, string? Tags,
+        string? AutorNombre, DateTime FechaActualizacion, bool Activo, int Vistas);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categorias = (await Api.GetAsync<List<string>>("api/conocimiento/categorias") ?? []);
+        await Cargar();
+    }
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        var qs = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_categoriaFiltro)) qs.Add($"categoria={Uri.EscapeDataString(_categoriaFiltro)}");
+        if (!string.IsNullOrWhiteSpace(_busqueda))        qs.Add($"q={Uri.EscapeDataString(_busqueda)}");
+        var url = "api/conocimiento" + (qs.Count > 0 ? "?" + string.Join("&", qs) : "");
+        _articulos = (await Api.GetAsync<List<ArticuloResumenItem>>(url) ?? []);
+        _cargando = false;
+    }
+
+    private void AbrirArticulo(int id) => Nav.NavigateTo($"/conocimiento/{id}");
+    private void EditarArticulo(int id) => Nav.NavigateTo($"/conocimiento/{id}/editar");
+    private void NuevoArticulo() => Nav.NavigateTo("/conocimiento/nuevo");
+}

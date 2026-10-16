@@ -1,0 +1,3306 @@
+﻿/* ================================================================
+   NEXO ERP — Global Design System v3
+   Paleta: Morado profundo (#7C5CFF / #5A3BFF) + Gris moderno
+   Fuente: Mango Dream › Plus Jakarta Sans › Inter
+   ================================================================
+
+   ARQUITECTURA CSS — leer antes de hacer cambios visuales
+   ─────────────────────────────────────────────────────────────────
+   Hay TRES capas de CSS, en orden de carga:
+
+   1. MudBlazor.min.css  — base del framework. No tocar.
+   2. app.css  ← ESTE ARCHIVO — estilos globales y overrides de tema.
+      Aplica SIN rebuild (cambios se ven con solo recargar el navegador).
+      Usa selectores con ID (#nexo-app-root) para ganar especificidad
+      sobre NexoWeb.styles.css, que carga después.
+   3. NexoWeb.styles.css — bundle de CSS scoped por componente (*.razor.css).
+      Se recompila con cada build de VS (F5). Los `::deep` del scoped CSS
+      compilan sin el hash de scope, pero aún tienen especificidad menor
+      que un selector con ID, así que app.css siempre gana.
+
+   REGLA DE ORO para especificidad:
+     ID (100)  >  clase (10)  >  elemento (1)
+     #nexo-app-root.nexo-tema-oscuro .mud-appbar  =  1,2,0
+     ::deep .mud-appbar.nexo-topbar               =  0,2,0  ← pierde
+
+   DÓNDE HACER CADA TIPO DE CAMBIO:
+   ┌─────────────────────────────────┬────────────────────────────────┐
+   │ Cambio                          │ Archivo                        │
+   ├─────────────────────────────────┼────────────────────────────────┤
+   │ Fondo de página (gradiente)     │ app.css §MODO OSCURO/CLARO     │
+   │ Glass topbar / sidebar          │ app.css §Glass TopBar/Sidebar  │
+   │ Colores de texto del topbar     │ app.css §Glass TopBar          │
+   │ Colores de nav links sidebar    │ app.css §Sidebar glass claro/  │
+   │                                 │   MainLayout.razor.css (dark)  │
+   │ Padding, height del topbar      │ MainLayout.razor.css           │
+   │ Estructura interna del sidebar  │ MainLayout.razor.css           │
+   │ Estilos por página específica   │ <Pagina>.razor.css             │
+   │ Variables de tema MudBlazor     │ NexoTheme.cs + §MODO OSCURO    │
+   └─────────────────────────────────┴────────────────────────────────┘
+
+   IMPORTANTE — por qué app.css tiene overrides de topbar/sidebar:
+   MainLayout.razor.css define el background con un solo valor (oscuro).
+   app.css lo sobreescribe con valores distintos para dark/light mode y
+   con opacidad específica para que el backdrop-filter sea visible sobre
+   el gradiente de fondo. Si cambias el background en MainLayout.razor.css
+   NO VERÁS EFECTO — cámbialo en app.css en las secciones señaladas.
+   ================================================================ */
+
+/* ── Variables globales ─────────────────────────────────────── */
+:root {
+  /* Picker/popover por encima del sidebar (z-index 1400) y sus backdrop-filter stacking contexts */
+  --mud-zindex-popover: 1500;
+
+  --n-purple:      #7C5CFF;
+  --n-purple-d:    #5A3BFF;
+  --n-purple-dd:   #4B2FE0;
+  --n-purple-l:    #9B7FFF;
+  --n-purple-xl:   #EDE9FF;
+  --n-purple-grad: linear-gradient(135deg, #7C5CFF 0%, #5A3BFF 100%);
+  --n-purple-glow: 0 4px 16px rgba(124,92,255,0.28), 0 1px 4px rgba(124,92,255,0.16);
+
+  --n-dark:    #13131F;
+  --n-dark-2:  #1A1A2E;
+  --n-dark-3:  #22223A;
+
+  --n-bg:      #ECECF3;
+  --n-card:    #FAFBFD;
+  --n-border:  #E8E9EF;
+  --n-border-2:#D1D5E8;
+
+  --n-text-1:  #1A1C2E;
+  --n-text-2:  #6B6B8A;
+  --n-text-3:  #9B9BB4;
+
+  --n-success: #10B981;
+  --n-warning: #F59E0B;
+  --n-error:   #EF4444;
+  --n-info:    #0EA5E9;
+
+  /* Tints de estado para fondos, bordes y badges */
+  --n-success-bg:     rgba(16,185,129,0.09);
+  --n-success-bg-2:   rgba(16,185,129,0.10);
+  --n-success-border: rgba(16,185,129,0.18);
+  --n-info-bg:        rgba(14,165,233,0.10);
+  --n-info-border:    rgba(14,165,233,0.18);
+  --n-error-bg:       rgba(239,68,68,0.10);
+  --n-error-border:   rgba(239,68,68,0.18);
+  --n-warning-bg:     rgba(245,158,11,0.09);
+  --n-warning-border: rgba(245,158,11,0.20);
+
+  --n-shadow:    0 2px 8px rgba(26,28,46,0.07), 0 1px 2px rgba(26,28,46,0.04);
+  --n-shadow-md: 0 4px 16px rgba(26,28,46,0.08), 0 2px 4px rgba(26,28,46,0.04);
+  --n-shadow-lg: 0 8px 32px rgba(26,28,46,0.10), 0 2px 8px rgba(26,28,46,0.05);
+
+  --n-radius:    14px;
+  --n-radius-sm: 8px;
+  --n-radius-lg: 20px;
+  --n-radius-xl: 24px;
+
+  --n-font: 'Mango Dream', 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+
+  /* Topbar height — usado en calc() de contenido principal */
+  --n-topbar-height: 76px;
+
+  /* Purple tints para chips, badges, hover y SKU */
+  --n-purple-bg-faint:     rgba(124,92,255,0.09);
+  --n-purple-bg-subtle:    rgba(124,92,255,0.10);
+  --n-purple-border-faint: rgba(124,92,255,0.18);
+  --n-nav-active-bg:       rgba(124,92,255,0.82);
+  --n-hover-bg:            rgba(124,92,255,0.04);
+
+  /* Shadow elevado para tarjetas KPI */
+  --n-shadow-kpi: 0 10px 40px rgba(26,28,46,0.12), inset 0 1px 0 rgba(255,255,255,0.90);
+
+  /* Z-index del panel de notificaciones.
+     Sidebar = 1200; AppBar MudBlazor = 1300; MudBlazor popovers = 1300.
+     Overlay sin !important → debe ser > sidebar (1200) y < AppBar (1300).
+     Panel > overlay para que los clicks en el panel no lo cierren. */
+  --nexo-z-notif-container: 1001;
+  --nexo-z-notif-overlay:   1250;
+  --nexo-z-notif-panel:     1280;
+  --nexo-z-avatar:          1003;
+}
+
+/* ── Base ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  font-family: var(--n-font) !important;
+  background: transparent !important;
+  color: var(--n-text-1) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Forzar background en MudBlazor layout wrappers —
+   se usa transparent para que el gradiente de #nexo-app-root se vea.
+   Los modos oscuro/claro aplican sus propios colores via el bloque
+   #nexo-app-root.nexo-tema-oscuro y :not(.nexo-tema-oscuro) más abajo. */
+.mud-layout,
+.mud-layout-prevent-scroll-default,
+.mud-drawer-container,
+.mud-main-content {
+  background: transparent !important;
+}
+
+/* Fuente global en todo MudBlazor */
+.mud-typography,
+.mud-button-label,
+.mud-input-input,
+.mud-select-input,
+.mud-nav-link,
+.mud-table-cell,
+.mud-chip,
+.mud-alert,
+.mud-dialog-title,
+.mud-dialog-content,
+.mud-snackbar-content,
+.mud-list-item-text,
+.mud-tooltip-root,
+* {
+  font-family: var(--n-font) !important;
+}
+
+/* ── Top bar — alineación global (refuerza scoped CSS) ──────── */
+.nexo-topbar__user {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.65rem !important;
+  flex-shrink: 0 !important;
+}
+
+.nexo-topbar__avatar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  border-radius: 50% !important;
+  background: linear-gradient(135deg, #7C5CFF 0%, #5A3BFF 100%) !important;
+  color: #FFFFFF !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  flex-shrink: 0 !important;
+  letter-spacing: 0.03em;
+  box-shadow: 0 2px 8px rgba(124,92,255,0.30);
+  line-height: 1 !important;
+}
+
+.nexo-topbar__user-info {
+  display: flex !important;
+  flex-direction: column !important;
+  line-height: 1.25 !important;
+}
+
+.nexo-topbar__user-name {
+  font-size: 0.84rem !important;
+  font-weight: 600 !important;
+  color: #FFFFFF !important;
+  white-space: nowrap !important;
+  display: block !important;
+}
+
+.nexo-topbar__user-role {
+  font-size: 0.7rem !important;
+  color: #9B9BB4 !important;
+  white-space: nowrap !important;
+  display: block !important;
+}
+
+/* ── MudPaper / Cards ───────────────────────────────────────── */
+.mud-paper:not(.mud-appbar):not(.mud-popover-cascading):not(.mud-dialog):not(.mud-snackbar-content):not(.mud-drawer) {
+  background: var(--n-card) !important;
+  border: 1px solid var(--n-border) !important;
+  border-radius: var(--n-radius) !important;
+  box-shadow: var(--n-shadow) !important;
+}
+
+.mud-paper.mud-elevation-2,
+.mud-paper.mud-elevation-3,
+.mud-paper.mud-elevation-4,
+.mud-paper.mud-elevation-8 {
+  box-shadow: var(--n-shadow-md) !important;
+}
+
+/* ── Páginas — Encabezado (MudText h5) ──────────────────────── */
+.mud-main-content .mud-typography-h5 {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.7rem !important;
+  font-size: 1.4rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.025em !important;
+  color: var(--n-text-1) !important;
+  margin-bottom: 1.5rem !important;
+  padding-bottom: 1rem !important;
+  border-bottom: 1px solid var(--n-border) !important;
+}
+
+.mud-main-content .mud-typography-h5::before {
+  content: '' !important;
+  display: inline-block !important;
+  width: 4px !important;
+  height: 1.4rem !important;
+  border-radius: 4px !important;
+  background: var(--n-purple-grad) !important;
+  flex-shrink: 0 !important;
+}
+
+/* ── Páginas — Subtítulos ───────────────────────────────────── */
+.mud-main-content .mud-typography-subtitle1 {
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+  color: var(--n-text-1) !important;
+  letter-spacing: -0.01em !important;
+}
+
+/* ── Encabezado de página (nexo-page-hero) — global ─────────── */
+.nexo-page-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.75rem;
+}
+.nexo-page-hero__left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+.nexo-page-hero__accent {
+  width: 4px;
+  height: 2.25rem;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--n-purple) 0%, var(--n-purple-d) 100%);
+  flex-shrink: 0;
+}
+.nexo-page-hero__module {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--n-purple);
+  margin: 0 0 0.1rem;
+}
+.nexo-page-hero__title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--n-text-1);
+  margin: 0;
+  line-height: 1.15;
+}
+.nexo-page-hero__sub {
+  font-size: 0.8rem;
+  color: var(--n-text-2);
+  margin-top: 0.15rem;
+}
+.nexo-page-hero__timestamp {
+  display: flex;
+  align-items: center;
+  font-size: 0.76rem;
+  color: var(--n-text-3);
+  white-space: nowrap;
+}
+.nexo-page-hero__icon {
+  color: var(--n-text-3);
+  margin-top: 2px;
+}
+
+/* ── Toolbar de filtros (MudGrid dentro del contenido) ──────── */
+.mud-main-content .mud-grid {
+  margin-bottom: 1rem;
+}
+
+/* ── MudTable ───────────────────────────────────────────────── */
+.mud-table-container {
+  border-radius: var(--n-radius) !important;
+  overflow: hidden !important;
+  border: 1px solid var(--n-border) !important;
+  box-shadow: var(--n-shadow) !important;
+  background: var(--n-card) !important;
+}
+
+.mud-table-head .mud-table-row {
+  background: var(--n-bg) !important;
+}
+
+.mud-table-head .mud-table-cell {
+  font-size: 0.68rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.07em !important;
+  text-transform: uppercase !important;
+  color: var(--n-text-3) !important;
+  border-bottom: 1px solid var(--n-border) !important;
+  padding: 13px 18px !important;
+  white-space: nowrap !important;
+  background: var(--n-bg) !important;
+}
+
+.mud-table-body .mud-table-cell {
+  font-size: 0.875rem !important;
+  padding: 12px 18px !important;
+  color: var(--n-text-1) !important;
+  border-bottom: 1px solid rgba(232,233,239,0.6) !important;
+}
+
+.mud-table-body .mud-table-row:hover {
+  background-color: var(--n-purple-xl) !important;
+  transition: background-color 0.15s ease !important;
+}
+
+.mud-table-body .mud-table-row:last-child .mud-table-cell {
+  border-bottom: none !important;
+}
+
+.mud-table-striped .mud-table-body .mud-table-row:nth-child(odd) {
+  background-color: var(--n-card) !important;
+}
+
+/* Paginación */
+.mud-table-pagination {
+  border-top: 1px solid var(--n-border) !important;
+  background: var(--n-card) !important;
+  font-size: 0.8rem !important;
+}
+
+/* ── MudTable — toolbar de búsqueda ────────────────────────── */
+.mud-table-toolbar {
+  background: var(--n-card) !important;
+  border-bottom: 1px solid var(--n-border) !important;
+  padding: 0.75rem 1.25rem !important;
+}
+
+/* ── Botones — degradado morado ─────────────────────────────── */
+.mud-button-root {
+  font-family: var(--n-font) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  border-radius: var(--n-radius-sm) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Primary */
+.mud-button-filled-primary {
+  background: var(--n-purple-grad) !important;
+  box-shadow: var(--n-purple-glow) !important;
+  color: #FFFFFF !important;
+}
+.mud-button-filled-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6B4BEE 0%, #4B2FE0 100%) !important;
+  box-shadow: 0 6px 20px rgba(124,92,255,0.38) !important;
+  transform: translateY(-1px) !important;
+}
+.mud-button-filled-primary:active:not(:disabled) {
+  transform: translateY(0) !important;
+}
+
+/* Success — también usa morado (botones de acción principal en páginas) */
+.mud-button-filled-success {
+  background: var(--n-purple-grad) !important;
+  box-shadow: var(--n-purple-glow) !important;
+  color: #FFFFFF !important;
+}
+.mud-button-filled-success:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6B4BEE 0%, #4B2FE0 100%) !important;
+  box-shadow: 0 6px 20px rgba(124,92,255,0.38) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Info */
+.mud-button-filled-info {
+  background: linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%) !important;
+  box-shadow: 0 4px 14px rgba(14,165,233,0.25) !important;
+  color: #FFFFFF !important;
+}
+.mud-button-filled-info:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Warning */
+.mud-button-filled-warning {
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important;
+  box-shadow: 0 4px 14px rgba(245,158,11,0.20) !important;
+  color: #FFFFFF !important;
+}
+.mud-button-filled-warning:hover:not(:disabled) {
+  transform: translateY(-1px) !important;
+}
+
+/* Error */
+.mud-button-filled-error {
+  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%) !important;
+  box-shadow: 0 4px 14px rgba(239,68,68,0.22) !important;
+  color: #FFFFFF !important;
+}
+.mud-button-filled-error:hover:not(:disabled) {
+  transform: translateY(-1px) !important;
+}
+
+/* Secondary */
+.mud-button-filled-secondary {
+  background: linear-gradient(135deg, #6B6B8A 0%, #4A4A6A 100%) !important;
+}
+.mud-button-filled-secondary:hover:not(:disabled) {
+  transform: translateY(-1px) !important;
+}
+
+/* Outlined */
+.mud-button-outlined {
+  border-width: 1.5px !important;
+}
+.mud-button-outlined-primary {
+  border-color: var(--n-purple) !important;
+  color: var(--n-purple) !important;
+}
+.mud-button-outlined-primary:hover:not(:disabled) {
+  background: var(--n-purple-xl) !important;
+}
+
+/* Disabled */
+.mud-button-root:disabled {
+  opacity: 0.48 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Tamaño pequeño */
+.mud-button-root.mud-button-size-small {
+  border-radius: 6px !important;
+  font-size: 0.75rem !important;
+  padding: 4px 12px !important;
+}
+
+/* ── MudChip ────────────────────────────────────────────────── */
+.mud-chip {
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  font-size: 0.7rem !important;
+  letter-spacing: 0.04em !important;
+  padding: 2px 10px !important;
+}
+
+/* ── MudAlert ───────────────────────────────────────────────── */
+.mud-alert {
+  border-radius: var(--n-radius) !important;
+  font-size: 0.875rem !important;
+}
+
+/* ── MudSelect / MudTextField ────────────────────────────────── */
+.mud-input-outlined .mud-input-outlined-border {
+  border-radius: var(--n-radius-sm) !important;
+  border-color: var(--n-border-2) !important;
+}
+.mud-input-outlined.mud-input-outlined-focused .mud-input-outlined-border {
+  border-color: var(--n-purple) !important;
+  box-shadow: 0 0 0 3px rgba(124,92,255,0.10) !important;
+}
+.mud-input-label {
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  color: var(--n-text-2) !important;
+}
+
+/* ── MudDialog ──────────────────────────────────────────────── */
+.mud-dialog {
+  border-radius: var(--n-radius-lg) !important;
+  box-shadow: var(--n-shadow-lg) !important;
+  border: 1px solid var(--n-border) !important;
+}
+.mud-dialog .mud-dialog-title {
+  font-weight: 700 !important;
+  font-size: 1rem !important;
+  letter-spacing: -0.01em !important;
+  color: var(--n-text-1) !important;
+  border-bottom: 1px solid var(--n-border) !important;
+  padding-bottom: 1rem !important;
+}
+.mud-dialog .mud-dialog-content {
+  padding: 1.25rem 1.5rem !important;
+}
+.mud-dialog .mud-dialog-actions {
+  border-top: 1px solid var(--n-border) !important;
+  padding: 0.75rem 1.5rem !important;
+  gap: 0.5rem !important;
+}
+.mud-overlay {
+  background: rgba(19, 19, 31, 0.55) !important;
+}
+
+/* ── MudDatePicker / MudDateRangePicker (modo Dialog) ────────
+   Se usa PickerVariant.Dialog en toda la app para evitar que el
+   calendario se recorte dentro de contenedores angostos (era la
+   causa del texto superpuesto/ilegible en el header morado).
+   Aquí se retema el modal del calendario acorde al morado de NEXO.
+   ────────────────────────────────────────────────────────────── */
+.mud-picker {
+  border-radius: var(--n-radius-lg) !important;
+  box-shadow: var(--n-shadow-lg) !important;
+}
+
+/* Prevent date range picker inputs from truncating the year */
+.mud-date-range-picker {
+    min-width: 230px !important;
+}
+.mud-date-picker {
+    min-width: 130px !important;
+}
+
+/* Toolbar superior (año + fecha/rango grande) — mud-button-year y
+   mud-button-date venían encimados porque son MudButton (inline-flex,
+   nowrap por defecto) apilados sin flujo de documento normal; con un
+   rango de fechas el texto es largo ("lun, 20 jul – lun, 03 ago") y
+   se desbordaba encima del año. Se fuerza flujo en columna, ancho
+   completo y wrap de texto para que cada uno ocupe su propia línea. */
+.mud-picker-datepicker-toolbar,
+.mud-picker-timepicker-toolbar,
+.mud-picker-toolbar {
+  background: var(--n-purple-grad) !important;
+  padding: 1rem 1.25rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 0.3rem !important;
+}
+.mud-picker-datepicker-toolbar .mud-typography,
+.mud-picker-timepicker-toolbar .mud-typography,
+.mud-picker-toolbar .mud-typography,
+.mud-picker-datepicker-toolbar .mud-button-root,
+.mud-picker-toolbar .mud-button-root {
+  color: #FFFFFF !important;
+}
+.mud-picker-datepicker-toolbar .mud-button-year,
+.mud-picker-datepicker-toolbar .mud-button-date {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0.1rem 0 !important;
+  text-align: left !important;
+  text-transform: none !important;
+}
+.mud-picker-datepicker-toolbar .mud-button-year .mud-button-label {
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  opacity: 0.85;
+  white-space: normal !important;
+  justify-content: flex-start !important;
+}
+.mud-picker-datepicker-toolbar .mud-button-date .mud-button-label {
+  font-size: 1.05rem !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  white-space: normal !important;
+  display: block !important;
+  text-align: left !important;
+  justify-content: flex-start !important;
+}
+
+/* Header de navegación de mes (flechas + "agosto 2026") */
+.mud-picker-calendar-header-switch {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-weight: 700 !important;
+  color: var(--n-text-1) !important;
+}
+.mud-picker-calendar-header-transition {
+  overflow: hidden !important;
+}
+.mud-picker-nav-button-prev,
+.mud-picker-nav-button-next {
+  color: var(--n-purple) !important;
+}
+
+/* Fila de letras de días de la semana (D L M M J V S) */
+.mud-picker-calendar-week-text {
+  color: var(--n-text-3) !important;
+  font-weight: 700 !important;
+  font-size: 0.7rem !important;
+}
+
+/* Cuadrícula de días */
+.mud-picker-calendar-container {
+  padding: 0.5rem 0.5rem 1rem !important;
+}
+.mud-picker .mud-day {
+  border-radius: 50% !important;
+  font-weight: 500 !important;
+  transition: background-color 0.15s ease !important;
+}
+.mud-picker .mud-day:hover {
+  background: var(--n-purple-xl) !important;
+}
+.mud-picker .mud-day.mud-current {
+  border: 1.5px solid var(--n-purple) !important;
+  color: var(--n-purple) !important;
+  font-weight: 700 !important;
+}
+.mud-picker .mud-day.mud-selected {
+  background: var(--n-purple-grad) !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  box-shadow: var(--n-purple-glow) !important;
+}
+.mud-picker .mud-range-selection {
+  background: var(--n-purple-xl) !important;
+}
+.mud-picker .mud-day.mud-range-start-selected,
+.mud-picker .mud-day.mud-range-end-selected {
+  background: var(--n-purple-grad) !important;
+  color: #FFFFFF !important;
+  border-radius: 50% !important;
+  box-shadow: var(--n-purple-glow) !important;
+}
+
+/* Selectores de mes/año (vista alterna) */
+.mud-picker-year-container .mud-picker-year.mud-picker-year-selected,
+.mud-picker-month.mud-picker-month-selected {
+  color: var(--n-purple) !important;
+  font-weight: 800 !important;
+}
+
+/* Footer (botones Cancelar / OK) */
+.mud-picker-actions {
+  border-top: 1px solid var(--n-border) !important;
+  padding: 0.6rem 1rem !important;
+}
+
+/* ── MudSnackbar ────────────────────────────────────────────── */
+.mud-snackbar {
+  border-radius: var(--n-radius-sm) !important;
+  font-weight: 500 !important;
+  font-size: 0.875rem !important;
+}
+
+/* ── MudProgressCircular ────────────────────────────────────── */
+.mud-progress-circular-svg .mud-progress-circular-circle {
+  stroke: var(--n-purple) !important;
+}
+
+/* ── MudDivider ─────────────────────────────────────────────── */
+.mud-divider { border-color: var(--n-border) !important; }
+
+/* ── MudIconButton ──────────────────────────────────────────── */
+.mud-icon-button {
+  border-radius: 10px !important;
+  transition: all 0.18s ease !important;
+}
+
+/* ── MudTypography overrides ────────────────────────────────── */
+.mud-typography-h5 {
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+}
+.mud-typography-h6 {
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+}
+.mud-typography-subtitle1 {
+  font-size: 0.9rem !important;
+  font-weight: 600 !important;
+}
+
+/* ── Filtros / Panel de herramientas  ─────────────────────────
+   Cuando un MudPaper contiene inputs de filtro en páginas,
+   que tenga el mismo look que las demás tarjetas.
+   ────────────────────────────────────────────────────────────── */
+.mud-paper.pa-4,
+.mud-paper.pa-3,
+.mud-paper.pa-2 {
+  background: var(--n-card) !important;
+  border: 1px solid var(--n-border) !important;
+  border-radius: var(--n-radius) !important;
+  box-shadow: var(--n-shadow) !important;
+}
+
+/* ── Formularios HTML (Login etc.) ──────────────────────────── */
+a, .btn-link { color: var(--n-purple); }
+.valid.modified:not([type=checkbox]) { outline: 1.5px solid var(--n-success); }
+.invalid { outline: 1.5px solid var(--n-error); }
+.validation-message { color: var(--n-error); font-size: 0.8rem; margin-top: 0.25rem; }
+
+/* ── Login — autofill override global (sin scope hash para que Chrome lo aplique) ── */
+/* Chrome no respeta pseudo-clase :-webkit-autofill combinada con atributo [b-hash] */
+.lf__input input:-webkit-autofill,
+.lf__input input:-webkit-autofill:hover,
+.lf__input input:-webkit-autofill:focus {
+  /* Color muy transparente: se ve igual que el input normal (rgba(255,255,255,0.09)) */
+  -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.07) inset !important;
+  -webkit-text-fill-color: #f4f5fb !important;
+  caret-color: #f4f5fb;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* ── Blazor error boundary ──────────────────────────────────── */
+.blazor-error-boundary {
+  background: #FEE2E2;
+  border: 1px solid #FECACA;
+  border-radius: var(--n-radius);
+  padding: 1rem 1.25rem;
+  color: #991B1B;
+  font-size: 0.875rem;
+}
+.blazor-error-boundary::after { content: "Ha ocurrido un error inesperado."; }
+
+#blazor-error-ui {
+  background: #FEF9C3;
+  border-top: 1px solid #FDE68A;
+  bottom: 0; left: 0;
+  padding: 0.65rem 1.25rem;
+  position: fixed;
+  width: 100%;
+  z-index: 1000;
+  display: none;
+  font-size: 0.875rem;
+}
+#blazor-error-ui .dismiss {
+  cursor: pointer;
+  position: absolute;
+  right: 0.75rem;
+  top: 0.55rem;
+}
+
+/* ================================================================
+   MODO OSCURO — tema visual completo (fondo, barras, cards, texto).
+   Activado por <div id="nexo-app-root" class="nexo-tema-oscuro"> en
+   MainLayout.razor cuando Preferencias.TemaOscuro == true.
+
+   Todos los selectores usan "#nexo-app-root.nexo-tema-oscuro ..." (ID)
+   para ganar especificidad sobre NexoWeb.styles.css que carga después.
+
+   Fondo: gradiente atmosférico con glows en derecha e izquierda.
+   Glass topbar/sidebar: ver §Glass TopBar y Sidebar más abajo.
+   ================================================================ */
+.nexo-tema-oscuro {
+  --n-bg:      #060E1F !important;
+  --n-card:    rgba(255,255,255,0.07) !important;
+  --n-border:  rgba(255,255,255,0.11) !important;
+  --n-border-2:rgba(255,255,255,0.20) !important;
+  --n-text-1:  #F4F5F9 !important;
+  --n-text-2:  #A9A9C0 !important;
+  --n-text-3:  #7C7C96 !important;
+  --n-purple-xl: rgba(124,92,255,0.18) !important;
+
+  /* Variables propias de MudBlazor -- alcanzan tambien a los MudChart
+     (eje X/Y usa fill: var(--mud-palette-text-primary)) y a los inputs. */
+  --mud-palette-text-primary: #F4F5F9 !important;
+  --mud-palette-text-secondary: #A9A9C0 !important;
+  --mud-palette-background: #0D0D14 !important;
+  --mud-palette-background-grey: #1C1C2C !important;
+  --mud-palette-surface: #1C1C2C !important;
+  --mud-palette-divider: rgba(255,255,255,0.09) !important;
+  --mud-palette-lines-default: rgba(255,255,255,0.09) !important;
+  --mud-palette-lines-inputs: rgba(255,255,255,0.18) !important;
+}
+
+/* Fondo general -- incluye .mud-layout/.mud-drawer-container por si algun
+   navegador deja ver un borde detras de .mud-main-content al hacer scroll
+   elastico; el selector con ID le gana al hex fijo de MainLayout.razor.css. */
+/* ── §FONDO MODO OSCURO — Crystal Dark atmosférico ──────────────────
+   Para cambiar el gradiente de fondo (oscuro): editar aquí.
+   Glows lado-derecho: topbar+sidebar del lado derecho de pantalla.
+   Glows lado-izquierdo: NECESARIOS para que el glass del sidebar sea
+   visible (sin ellos el blur es sobre negro → invisible).             */
+#nexo-app-root.nexo-tema-oscuro {
+  background:
+    /* glow azul eléctrico arriba-derecha (el más intenso) */
+    radial-gradient(ellipse 72% 75% at 100% 0%,   rgba(80,130,255,0.85)  0%, rgba(60,100,230,0.50) 28%, transparent 62%),
+    /* halo secundario azul-índigo centro-derecha */
+    radial-gradient(ellipse 45% 55% at 98% 42%,   rgba(110,90,240,0.40)  0%, transparent 55%),
+    /* glow rosa/lila cálido abajo-derecha */
+    radial-gradient(ellipse 55% 55% at 96% 96%,   rgba(190,90,155,0.65)  0%, rgba(150,70,130,0.35) 32%, transparent 60%),
+    /* toque cálido-morado centro-inferior */
+    radial-gradient(ellipse 35% 40% at 72% 88%,   rgba(120,60,140,0.22)  0%, transparent 55%),
+    /* glow morado izquierda — hace visible el glass del sidebar */
+    radial-gradient(ellipse 28% 75% at 0% 45%,    rgba(100,55,220,0.50)  0%, rgba(70,35,180,0.25) 45%, transparent 70%),
+    /* glow azul-índigo arriba-izquierda — hace visible el glass del topbar */
+    radial-gradient(ellipse 55% 28% at 18% 0%,    rgba(60,100,240,0.35)  0%, transparent 60%),
+    /* base: azul-marino casi negro */
+    linear-gradient(160deg, #04091A 0%, #060D20 55%, #050818 100%) fixed !important;
+  min-height: 100vh;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-layout,
+#nexo-app-root.nexo-tema-oscuro .mud-drawer-container,
+#nexo-app-root.nexo-tema-oscuro .mud-main-content.nexo-main-content {
+  background: transparent !important;
+}
+
+/* ── §FONDO MODO CLARO — Crystal Light atmosférico ──────────────────
+   Para cambiar el gradiente de fondo (claro): editar aquí.
+   Misma estructura que el oscuro: glows derecha + glows izquierda
+   (para hacer visible el glass del sidebar también en claro).         */
+#nexo-app-root:not(.nexo-tema-oscuro) {
+  background:
+    /* glow violeta intenso arriba-derecha (≈ azul eléctrico del oscuro) */
+    radial-gradient(ellipse 72% 75% at 100% 0%,    rgba(120,80,255,0.22)  0%, rgba(100,65,230,0.12) 30%, transparent 62%),
+    /* halo índigo centro-derecha */
+    radial-gradient(ellipse 45% 55% at 98% 42%,    rgba(110,90,240,0.12)  0%, transparent 55%),
+    /* glow rosa-lila cálido abajo-derecha (≈ glow rosa del oscuro) */
+    radial-gradient(ellipse 55% 55% at 96% 96%,    rgba(210,120,200,0.30) 0%, rgba(185,110,220,0.16) 32%, transparent 60%),
+    /* toque morado centro-inferior */
+    radial-gradient(ellipse 35% 40% at 72% 88%,    rgba(140,80,180,0.12)  0%, transparent 55%),
+    /* glow morado izquierda — hace visible el glass del sidebar en claro */
+    radial-gradient(ellipse 28% 75% at 0% 45%,     rgba(110,70,230,0.22)  0%, rgba(90,55,200,0.10) 50%, transparent 70%),
+    /* glow índigo arriba-izquierda — hace visible el glass del topbar en claro */
+    radial-gradient(ellipse 55% 25% at 18% 0%,     rgba(100,80,240,0.18)  0%, transparent 60%),
+    /* luz blanca central que da la sensación de "pantalla encendida" */
+    radial-gradient(ellipse 70% 55% at 48% 28%,    rgba(255,255,255,0.95) 0%, transparent 68%),
+    /* base Arctic Pearl */
+    #ECECF3 !important;
+  min-height: 100vh;
+  animation: lightBgDrift 28s ease-in-out infinite alternate;
+}
+
+@keyframes lightBgDrift {
+  0%   { background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%; }
+  50%  { background-position: 3% 2%, 2% 3%, 1% 2%, 2% 1%, 3% 2%, 2% 3%, 2% 3%, 0% 0%; }
+  100% { background-position: 1% 4%, 3% 1%, 2% 3%, 1% 3%, 2% 1%, 1% 2%, 1% 2%, 0% 0%; }
+}
+
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-layout,
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-drawer-container,
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-main-content.nexo-main-content {
+  background: transparent !important;
+}
+
+/* Tablas — glass en dark mode */
+#nexo-app-root.nexo-tema-oscuro .mud-table-container {
+  background: rgba(255,255,255,0.06) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-table-head .mud-table-row,
+#nexo-app-root.nexo-tema-oscuro .mud-table-head .mud-table-cell {
+  background: rgba(255,255,255,0.04) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-table-pagination {
+  background: rgba(255,255,255,0.03) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-table-toolbar {
+  background: rgba(255,255,255,0.04) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-table-body .mud-table-row:hover {
+  background-color: rgba(124,92,255,0.16) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-table-striped .mud-table-body .mud-table-row:nth-child(odd) {
+  background-color: rgba(255,255,255,0.025) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-table-toolbar {
+  background: var(--n-card) !important;
+}
+
+/* Dialogs y pickers — glass oscuro opaco */
+#nexo-app-root.nexo-tema-oscuro .mud-dialog,
+#nexo-app-root.nexo-tema-oscuro .mud-picker {
+  background: rgba(10,20,52,0.97) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border: 1px solid rgba(255,255,255,0.11) !important;
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-popover-paper,
+#nexo-app-root.nexo-tema-oscuro .mud-list {
+  background: rgba(7,15,40,0.97) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-list-item-text,
+#nexo-app-root.nexo-tema-oscuro .mud-list-item-icon {
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-list-item:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
+
+/* Excepcion: el panel de notificaciones cuelga del Top Bar (chrome, no
+   pagina) -- se mantiene blanco siempre, sin importar el tema. */
+.nexo-topbar__notif-panel {
+  color: #1A1C2E;
+}
+.nexo-topbar__notif-panel-title {
+  color: #1A1C2E !important;
+  font-weight: 700;
+}
+.nexo-topbar__notif-item-msg {
+  color: #111827 !important;
+  font-weight: 600;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+.nexo-topbar__notif-item-detalle {
+  color: #374151 !important;
+  font-size: 0.78rem;
+  margin-top: 2px;
+  line-height: 1.3;
+}
+.nexo-topbar__notif-empty {
+  color: #374151 !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-topbar__notif-panel {
+  background: #FFFFFF !important;
+  color: #1A1C2E !important;
+}
+
+/* ── §Glass TopBar y Sidebar — DARK MODE ────────────────────────────
+   ESTE es el lugar canónico para cambiar background, blur y bordes
+   de las barras en modo OSCURO. Sobreescribe MainLayout.razor.css.
+   Aplica sin rebuild (solo recarga del navegador).
+   El blur es visible porque el gradiente tiene glows a la izquierda
+   (sidebar) y arriba-izquierda (topbar) en el §FONDO MODO OSCURO.    */
+
+#nexo-app-root.nexo-tema-oscuro .mud-appbar.nexo-topbar {
+  /* Menos opaco (0.42) para que el glow azul arriba-izquierda se vea a través */
+  background: rgba(6,10,24,0.42) !important;
+  backdrop-filter: blur(32px) saturate(170%) brightness(0.92) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(170%) brightness(0.92) !important;
+  border-bottom: 1px solid rgba(100,140,255,0.15) !important;
+  box-shadow:
+    0 1px 0 rgba(124,92,255,0.20),
+    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+}
+
+#nexo-app-root.nexo-tema-oscuro .mud-drawer.nexo-sidebar {
+  /* Menos opaco (0.45) para que el glow morado izquierda se vea a través */
+  background: rgba(5,8,22,0.45) !important;
+  backdrop-filter: blur(40px) saturate(180%) brightness(0.88) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(0.88) !important;
+  z-index: 1400 !important;
+  border-right: 1px solid rgba(100,60,220,0.22) !important;
+  box-shadow:
+    2px 0 32px rgba(0,0,0,0.25),
+    inset -1px 0 0 rgba(124,92,255,0.18) !important;
+}
+
+/* KPIs, encabezados de grafico y estados vacios (Dashboard.razor.css y
+   similares) -- viven como CSS scoped por pagina con hex fijo. */
+#nexo-app-root.nexo-tema-oscuro .nexo-kpi {
+  background: var(--n-card) !important;
+  border-color: var(--n-border) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-kpi__value,
+#nexo-app-root.nexo-tema-oscuro .nexo-page-hero__title {
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-chart-header {
+  border-bottom-color: var(--n-border) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-chart-header__title {
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-empty-state__text {
+  color: var(--n-text-3) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-variacion-chart__zero {
+  stroke: rgba(255,255,255,0.18) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-variacion-chart__label {
+  fill: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-variacion-chart__axis span {
+  color: var(--n-text-3) !important;
+}
+
+/* Search dropdown — fondo sólido oscuro para que sea legible sobre el topbar glass */
+#nexo-app-root.nexo-tema-oscuro .nexo-topbar__search-results {
+  background: rgba(7,15,40,0.97) !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-topbar__search-item:hover {
+  background: rgba(124,92,255,0.14) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-topbar__search-item-title {
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-topbar__search-item-sub,
+#nexo-app-root.nexo-tema-oscuro .nexo-topbar__search-status {
+  color: var(--n-text-3) !important;
+}
+
+/* Page hero timestamp — muted text adapta al modo oscuro */
+#nexo-app-root.nexo-tema-oscuro .nexo-page-hero__timestamp {
+  color: var(--n-text-3) !important;
+}
+
+/* Toggle Lista/Tarjetas y tarjetas de items -- mismo fix de contraste */
+#nexo-app-root.nexo-tema-oscuro .nexo-vista-toggle__btn {
+  background: var(--n-card) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-item-card {
+  background: var(--n-card) !important;
+  border-color: var(--n-border) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-item-card__title {
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-item-card__row {
+  border-top-color: var(--n-border) !important;
+}
+
+/* ── Settings Workspace ──────────────────────────────────────────────── */
+.nexo-settings-layout {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+.nexo-settings-sidebar {
+  position: sticky;
+  top: 1rem;
+}
+.nexo-settings-nav-group {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--n-text-3);
+  padding: 0.7rem 0.75rem 0.3rem;
+}
+.nexo-settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.86rem;
+  color: var(--n-text-2);
+  transition: background 0.14s, color 0.14s;
+  user-select: none;
+}
+.nexo-settings-nav-item:hover {
+  background: rgba(124,92,255,0.07);
+  color: var(--n-text-1);
+}
+.nexo-settings-nav-item.ns-active {
+  background: rgba(124,92,255,0.12);
+  color: #7C5CFF;
+  font-weight: 600;
+}
+.nexo-settings-nav-item .ns-chevron {
+  margin-left: auto;
+  opacity: 0.45;
+}
+.nexo-settings-nav-item.ns-subitem {
+  padding-left: 2.25rem;
+  font-size: 0.8rem;
+  opacity: 0.82;
+}
+.nexo-settings-nav-divider {
+  height: 1px;
+  background: var(--n-border);
+  margin: 0.5rem 0.75rem;
+}
+.nexo-settings-content {
+  min-width: 0;
+}
+.nexo-settings-panel-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--n-text-1);
+  margin-bottom: 1rem;
+}
+@media (max-width: 700px) {
+  .nexo-settings-layout { grid-template-columns: 1fr; }
+  .nexo-settings-sidebar { position: static; }
+}
+
+/* dark-mode overrides for settings sidebar */
+#nexo-app-root.nexo-tema-oscuro .nexo-settings-nav-item.ns-active {
+  background: rgba(167,139,255,0.18) !important;
+  color: #A78BFF !important;
+}
+
+/* Inputs / selects -- fondo transparente sobre --n-card ya cubre la
+   mayoria via variables, esto ajusta el borde por defecto (no enfocado) */
+#nexo-app-root.nexo-tema-oscuro .mud-input-outlined .mud-input-outlined-border {
+  border-color: var(--n-border-2) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-input-slot,
+#nexo-app-root.nexo-tema-oscuro .mud-select-input,
+#nexo-app-root.nexo-tema-oscuro .mud-input-input {
+  color: var(--n-text-1) !important;
+}
+
+/* Overlay de dialogo */
+#nexo-app-root.nexo-tema-oscuro .mud-overlay {
+  background: rgba(0,0,0,0.70) !important;
+}
+
+/* ================================================================
+   TOGGLE LISTA / TARJETAS + GRID DE TARJETAS
+   Reutilizable en cualquier pantalla de listado (Components/Shared/
+   VistaToggle.razor + .nexo-card-grid/.nexo-item-card en el markup
+   de cada pagina).
+   ================================================================ */
+.nexo-vista-toggle {
+  display: inline-flex;
+  border: 1px solid var(--n-border-2);
+  border-radius: var(--n-radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.nexo-vista-toggle__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  background: var(--n-card);
+  color: var(--n-text-3);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.nexo-vista-toggle__btn + .nexo-vista-toggle__btn {
+  border-left: 1px solid var(--n-border-2);
+}
+.nexo-vista-toggle__btn:hover {
+  background: var(--n-purple-xl);
+  color: var(--n-purple);
+}
+.nexo-vista-toggle__btn--activo {
+  background: var(--n-purple-grad);
+  color: #FFFFFF;
+}
+.nexo-vista-toggle__btn--activo:hover {
+  color: #FFFFFF;
+}
+
+.nexo-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.nexo-item-card {
+  background: var(--n-card);
+  border: 1px solid var(--n-border);
+  border-radius: var(--n-radius);
+  box-shadow: var(--n-shadow);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.nexo-item-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--n-shadow-md);
+}
+.nexo-item-card__title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--n-text-1);
+  line-height: 1.3;
+}
+.nexo-item-card__sub {
+  font-size: 0.76rem;
+  color: var(--n-text-3);
+}
+.nexo-item-card__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--n-text-2);
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--n-border);
+  margin-top: 0.3rem;
+}
+.nexo-item-card__row strong { color: var(--n-text-1); font-weight: 600; }
+.nexo-item-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+/* Cards mud-paper en modo oscuro — fondo translúcido SIN backdrop-filter */
+#nexo-app-root.nexo-tema-oscuro .mud-paper:not(.mud-appbar):not(.mud-popover-cascading):not(.mud-dialog):not(.mud-snackbar-content):not(.mud-drawer) {
+  background: rgba(255,255,255,0.08) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,.28) !important;
+}
+/* KPI y item-card modo oscuro */
+#nexo-app-root.nexo-tema-oscuro .nexo-kpi,
+#nexo-app-root.nexo-tema-oscuro .nexo-item-card {
+  background: rgba(255,255,255,0.08) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,.28) !important;
+}
+
+/* Cards mud-paper en modo claro — fondo blanco limpio SIN backdrop-filter */
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-paper:not(.mud-appbar):not(.mud-popover-cascading):not(.mud-dialog):not(.mud-snackbar-content):not(.mud-drawer) {
+  background: #ffffff !important;
+  border: 1px solid rgba(0,0,0,0.07) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 2px 16px rgba(80,60,160,.08) !important;
+}
+/* KPI modo claro */
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-kpi {
+  background: #ffffff !important;
+  border: 1px solid rgba(0,0,0,0.07) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 2px 16px rgba(80,60,160,.08) !important;
+}
+
+/* Hover en tabla — sutil glow morado en vez de color plano */
+#nexo-app-root.nexo-tema-oscuro .mud-table-body .mud-table-row:hover {
+  background-color: rgba(124,92,255,0.12) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-table-striped .mud-table-body .mud-table-row:nth-child(odd) {
+  background-color: rgba(255,255,255,0.02) !important;
+}
+
+/* Snackbar — sigue siendo sólido para legibilidad */
+#nexo-app-root.nexo-tema-oscuro .mud-snackbar-content {
+  background: rgba(15,25,55,0.97) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255,255,255,0.13) !important;
+}
+
+/* ================================================================
+   CRYSTAL DARK — Fixes de contraste y visibilidad
+   Elementos que MudBlazor pinta con colores propios y no heredan
+   las variables --n-*. Se cubre una sola vez aquí para todos.
+   ================================================================ */
+
+/* Page hero — icono y subtítulo */
+#nexo-app-root.nexo-tema-oscuro .nexo-page-hero__icon {
+  color: var(--n-text-2) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-page-hero__sub {
+  color: var(--n-text-2) !important;
+}
+
+/* MudTabs — header de pestañas y panel de contenido */
+#nexo-app-root.nexo-tema-oscuro .mud-tabs-header {
+  background: rgba(255,255,255,0.04) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.09) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-tab {
+  color: var(--n-text-2) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-tab.mud-tab-active,
+#nexo-app-root.nexo-tema-oscuro .mud-tab:hover {
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-tab-slider {
+  background-color: #7C5CFF !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-tabs-panels {
+  background: transparent !important;
+}
+
+/* MudText genérico — asegura legibilidad en cualquier componente */
+#nexo-app-root.nexo-tema-oscuro .mud-typography {
+  color: var(--n-text-1);
+}
+#nexo-app-root.nexo-tema-oscuro .mud-typography.mud-typography-subtitle1,
+#nexo-app-root.nexo-tema-oscuro .mud-typography.mud-typography-subtitle2,
+#nexo-app-root.nexo-tema-oscuro .mud-typography.mud-typography-body1,
+#nexo-app-root.nexo-tema-oscuro .mud-typography.mud-typography-body2 {
+  color: var(--n-text-1) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-typography.mud-typography-caption {
+  color: var(--n-text-2) !important;
+}
+
+/* MudTh / MudTd — texto de tabla */
+#nexo-app-root.nexo-tema-oscuro .mud-table-cell {
+  color: var(--n-text-1) !important;
+  border-bottom-color: rgba(255,255,255,0.07) !important;
+}
+
+/* Chips y badges */
+#nexo-app-root.nexo-tema-oscuro .mud-chip {
+  background: rgba(255,255,255,0.09) !important;
+  color: var(--n-text-1) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+}
+
+/* MudDivider */
+#nexo-app-root.nexo-tema-oscuro hr,
+#nexo-app-root.nexo-tema-oscuro .mud-divider {
+  border-color: rgba(255,255,255,0.09) !important;
+}
+
+/* ── MudNavLink del sidebar — siempre oscuro.
+   En app.css (no scoped) para garantizar especificidad sobre MudBlazor. */
+.mud-nav-link.nexo-nav-item {
+  position: relative !important;
+  color: rgba(255,255,255,0.62) !important;
+  border-radius: 9px !important;
+  font-size: 0.845rem !important;
+  font-weight: 500 !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+.mud-nav-link.nexo-nav-item:hover {
+  background: rgba(255,255,255,0.07) !important;
+  color: rgba(255,255,255,0.90) !important;
+}
+.mud-nav-link.nexo-nav-item.active {
+  background: rgba(124,92,255,0.82) !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  box-shadow: 0 3px 12px rgba(124,92,255,0.35) !important;
+}
+.mud-nav-link.nexo-nav-item .mud-nav-link-icon-wrapper {
+  color: rgba(255,255,255,0.38) !important;
+  transition: color 0.15s ease !important;
+}
+.mud-nav-link.nexo-nav-item:hover .mud-nav-link-icon-wrapper {
+  color: rgba(255,255,255,0.70) !important;
+}
+.mud-nav-link.nexo-nav-item.active .mud-nav-link-icon-wrapper {
+  color: #FFFFFF !important;
+}
+/* Indicador ">>" en item activo */
+.mud-nav-link.nexo-nav-item.active::after {
+  content: '\00BB';
+  position: absolute;
+  right: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.70);
+  letter-spacing: -0.05em;
+}
+/* ── Badge de alerta en NavLink ─────────────────────────────── */
+.nexo-nav-alerta-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  background: var(--mud-palette-error);
+  color: #fff;
+  border-radius: 9px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+/* ── MudNavGroup — header colapsable del sidebar ────────────── */
+.nexo-nav-group .mud-nav-group-header .mud-nav-link {
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 0.70rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  border-radius: 9px !important;
+  margin: 2px 8px !important;
+  padding: 0.58rem 0.85rem 0.58rem 0.75rem !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+.nexo-nav-group .mud-nav-group-header .mud-nav-link:hover {
+  background: rgba(255,255,255,0.06) !important;
+  color: rgba(255,255,255,0.82) !important;
+}
+.nexo-nav-group .mud-nav-group-toggle-icon {
+  font-size: 1rem !important;
+  color: rgba(255,255,255,0.28) !important;
+}
+.nexo-nav-group .mud-nav-group-header .mud-nav-link .mud-nav-link-icon-wrapper {
+  color: rgba(255,255,255,0.32) !important;
+}
+.nexo-nav-group .mud-nav-group-header .mud-nav-link:hover .mud-nav-link-icon-wrapper {
+  color: rgba(255,255,255,0.62) !important;
+}
+
+/* MudInputLabel y helper text */
+#nexo-app-root.nexo-tema-oscuro .mud-input-label,
+#nexo-app-root.nexo-tema-oscuro .mud-helper-text {
+  color: var(--n-text-2) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-input-label.mud-input-label-inputcontrol {
+  color: var(--n-text-2) !important;
+}
+
+/* MudAlert */
+#nexo-app-root.nexo-tema-oscuro .mud-alert {
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+}
+
+/* MudExpansionPanel */
+#nexo-app-root.nexo-tema-oscuro .mud-expand-panel {
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-expand-panel-header {
+  color: var(--n-text-1) !important;
+}
+
+/* Scrollbar — sutil en dark */
+#nexo-app-root.nexo-tema-oscuro ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+#nexo-app-root.nexo-tema-oscuro ::-webkit-scrollbar-track {
+  background: transparent;
+}
+#nexo-app-root.nexo-tema-oscuro ::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}
+#nexo-app-root.nexo-tema-oscuro ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.28);
+}
+
+/* ================================================================
+   MARCO ANIMADO — borde conic-gradient giratorio sobre todo el shell
+   Técnica: padding+mask excluye el área interior, el relleno es el
+   borde visible. @property habilita la animación de --border-angle.
+   ================================================================ */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes border-spin {
+  to { --border-angle: 360deg; }
+}
+
+#nexo-app-root::before {
+  content: '';
+  position: fixed;
+  inset: 14px;
+  border-radius: 18px;
+  padding: 1.5px;
+  background: conic-gradient(from var(--border-angle) at 50% 50%,
+    transparent       0deg,
+    transparent       44deg,
+    rgba(124,92,255,0.70)  58deg,
+    rgba(200,160,255,0.95) 72deg,
+    rgba(100,180,255,0.80) 86deg,
+    transparent       102deg,
+    transparent       360deg
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  /* z-index alto para quedar sobre sidebar/topbar (que son ~1200-1300 en MudBlazor).
+     pointer-events:none garantiza que no bloquea ningún click. */
+  z-index: 99999;
+  animation: border-spin 7s linear infinite;
+  clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 10% 100%, 0% 88%);
+}
+
+/* Borde más brillante en oscuro */
+#nexo-app-root.nexo-tema-oscuro::before {
+  background: conic-gradient(from var(--border-angle) at 50% 50%,
+    transparent       0deg,
+    transparent       44deg,
+    rgba(124,92,255,0.80)  58deg,
+    rgba(180,140,255,1.00) 72deg,
+    rgba(80,180,255,0.90)  86deg,
+    transparent       102deg,
+    transparent       360deg
+  );
+}
+
+/* Luz más suave en claro */
+#nexo-app-root:not(.nexo-tema-oscuro)::before {
+  background: conic-gradient(from var(--border-angle) at 50% 50%,
+    transparent       0deg,
+    transparent       44deg,
+    rgba(124,92,255,0.45)  58deg,
+    rgba(180,140,255,0.70) 72deg,
+    rgba(120,170,255,0.50) 86deg,
+    transparent       102deg,
+    transparent       360deg
+  );
+}
+
+/* Sub-rectángulo decorativo (esquina inferior-izquierda) */
+#nexo-app-root::after {
+  content: '';
+  position: fixed;
+  bottom: 14px;
+  left: 14px;
+  width: 140px;
+  height: 140px;
+  border-radius: 10px 4px 4px 16px;
+  pointer-events: none;
+  z-index: 99999;
+  border: 1px solid rgba(255,255,255,0.14);
+  clip-path: polygon(0% 0%, 82% 0%, 100% 20%, 100% 100%, 0% 100%);
+}
+#nexo-app-root.nexo-tema-oscuro::after {
+  border-color: rgba(140,170,255,0.22);
+}
+#nexo-app-root:not(.nexo-tema-oscuro)::after {
+  border-color: rgba(160,170,240,0.35);
+}
+
+/* ================================================================
+   NEXO-BI-TABS — pill nav flotante tipo Linear/Stripe
+   ================================================================ */
+.nexo-bi-tabs .mud-tabs-tabbar {
+  background: rgba(255,255,255,0.72) !important;
+  backdrop-filter: blur(18px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(160%) !important;
+  border: 1px solid rgba(0,0,0,0.08) !important;
+  border-radius: 999px !important;
+  padding: 4px 6px !important;
+  margin-bottom: 20px !important;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.07) !important;
+  display: inline-flex !important;
+  width: auto !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+}
+.nexo-bi-tabs .mud-tab {
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  border-radius: 999px !important;
+  padding: 6px 16px !important;
+  min-width: unset !important;
+  transition: background .2s ease, color .2s ease !important;
+  color: var(--n-text-2, rgba(30,20,60,0.6)) !important;
+}
+.nexo-bi-tabs .mud-tab:hover:not(.mud-tab-active) {
+  background: rgba(124,92,255,0.10) !important;
+  color: #7C5CFF !important;
+}
+.nexo-bi-tabs .mud-tab.mud-tab-active {
+  background: #7C5CFF !important;
+  color: #fff !important;
+  box-shadow: 0 2px 12px rgba(124,92,255,0.35) !important;
+}
+.nexo-bi-tabs .mud-tab-slider {
+  display: none !important;
+}
+/* Padding en el contenido de cada panel */
+.nexo-bi-tabs .mud-tabs-panels {
+  padding: 1.25rem 1rem;
+}
+/* Modo oscuro */
+#nexo-app-root.nexo-tema-oscuro .nexo-bi-tabs .mud-tabs-tabbar {
+  background: rgba(255,255,255,0.07) !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.25) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-bi-tabs .mud-tab {
+  color: rgba(255,255,255,0.55) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-bi-tabs .mud-tab:hover:not(.mud-tab-active) {
+  background: rgba(167,139,255,0.15) !important;
+  color: #C4B5FD !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-bi-tabs .mud-tab.mud-tab-active {
+  background: linear-gradient(135deg,#7C5CFF,#A78BFF) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 18px rgba(124,92,255,0.45) !important;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .nexo-bi-tabs .mud-tabs-tabbar {
+    background: rgba(255,255,255,0.07) !important;
+    border-color: rgba(255,255,255,0.10) !important;
+  }
+  :root:not([data-theme="light"]) .nexo-bi-tabs .mud-tab {
+    color: rgba(255,255,255,0.55) !important;
+  }
+  :root:not([data-theme="light"]) .nexo-bi-tabs .mud-tab.mud-tab-active {
+    background: linear-gradient(135deg,#7C5CFF,#A78BFF) !important;
+    color: #fff !important;
+  }
+}
+
+/* ── MudTabs global — slider púrpura en ambos modos ──────────── */
+/* Modo claro */
+.mud-tab-slider {
+  background: #7C5CFF !important;
+}
+.mud-tab.mud-tab-active {
+  color: #7C5CFF !important;
+  font-weight: 600 !important;
+}
+.mud-tabs-header {
+  border-bottom: 2px solid rgba(124,92,255,0.18) !important;
+}
+.mud-tab {
+  font-size: 0.82rem !important;
+  font-weight: 500 !important;
+  min-width: 90px !important;
+  letter-spacing: 0.01em !important;
+}
+/* Permitir que dropdowns floten sobre tabs sin ser clipados por mud-tabs-rounded */
+.mud-tabs-panels,
+.mud-tab-panel,
+.mud-tabs.mud-tabs-rounded {
+  overflow: visible !important;
+}
+/* Modo oscuro refuerzo */
+#nexo-app-root.nexo-tema-oscuro .mud-tab {
+  color: rgba(255,255,255,0.50) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-tab.mud-tab-active {
+  color: #A78BFF !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-tab-slider {
+  background: #A78BFF !important;
+}
+#nexo-app-root.nexo-tema-oscuro .mud-tabs-header {
+  border-bottom-color: rgba(167,139,255,0.22) !important;
+}
+
+/* ── Separador de sección — legible en ambos modos ────────────── */
+.nexo-section__label {
+  font-size: 0.68rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  color: var(--n-text-3) !important;
+}
+.nexo-section__line {
+  background: var(--n-border) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-section__label {
+  color: rgba(255,255,255,0.38) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-section__line {
+  background: rgba(255,255,255,0.08) !important;
+}
+
+/* ================================================================
+   MODO CLARO — Glass sidebar y topbar + inversión de colores
+   El fondo lavanda del #nexo-app-root sangra a través del cristal.
+   Usamos blanco semitransparente puro para máximo contraste.
+   ================================================================ */
+
+/* ── §Glass TopBar y Sidebar — LIGHT MODE ───────────────────────
+   ESTE es el lugar canónico para cambiar background, blur y bordes
+   en modo CLARO. Sobreescribe MainLayout.razor.css. Sin rebuild.    */
+/* ── Topbar glass claro ──────────────────────────────────────── */
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-appbar.nexo-topbar {
+  /* 0.45 más transparente: el glow índigo arriba-izquierda se verá a través */
+  background: rgba(255,255,255,0.45) !important;
+  backdrop-filter: blur(32px) saturate(180%) brightness(1.04) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(180%) brightness(1.04) !important;
+  border-bottom: 1px solid rgba(110,80,230,0.18) !important;
+  box-shadow: 0 1px 16px rgba(100,70,220,0.10), 0 1px 0 rgba(110,80,230,0.14) !important;
+  color: #1A1C2E !important;
+}
+
+/* Todos los textos/iconos del topbar que usan colores oscuros fijos */
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__title       { color: #1A1C2E !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__user-name   { color: #1A1C2E !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__user-role   { color: #6B6B8A !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__menu-btn    { color: #6B6B8A !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__notif-btn   { color: #6B6B8A !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__chevron     { color: #9B9BB4 !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__search {
+  background: rgba(255,255,255,0.70) !important;
+  border-color: rgba(130,110,220,0.22) !important;
+}
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__search:focus-within {
+  border-color: rgba(124,92,255,0.55) !important;
+  background: rgba(255,255,255,0.92) !important;
+  box-shadow: 0 0 0 3px rgba(124,92,255,0.14) !important;
+}
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__search-input         { color: #1A1C2E !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__search-input::placeholder { color: #9B9BB4 !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-topbar__search-icon          { color: #9B9BB4 !important; }
+
+/* ── Sidebar glass claro ─────────────────────────────────────── */
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-drawer.nexo-sidebar {
+  /* 0.40 más transparente: el glow morado izquierda se verá a través */
+  background: rgba(255,255,255,0.40) !important;
+  backdrop-filter: blur(40px) saturate(200%) brightness(1.05) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(1.05) !important;
+  z-index: 1400 !important;
+  border-right: 1px solid rgba(110,80,230,0.20) !important;
+  box-shadow: 2px 0 32px rgba(90,60,200,0.12), inset -1px 0 0 rgba(110,80,230,0.12) !important;
+}
+
+/* Logo en claro */
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-sidebar__logo-text  { color: #1A1C2E !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-sidebar__logo       { border-bottom-color: rgba(130,110,220,0.14) !important; }
+
+/* Nav items en claro */
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-nav-link.nexo-nav-item { color: rgba(26,28,46,0.70) !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-nav-link.nexo-nav-item:hover {
+  background: rgba(124,92,255,0.08) !important;
+  color: #7C5CFF !important;
+}
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-nav-link.nexo-nav-item.active {
+  background: linear-gradient(135deg, rgba(124,92,255,0.88), rgba(90,59,255,0.80)) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 3px 14px rgba(124,92,255,0.30) !important;
+}
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-nav-link.nexo-nav-item .mud-nav-link-icon-wrapper        { color: rgba(26,28,46,0.38) !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-nav-link.nexo-nav-item:hover .mud-nav-link-icon-wrapper  { color: #7C5CFF !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-nav-link.nexo-nav-item.active .mud-nav-link-icon-wrapper { color: #FFFFFF !important; }
+
+/* Cabeceras de grupo colapsable en claro */
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-nav-group .mud-nav-group-header .mud-nav-link {
+  color: rgba(26,28,46,0.48) !important;
+}
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-nav-group .mud-nav-group-header .mud-nav-link:hover {
+  background: rgba(124,92,255,0.06) !important;
+  color: rgba(26,28,46,0.80) !important;
+}
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-nav-group .mud-nav-group-header .mud-nav-link .mud-nav-link-icon-wrapper {
+  color: rgba(26,28,46,0.30) !important;
+}
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-nav-group .mud-nav-group-toggle-icon  { color: rgba(26,28,46,0.30) !important; }
+
+/* Footer del sidebar en claro */
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-sidebar__footer-divider { background: rgba(130,110,220,0.14) !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-sidebar__footer-item    { color: #6B6B8A !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-sidebar__footer-item:hover {
+  background: rgba(124,92,255,0.07) !important;
+  color: #7C5CFF !important;
+}
+#nexo-app-root:not(.nexo-tema-oscuro) .nexo-sidebar__footer-icon    { color: #9B9BB4 !important; }
+
+/* ── MudText general en modo claro ──────────────────────────── */
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-typography          { color: var(--n-text-1); }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-typography-h5       { color: var(--n-text-1) !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-typography-subtitle1,
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-typography-subtitle2 { color: var(--n-text-1) !important; }
+
+/* ── MudTabs en modo claro ───────────────────────────────────── */
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-tab                  { color: var(--n-text-2) !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-tab.mud-tab-active   { color: #7C5CFF !important; font-weight: 600 !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-tab-slider           { background: #7C5CFF !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-tabs-header          { border-bottom-color: rgba(124,92,255,0.18) !important; }
+
+/* ── Inputs/selects en modo claro ─────────────────────────────── */
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-input-label          { color: var(--n-text-2) !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-input-input,
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-select-input         { color: var(--n-text-1) !important; }
+
+/* ── Table en modo claro ─────────────────────────────────────── */
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-table-head .mud-table-cell { color: var(--n-text-3) !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-table-body .mud-table-cell { color: var(--n-text-1) !important; }
+#nexo-app-root:not(.nexo-tema-oscuro) .mud-table-body .mud-table-row:hover {
+  background-color: rgba(124,92,255,0.06) !important;
+}
+
+/* ================================================================
+   BARRIDO LUMINOSO EN TAB BARS (tab-sweep)
+   NO usa overflow:hidden para no cortar el slider activo.
+   El pseudo-elemento usa clip-path para contenerse.
+   ================================================================ */
+@keyframes tab-sweep {
+  0%   { transform: translateX(-150%); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(250%);  opacity: 0; }
+}
+
+.mud-tabs-header {
+  position: relative !important;
+  /* SIN overflow:hidden — el slider de tab activa necesita fluir */
+}
+
+.mud-tabs-header::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 35%;
+  height: calc(100% - 2px); /* no toca la línea inferior */
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(124,92,255,0.07) 30%,
+    rgba(180,140,255,0.13) 50%,
+    rgba(124,92,255,0.07) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+  animation: tab-sweep 6s ease-in-out infinite;
+  animation-delay: 3s;
+  z-index: 0;
+}
+
+/* Barrido más visible en oscuro */
+#nexo-app-root.nexo-tema-oscuro .mud-tabs-header::after {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(124,92,255,0.12) 30%,
+    rgba(200,160,255,0.22) 50%,
+    rgba(124,92,255,0.12) 70%,
+    transparent 100%
+  );
+}
+
+/* Asegura que el slider y los tabs queden encima del barrido */
+.mud-tab-slider,
+.mud-tab {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* ================================================================
+   §Sistema de Secciones de Formulario — Diseño unificado v1
+   Aplica en todas las páginas de creación/edición del sistema.
+   Clases principales: nexo-section, nexo-form-layout,
+   nexo-form-row-2, nexo-action-bar, nexo-page-header.
+   No requiere rebuild — aplica con solo recargar el navegador.
+   ================================================================ */
+
+/* ── Encabezado de página (breadcrumb + título) ─────────────── */
+.nexo-page-header {
+  margin-bottom: 2rem;
+}
+.nexo-page-header__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+}
+.nexo-page-header__crumb-link {
+  color: var(--n-purple);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity .15s;
+}
+.nexo-page-header__crumb-link:hover { opacity: .75; }
+.nexo-page-header__crumb-sep { color: var(--n-text-3); font-size: 0.85rem; }
+.nexo-page-header__crumb-cur { color: var(--n-text-2); }
+.nexo-page-header__body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.nexo-page-header__title {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--n-text-1);
+  margin: 0 0 0.25rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.nexo-page-header__sub {
+  font-size: 0.875rem;
+  color: var(--n-text-3);
+  margin: 0;
+}
+
+/* ── Layout de formulario ────────────────────────────────────── */
+.nexo-form-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding-bottom: 5rem;
+}
+.nexo-form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+/* ── Sección-card ────────────────────────────────────────────── */
+.nexo-section {
+  background: var(--n-card);
+  border: 1px solid var(--n-border);
+  border-radius: var(--n-radius);
+  box-shadow: var(--n-shadow);
+  overflow: visible;
+  transition: box-shadow .2s;
+}
+.nexo-section:hover {
+  box-shadow: var(--n-shadow-md);
+}
+/* Permitir que dropdowns (position:absolute) escapen contenedores MudTable */
+.nexo-section .mud-table-container,
+.nexo-section .mud-table-root,
+.nexo-section .mud-table {
+  overflow: visible;
+}
+.nexo-section__header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1.1rem 1.4rem;
+  border-bottom: 1px solid var(--n-border);
+  border-left: 3px solid var(--section-accent, var(--n-purple));
+  border-radius: calc(var(--n-radius) - 1px) calc(var(--n-radius) - 1px) 0 0;
+  overflow: hidden;
+}
+.nexo-section__icon {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: var(--n-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.nexo-section__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--n-text-1);
+  line-height: 1.2;
+}
+.nexo-section__sub {
+  font-size: 0.78rem;
+  color: var(--n-text-3);
+  margin-top: 0.1rem;
+}
+.nexo-section__body {
+  padding: 1.4rem;
+}
+
+/* ── Barra de acciones fija ──────────────────────────────────── */
+.nexo-action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(250,251,253,0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--n-border);
+  z-index: 100;
+  box-shadow: 0 -2px 12px rgba(26,28,46,0.07);
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-action-bar {
+  background: rgba(6,14,31,0.88) !important;
+  border-top-color: rgba(255,255,255,0.09) !important;
+  box-shadow: 0 -1px 0 rgba(255,255,255,0.08), 0 -4px 20px rgba(0,0,0,0.35) !important;
+}
+.nexo-action-bar__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.85rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .nexo-form-row-2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .nexo-page-header__title { font-size: 1.35rem; }
+  .nexo-section__body       { padding: 1rem; }
+  .nexo-section__header     { padding: 0.9rem 1rem; }
+  .nexo-action-bar__inner   { padding: 0.75rem 1rem; }
+
+  /* Paginación compacta en móvil: oculta "Filas por página" */
+  .mud-table-pagination-caption,
+  .mud-table-pagination-select-arrow,
+  .mud-table-pagination .mud-input-control { display: none !important; }
+  .mud-table-pagination { font-size: 0.75rem !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   §Estado Vacío — NexoEmptyState (componente compartido)
+   Usar cuando una lista/tabla no tiene ítems y no está cargando.
+   ══════════════════════════════════════════════════════════════ */
+
+.nexo-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5rem 1rem;
+    width: 100%;
+}
+
+.nexo-empty__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    max-width: 380px;
+    gap: 0;
+}
+
+.nexo-empty__icon-wrap {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(124, 92, 255, 0.08);
+    border: 1.5px solid rgba(124, 92, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+}
+
+.nexo-empty__icon {
+    font-size: 2.2rem !important;
+    color: var(--n-purple) !important;
+    opacity: 0.75;
+}
+
+.nexo-empty__title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--n-text-1);
+    margin: 0 0 0.6rem;
+    line-height: 1.3;
+}
+
+.nexo-empty__desc {
+    font-size: 0.875rem;
+    color: var(--n-text-3);
+    line-height: 1.6;
+    margin: 0 0 2rem;
+}
+
+.nexo-empty__btn {
+    margin-top: 0.5rem;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   §Gastos Operativos — Finanzas
+───────────────────────────────────────────────────────────── */
+.gasto-filtros {
+    display: flex; align-items: flex-end; gap: .75rem; flex-wrap: wrap;
+}
+.gasto-kpi-row {
+    display: flex; gap: 1rem; flex-wrap: wrap;
+}
+.gasto-kpi-tile {
+    flex: 1 1 160px; display: flex; flex-direction: column; gap: 3px;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px; background: var(--mud-palette-surface);
+}
+.gasto-kpi-tile--accent { border-color: var(--mud-palette-primary); background: color-mix(in srgb, var(--mud-palette-primary) 7%, transparent); }
+.gasto-kpi-tile__label  { font-size: .72rem; color: var(--mud-palette-text-secondary); text-transform: uppercase; letter-spacing: .04em; }
+.gasto-kpi-tile__value  { font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+.gasto-kpi-tile__sub    { font-size: .78rem; color: var(--mud-palette-text-secondary); }
+
+.gasto-cat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: .75rem;
+}
+.gasto-cat-card {
+    display: flex; align-items: flex-start; gap: .75rem;
+    padding: .85rem 1rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px; background: var(--mud-palette-surface);
+}
+.gasto-cat-card__icon   { font-size: 1.5rem; line-height: 1; flex-shrink: 0; }
+.gasto-cat-card__body   { display: flex; flex-direction: column; flex: 1; gap: 2px; }
+.gasto-cat-card__nombre { font-size: .82rem; font-weight: 600; }
+.gasto-cat-card__monto  { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gasto-cat-card__pct    { font-size: .7rem; color: var(--mud-palette-text-secondary); }
+
+/* ─────────────────────────────────────────────────────────────
+   §Demanda Proyectada — KPI tiles
+───────────────────────────────────────────────────────────── */
+.dem-kpi-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.dem-kpi-tile {
+    flex: 1 1 140px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px;
+    background: var(--mud-palette-surface);
+}
+.dem-kpi-tile--ok   { border-color: var(--mud-palette-success); background: color-mix(in srgb, var(--mud-palette-success) 8%, transparent); }
+.dem-kpi-tile--warn { border-color: var(--mud-palette-warning); background: color-mix(in srgb, var(--mud-palette-warning) 8%, transparent); }
+.dem-kpi-tile--risk { border-color: var(--mud-palette-error);   background: color-mix(in srgb, var(--mud-palette-error)   8%, transparent); }
+.dem-kpi-tile__label { font-size: .75rem; color: var(--mud-palette-text-secondary); }
+.dem-kpi-tile__value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+
+/* ─────────────────────────────────────────────────────────────
+   §Metas de Venta — cards y resumen
+───────────────────────────────────────────────────────────── */
+.mv-summary {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px;
+    background: var(--mud-palette-surface);
+}
+.mv-summary__kpi { display: flex; flex-direction: column; gap: 2px; }
+.mv-summary__kpi-label { font-size: .72rem; color: var(--mud-palette-text-secondary); text-transform: uppercase; letter-spacing: .04em; }
+.mv-summary__kpi-value { font-size: 1.35rem; font-weight: 700; }
+.mv-summary__kpi--ok   .mv-summary__kpi-value { color: var(--mud-palette-success); }
+.mv-summary__kpi--warn .mv-summary__kpi-value { color: var(--mud-palette-warning); }
+.mv-summary__kpi--risk .mv-summary__kpi-value { color: var(--mud-palette-error); }
+
+.mv-mes-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: .75rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+.mv-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+}
+.mv-card {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    padding: 1.1rem 1.2rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 12px;
+    background: var(--mud-palette-surface);
+}
+.mv-card__header { display: flex; align-items: flex-start; justify-content: space-between; }
+.mv-card__centro { font-weight: 600; font-size: .9rem; }
+.mv-card__pct-wrap { display: flex; align-items: baseline; gap: .4rem; }
+.mv-card__pct { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+.mv-card__pct-label { font-size: .75rem; color: var(--mud-palette-text-secondary); }
+.mv-card__bar { margin: .25rem 0; }
+.mv-card__vals { display: flex; justify-content: space-between; }
+.mv-card__val-label { font-size: .7rem; color: var(--mud-palette-text-secondary); }
+.mv-card__val { font-size: .9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mv-card__ritmo {
+    display: flex; align-items: center; gap: 5px;
+    font-size: .75rem; padding: .35rem .6rem;
+    border-radius: 6px; margin-top: .15rem;
+}
+.mv-card__ritmo--ok   { background: color-mix(in srgb, var(--mud-palette-success) 12%, transparent); color: var(--mud-palette-success-darken); }
+.mv-card__ritmo--warn { background: color-mix(in srgb, var(--mud-palette-warning) 12%, transparent); color: var(--mud-palette-warning-darken); }
+.mv-card__ritmo--risk { background: color-mix(in srgb, var(--mud-palette-error)   12%, transparent); color: var(--mud-palette-error-darken); }
+.mv-card__actions { display: flex; gap: .5rem; margin-top: .25rem; }
+
+/* ─────────────────────────────────────────────────────────────
+   §Proyectos — barra de estado, salud, countdown
+───────────────────────────────────────────────────────────── */
+.py-kpi-bar {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+.py-kpi-pill {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .35rem .8rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 999px;
+    background: var(--mud-palette-surface);
+    cursor: pointer; font-size: .82rem;
+    transition: background .15s, border-color .15s;
+}
+.py-kpi-pill:hover { border-color: var(--mud-palette-primary); }
+.py-kpi-pill--active { border-color: var(--mud-palette-primary); background: color-mix(in srgb, var(--mud-palette-primary) 10%, transparent); font-weight: 600; }
+.py-kpi-pill__badge {
+    background: var(--mud-palette-lines-default);
+    border-radius: 999px; padding: 1px 7px; font-size: .72rem; font-weight: 600;
+}
+.py-kpi-pill__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.py-kpi-pill__dot--en_curso    { background: var(--mud-palette-info); }
+.py-kpi-pill__dot--planificado { background: var(--mud-palette-default); }
+.py-kpi-pill__dot--finalizado  { background: var(--mud-palette-success); }
+.py-kpi-pill__dot--cancelado   { background: var(--mud-palette-error); }
+
+.py-card { position: relative; padding-top: 1rem !important; overflow: hidden; }
+.py-card__health-bar { position: absolute; top: 0; left: 0; right: 0; height: 4px; }
+.py-card__health-bar--ok      { background: var(--mud-palette-success); }
+.py-card__health-bar--warn    { background: var(--mud-palette-warning); }
+.py-card__health-bar--risk    { background: var(--mud-palette-error); }
+.py-card__health-bar--neutral { background: var(--mud-palette-lines-default); }
+
+.py-card__prioridad {
+    font-size: .68rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; margin-left: .5rem;
+}
+.py-card__prioridad--alta  { color: var(--mud-palette-error); }
+.py-card__prioridad--media { color: var(--mud-palette-warning); }
+.py-card__prioridad--baja  { color: var(--mud-palette-text-secondary); }
+
+.py-card__countdown {
+    display: flex; align-items: center; gap: 5px;
+    font-size: .75rem; color: var(--mud-palette-text-secondary);
+    margin-top: .25rem;
+}
+.py-card__countdown--soon { color: var(--mud-palette-warning); }
+.py-card__countdown--late { color: var(--mud-palette-error); }
+
+.py-card__health-chip {
+    display: inline-flex; align-items: center;
+    font-size: .68rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .05em; padding: 2px 8px;
+    border-radius: 999px; margin-top: .25rem; width: fit-content;
+}
+.py-card__health-chip--ok      { background: color-mix(in srgb, var(--mud-palette-success) 15%, transparent); color: var(--mud-palette-success-darken); }
+.py-card__health-chip--warn    { background: color-mix(in srgb, var(--mud-palette-warning) 15%, transparent); color: var(--mud-palette-warning-darken); }
+.py-card__health-chip--risk    { background: color-mix(in srgb, var(--mud-palette-error)   15%, transparent); color: var(--mud-palette-error-darken); }
+.py-card__health-chip--neutral { background: var(--mud-palette-lines-default); color: var(--mud-palette-text-secondary); }
+
+/* ─────────────────────────────────────────────────────────────
+   §Ausencias — paneles fuera hoy / próximas / pendientes
+───────────────────────────────────────────────────────────── */
+.aus-panel {
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--mud-palette-surface);
+}
+.aus-panel--pendiente { border-color: var(--mud-palette-warning); }
+.aus-panel__header {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .65rem 1rem;
+    background: color-mix(in srgb, var(--mud-palette-lines-default) 40%, transparent);
+    font-size: .82rem; font-weight: 600;
+}
+.aus-panel--pendiente .aus-panel__header {
+    background: color-mix(in srgb, var(--mud-palette-warning) 12%, transparent);
+    color: var(--mud-palette-warning-darken);
+}
+.aus-panel__body {
+    display: flex; flex-wrap: wrap; gap: .75rem;
+    padding: .9rem 1rem;
+}
+.aus-panel__body--proximas { flex-direction: column; gap: .5rem; }
+.aus-panel__empty {
+    display: flex; align-items: center; gap: .5rem;
+    color: var(--mud-palette-success);
+    font-size: .85rem;
+}
+
+.aus-chip {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .5rem .75rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px;
+    background: var(--mud-palette-background);
+}
+.aus-chip__avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--mud-palette-primary);
+    color: var(--mud-palette-primary-text);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .75rem; font-weight: 700; flex-shrink: 0;
+}
+.aus-chip__avatar--sm { width: 28px; height: 28px; font-size: .65rem; }
+.aus-chip__nombre { font-size: .82rem; font-weight: 600; }
+.aus-chip__tipo   { font-size: .72rem; color: var(--mud-palette-text-secondary); }
+
+.aus-prox-row {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .4rem 0;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+.aus-prox-row:last-child { border-bottom: none; }
+.aus-prox-row__info { display: flex; flex-direction: column; flex: 1; }
+.aus-prox-row__nombre { font-size: .82rem; font-weight: 600; }
+.aus-prox-row__tipo   { font-size: .72rem; color: var(--mud-palette-text-secondary); }
+.aus-prox-row__fechas { display: flex; flex-direction: column; align-items: flex-end; font-size: .75rem; }
+.aus-prox-row__dias   { color: var(--mud-palette-text-secondary); }
+
+
+/* ─────────────────────────────────────────────────────────────
+   §Soporte — ticket cards, kanban, KPIs, comments
+───────────────────────────────────────────────────────────── */
+
+/* KPI */
+.sop-kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+.sop-kpi-tile {
+    flex: 1 1 130px; min-width: 120px;
+    background: var(--mud-palette-surface);
+    border-radius: 10px;
+    border: 1px solid var(--mud-palette-lines-default);
+    padding: .85rem 1.1rem; text-align: center;
+}
+.sop-kpi-val { font-size: 1.8rem; font-weight: 700; line-height: 1; margin-bottom: .2rem; color: var(--mud-palette-text-primary); }
+.sop-kpi-lbl { font-size: .7rem; color: var(--mud-palette-text-secondary); text-transform: uppercase; letter-spacing: .05em; }
+
+/* Ticket card list */
+.sop-ticket-list { display: flex; flex-direction: column; }
+.sop-ticket-wrap { display: flex; flex-direction: column; }
+
+.sop-ticket-card {
+    display: flex; align-items: stretch;
+    background: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow .18s, transform .18s;
+    min-height: 140px;
+}
+.sop-ticket-card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,.10);
+    transform: translateY(-1px);
+}
+
+/* Stub (left) */
+.sop-ticket-stub {
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    background: var(--mud-palette-background-grey);
+    padding: .9rem .75rem;
+    min-width: 110px; max-width: 110px;
+    gap: .6rem;
+}
+.sop-barcode { display: flex; gap: 2px; align-items: flex-end; height: 48px; }
+.sop-bar { border-radius: 1px; }
+.sop-bar--w { width: 3px; background: var(--mud-palette-text-primary); opacity: .8; height: 100%; }
+.sop-bar--n { width: 2px; background: var(--mud-palette-text-primary); opacity: .5; height: 75%; }
+.sop-bar--m { width: 1px; background: var(--mud-palette-text-primary); opacity: .3; height: 55%; }
+.sop-stub-date { text-align: center; }
+.sop-stub-created { font-size: .6rem; text-transform: uppercase; letter-spacing: .06em; color: var(--mud-palette-text-secondary); }
+.sop-stub-day { font-size: .72rem; font-weight: 700; color: var(--mud-palette-text-primary); margin: .1rem 0; }
+.sop-stub-time { font-size: .65rem; color: var(--mud-palette-text-secondary); }
+
+/* Perforation divider */
+.sop-ticket-perforation {
+    width: 1px;
+    border-left: 2px dashed var(--mud-palette-lines-default);
+    margin: 1rem 0;
+    flex-shrink: 0;
+}
+
+/* Body */
+.sop-ticket-body {
+    flex: 1; display: flex; align-items: flex-start; padding: 1rem 1.2rem; gap: 1rem;
+    overflow: hidden;
+}
+.sop-ticket-icon-col { flex-shrink: 0; padding-top: .15rem; }
+
+/* Category circle */
+.sop-cat-circle {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+}
+.sop-cat-circle--red    { background: rgba(211,47,47,.12); color: #D32F2F; }
+.sop-cat-circle--blue   { background: rgba(25,118,210,.12); color: #1976D2; }
+.sop-cat-circle--purple { background: rgba(123,31,162,.12); color: #7B1FA2; }
+.sop-cat-circle--orange { background: rgba(230,81,0,.12); color: #E65100; }
+.sop-cat-circle--grey   { background: rgba(97,97,97,.10); color: #616161; }
+
+.sop-ticket-content { flex: 1; overflow: hidden; }
+.sop-ticket-label {
+    font-size: .6rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--mud-palette-text-secondary);
+    margin-bottom: .1rem;
+}
+.sop-ticket-title {
+    font-size: 1rem; font-weight: 700;
+    color: var(--mud-palette-text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-bottom: .5rem;
+}
+.sop-ticket-meta { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: .4rem; }
+.sop-ticket-meta-col { display: flex; flex-direction: column; }
+.sop-reporter-name { font-size: .78rem; font-weight: 600; }
+.sop-ticket-desc {
+    font-size: .78rem; color: var(--mud-palette-text-secondary);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Right panel */
+.sop-ticket-right {
+    display: flex; flex-direction: column;
+    padding: 1rem 1.2rem 1rem .8rem;
+    min-width: 160px; max-width: 180px;
+    background: var(--mud-palette-background-grey);
+    flex-shrink: 0;
+    border-left: 1px solid var(--mud-palette-lines-default);
+}
+
+/* Estado pill */
+.sop-estado-pill {
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .72rem; font-weight: 600;
+    padding: .25rem .7rem;
+    border-radius: 999px;
+    margin-top: .25rem;
+    width: fit-content;
+}
+.sop-estado-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+.sop-estado-pill--abierto  { background: rgba(2,136,209,.12); color: #0288D1; }
+.sop-estado-pill--abierto  .sop-estado-dot { background: #0288D1; }
+.sop-estado-pill--progreso { background: rgba(245,124,0,.12); color: #F57C00; }
+.sop-estado-pill--progreso .sop-estado-dot { background: #F57C00; }
+.sop-estado-pill--resuelto { background: rgba(56,142,60,.12); color: #388E3C; }
+.sop-estado-pill--resuelto .sop-estado-dot { background: #388E3C; }
+.sop-estado-pill--cerrado  { background: rgba(97,97,97,.10); color: #616161; }
+.sop-estado-pill--cerrado  .sop-estado-dot { background: #616161; }
+
+/* Prioridad dot */
+.sop-prio-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+}
+.sop-prio-dot--critica { background: #D32F2F; }
+.sop-prio-dot--alta    { background: #F57C00; }
+.sop-prio-dot--media   { background: #1976D2; }
+.sop-prio-dot--baja    { background: #757575; }
+.sop-prio-text { font-size: .78rem; font-weight: 600; }
+
+/* Ticket number */
+.sop-ticket-num {
+    font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em;
+    margin-top: .2rem;
+}
+.sop-ticket-num--critica { color: #D32F2F; }
+.sop-ticket-num--alta    { color: #F57C00; }
+.sop-ticket-num--media   { color: #1976D2; }
+.sop-ticket-num--baja    { color: #757575; }
+
+/* Connector between cards */
+.sop-connector {
+    display: flex; justify-content: center; align-items: center;
+    height: 28px; position: relative;
+}
+.sop-connector::before {
+    content: ''; position: absolute; left: 50%; top: 0;
+    width: 1px; height: 100%;
+    border-left: 2px dashed var(--mud-palette-lines-default);
+}
+.sop-connector-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--mud-palette-surface);
+    border: 2px solid var(--mud-palette-lines-default);
+    z-index: 1;
+}
+.sop-ticket-wrap:last-child .sop-connector { display: none; }
+
+/* ── GestionProyectoDialog Kanban — dark mode via toggle explícito ─ */
+#nexo-app-root.nexo-tema-oscuro .nexo-kanban__columna {
+  background: rgba(255,255,255,0.05) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-kanban__tarjeta {
+  background: rgba(255,255,255,0.09) !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35) !important;
+}
+#nexo-app-root.nexo-tema-oscuro .nexo-kanban__tarjeta-titulo {
+  color: rgba(255,255,255,0.92) !important;
+}
+
+/* Kanban */
+.sop-kanban { display: flex; gap: 1rem; align-items: flex-start; overflow-x: auto; padding-bottom: .5rem; }
+.sop-kanban-col {
+    flex: 0 0 260px;
+    background: var(--mud-palette-background-grey);
+    border-radius: 10px; min-height: 300px;
+}
+.sop-kanban-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: .7rem 1rem .5rem;
+    font-size: .82rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    border-radius: 10px 10px 0 0;
+}
+.sop-kanban-cards { padding: .5rem; display: flex; flex-direction: column; gap: .5rem; }
+.sop-kanban-card {
+    background: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px; padding: .75rem; cursor: pointer; transition: box-shadow .15s;
+}
+.sop-kanban-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+.sop-kanban-empty { text-align: center; padding: 1.5rem; font-size: .8rem; color: var(--mud-palette-text-secondary); }
+
+/* Comments in drawer */
+.sop-comment {
+    background: var(--mud-palette-background-grey);
+    border-radius: 8px; padding: .6rem .75rem;
+    margin-bottom: .5rem;
+    border-left: 3px solid var(--mud-palette-lines-default);
+}
+.sop-comment--interno {
+    border-left-color: #F57C00;
+    background: rgba(245,124,0,.05);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   §Physical stub ticket cards (stk-)
+───────────────────────────────────────────────────────────── */
+.stk-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px 22px;
+    padding: 8px 4px;
+}
+
+.stk {
+    position: relative;
+    width: 286px;
+    border-radius: 14px;
+    padding: 18px 0 22px;
+    box-shadow: 0 2px 0 rgba(255,255,255,.32) inset, 0 18px 30px -8px rgba(0,0,0,.45), 0 4px 12px rgba(0,0,0,.22);
+    cursor: pointer;
+    transition: transform .22s ease, box-shadow .22s ease;
+    flex-shrink: 0;
+}
+.stk:hover { transform: translateY(-5px); box-shadow: 0 2px 0 rgba(255,255,255,.32) inset, 0 26px 42px -8px rgba(0,0,0,.55), 0 8px 20px rgba(0,0,0,.28); }
+
+.stk::before, .stk::after {
+    content: "";
+    position: absolute;
+    left: -1px; right: -1px;
+    height: 9px;
+    z-index: 2;
+    background-size: 22px 9px;
+    background-repeat: repeat-x;
+}
+.stk::before {
+    top: -1px;
+    background-image: radial-gradient(circle at 11px 0, var(--mud-palette-background) 8px, transparent 8px);
+    background-position: center top;
+}
+.stk::after {
+    bottom: -1px;
+    background-image: radial-gradient(circle at 11px 9px, var(--mud-palette-background) 8px, transparent 8px);
+    background-position: center bottom;
+}
+
+.stk--amber  { background: #f4ecd8; --stk-ink: #6b4a12; --stk-acc: #e0983f; }
+.stk--green  { background: #e9f1e6; --stk-ink: #2f5230; --stk-acc: #4f9a52; }
+.stk--rose   { background: #f6e4e1; --stk-ink: #7a2a20; --stk-acc: #d9503f; }
+.stk--violet { background: #eae5f6; --stk-ink: #4a3a7a; --stk-acc: #8b6fd9; }
+
+.stk__date {
+    position: absolute; top: 14px; right: 18px;
+    font-size: 9.5px; color: var(--stk-ink); opacity: .5;
+    text-align: right; line-height: 1.3; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .03em;
+}
+
+.stk__head { display: flex; align-items: center; gap: 12px; padding: 0 22px 16px; }
+.stk__icon {
+    width: 42px; height: 42px; flex-shrink: 0; border-radius: 50%;
+    background: rgba(255,255,255,.55);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--stk-ink);
+}
+.stk__eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; color: var(--stk-ink); opacity: .55; margin-bottom: 4px; }
+.stk__subject { font-size: 15px; font-weight: 800; color: var(--stk-ink); line-height: 1.2; }
+
+.stk__perf {
+    position: relative; margin: 4px 0 16px;
+    border-top: 2px dashed rgba(0,0,0,.18);
+}
+.stk__perf::before, .stk__perf::after {
+    content: ""; position: absolute; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 18px; background: var(--mud-palette-background); border-radius: 50%;
+}
+.stk__perf::before { left: -9px; }
+.stk__perf::after  { right: -9px; }
+
+.stk__body { padding: 0 22px; display: flex; flex-direction: column; gap: 12px; }
+
+.stk__requester { display: flex; align-items: center; gap: 9px; }
+.stk__avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--stk-ink), var(--stk-acc));
+    color: #fff; font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+}
+.stk__name { font-size: 12.5px; font-weight: 700; color: var(--stk-ink); }
+
+.stk__cat { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--stk-ink); }
+.stk__desc {
+    font-size: 12px; line-height: 1.5; color: var(--stk-ink); opacity: .72;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.stk__tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.stk__pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px 4px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700;
+    background: rgba(255,255,255,.62); color: var(--stk-ink);
+}
+.stk__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--stk-acc); flex-shrink: 0; }
+
+.stk__stub { padding: 14px 22px 0; display: flex; align-items: center; justify-content: space-between; }
+.stk__barcode { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
+.stk__bar { border-radius: 1px; background: var(--stk-ink); }
+.stk__bar--t { width: 2.5px; opacity: .6; }
+.stk__bar--s { width: 1.5px; opacity: .4; }
+.stk__bar--m { width: 1px; opacity: .25; }
+.stk__no {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 17px; font-weight: 800; color: var(--stk-acc); letter-spacing: .5px;
+}
+.stk__hash { opacity: .6; font-weight: 700; }
+
+/* Resolver mode panel */
+.stk-resolver {
+    background: rgba(56,142,60,.08);
+    border: 1px solid rgba(56,142,60,.25);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 8px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   §Formularios — cards, builder, respuestas, form público
+───────────────────────────────────────────────────────────── */
+
+/* Grid de formularios */
+.frm-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+.frm-card {
+    background: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 14px;
+    padding: 1.2rem;
+    display: flex; flex-direction: column; gap: .4rem;
+    transition: box-shadow .18s;
+}
+.frm-card:hover { box-shadow: 0 4px 18px rgba(0,0,0,.10); }
+.frm-card--inactivo { opacity: .65; }
+.frm-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .4rem; }
+.frm-card-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: rgba(var(--mud-palette-primary-rgb), .1);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--mud-palette-primary);
+}
+.frm-badge {
+    font-size: .65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; padding: .2rem .6rem; border-radius: 999px;
+}
+.frm-badge--activo  { background: rgba(56,142,60,.12); color: #388E3C; }
+.frm-badge--pausado { background: rgba(245,124,0,.12); color: #F57C00; }
+.frm-badge--inactivo{ background: rgba(97,97,97,.12); color: #616161; }
+.frm-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.frm-stats { display: flex; gap: 1rem; flex-wrap: wrap; }
+.frm-stat { display: flex; align-items: center; gap: .3rem; font-size: .75rem; color: var(--mud-palette-text-secondary); }
+.frm-link-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.frm-link-text {
+    font-family: monospace; font-size: .72rem;
+    background: var(--mud-palette-background-grey);
+    padding: .2rem .5rem; border-radius: 5px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Builder */
+.frm-builder-empty {
+    text-align: center; padding: 2.5rem 1rem;
+    border: 2px dashed var(--mud-palette-lines-default);
+    border-radius: 10px;
+}
+.frm-campo-row {
+    display: flex; align-items: flex-start; gap: .75rem;
+    padding: .75rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px;
+    margin-bottom: .5rem;
+    background: var(--mud-palette-surface);
+}
+.frm-campo-drag { cursor: grab; padding-top: .5rem; flex-shrink: 0; }
+.frm-campo-icon { flex-shrink: 0; padding-top: .6rem; }
+.frm-campo-body { flex: 1; display: flex; flex-direction: column; gap: .5rem; }
+.frm-campo-actions { display: flex; flex-direction: column; align-items: center; gap: .1rem; flex-shrink: 0; }
+
+/* Respuestas */
+.frm-respuesta-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+.frm-respuesta-campos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .75rem; }
+.frm-resp-campo { }
+.frm-resp-label {
+    font-size: .65rem; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--mud-palette-text-secondary);
+    margin-bottom: .15rem;
+}
+.frm-resp-valor { font-size: .85rem; word-break: break-word; }
+
+/* Formulario público */
+.frm-pub-page {
+    min-height: 100vh;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 2rem 1rem 4rem;
+    background: var(--mud-palette-background);
+}
+.frm-pub-loading { display: flex; align-items: center; justify-content: center; height: 60vh; }
+.frm-pub-card {
+    width: 100%; max-width: 640px;
+    background: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: 0 4px 32px rgba(0,0,0,.06);
+    text-align: center;
+}
+.frm-pub-card.frm-pub-card--exito { border-color: rgba(56,142,60,.3); }
+.frm-pub-header { text-align: left; }
+.frm-pub-campos { display: flex; flex-direction: column; gap: 1.2rem; text-align: left; }
+.frm-pub-campo { display: flex; flex-direction: column; gap: .4rem; }
+.frm-pub-campo-label { font-size: .9rem; font-weight: 600; }
+.frm-pub-req { color: #D32F2F; margin-left: .2rem; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   DASHBOARD BI – Tab General: KPI row, hbars, alert grid
+   ════════════════════════════════════════════════════════════════════ */
+
+/* 5-column KPI row */
+.nexo-bi-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+@media (max-width: 1100px) { .nexo-bi-kpi-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px)  { .nexo-bi-kpi-row { grid-template-columns: repeat(2, 1fr); } }
+
+/* KPI card override inside the new row */
+.nexo-bi-kpi-row .nexo-kpi {
+  min-height: 90px;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Delta badge (trend %) */
+.nexo-kpi-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-top: 4px;
+  width: fit-content;
+}
+.nexo-kpi-delta--up   { background: #D1FAE5; color: #059669; }
+.nexo-kpi-delta--down { background: #FEE2E2; color: #DC2626; }
+
+/* Stat list (3-panel middle row) */
+.nexo-bi-stat-list { display: flex; flex-direction: column; gap: 8px; }
+.nexo-bi-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(124,92,255,0.06);
+  font-size: 0.83rem;
+}
+.nexo-bi-stat__label { flex: 1; font-weight: 500; }
+.nexo-bi-stat__val   { font-weight: 700; color: var(--mud-palette-primary); }
+
+/* Horizontal bar chart */
+.nexo-bi-hbar        { display: flex; flex-direction: column; gap: 10px; }
+.nexo-bi-hbar__row   { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; }
+.nexo-bi-hbar__label { width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.nexo-bi-hbar__val   { min-width: 56px; text-align: right; font-weight: 700; color: var(--mud-palette-primary); flex-shrink: 0; }
+.nexo-bi-hbar__track { flex: 1; height: 8px; border-radius: 999px; background: rgba(124,92,255,0.12); overflow: hidden; }
+.nexo-bi-hbar__fill  { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #7C5CFF, #14B8A6); transition: width .4s ease; }
+
+/* 4-alert grid at bottom */
+.nexo-bi-alert-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+@media (max-width: 900px) { .nexo-bi-alert-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 500px) { .nexo-bi-alert-grid { grid-template-columns: 1fr; } }
+
+.nexo-bi-alert {
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid transparent;
+}
+.nexo-bi-alert--red   { background: #FFF1F2; border-color: #FECDD3; }
+.nexo-bi-alert--amber { background: #FFFBEB; border-color: #FDE68A; }
+.nexo-bi-alert--green { background: #F0FDF4; border-color: #BBF7D0; }
+.nexo-bi-alert--blue  { background: #EFF6FF; border-color: #BFDBFE; }
+.nexo-bi-alert__icon  { font-size: 1.5rem; flex-shrink: 0; margin-top: 2px; }
+.nexo-bi-alert__body  { display: flex; flex-direction: column; gap: 2px; }
+.nexo-bi-alert__title { font-size: 0.82rem; font-weight: 700; }
+.nexo-bi-alert__desc  { font-size: 0.75rem; opacity: 0.75; }
+
+/* Dark mode overrides for new General tab components */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .nexo-bi-alert--red   { background: rgba(239,68,68,0.12);  border-color: rgba(239,68,68,0.3); }
+  :root:not([data-theme="light"]) .nexo-bi-alert--amber { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); }
+  :root:not([data-theme="light"]) .nexo-bi-alert--green { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); }
+  :root:not([data-theme="light"]) .nexo-bi-alert--blue  { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.3); }
+  :root:not([data-theme="light"]) .nexo-bi-alert__title { color: rgba(255,255,255,0.92); }
+  :root:not([data-theme="light"]) .nexo-bi-alert__desc  { color: rgba(255,255,255,0.65); }
+  :root:not([data-theme="light"]) .nexo-bi-alert__icon  { color: rgba(255,255,255,0.80); }
+  :root:not([data-theme="light"]) .nexo-bi-stat { background: rgba(124,92,255,0.1); }
+  :root:not([data-theme="light"]) .nexo-bi-hbar__track { background: rgba(124,92,255,0.2); }
+  :root:not([data-theme="light"]) .nexo-kpi-delta--up   { background: rgba(16,185,129,0.20); color: #34D399; }
+  :root:not([data-theme="light"]) .nexo-kpi-delta--down { background: rgba(239,68,68,0.20);  color: #F87171; }
+  :root:not([data-theme="light"]) .nexo-bi-stat__val    { color: #A78BFA; }
+}
+:root[data-theme="dark"] .nexo-bi-alert--red   { background: rgba(239,68,68,0.12);  border-color: rgba(239,68,68,0.3); }
+:root[data-theme="dark"] .nexo-bi-alert--amber { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); }
+:root[data-theme="dark"] .nexo-bi-alert--green { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); }
+:root[data-theme="dark"] .nexo-bi-alert--blue  { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.3); }
+:root[data-theme="dark"] .nexo-bi-alert__title { color: rgba(255,255,255,0.92); }
+:root[data-theme="dark"] .nexo-bi-alert__desc  { color: rgba(255,255,255,0.65); }
+:root[data-theme="dark"] .nexo-bi-alert__icon  { color: rgba(255,255,255,0.80); }
+:root[data-theme="dark"] .nexo-bi-stat { background: rgba(124,92,255,0.1); }
+:root[data-theme="dark"] .nexo-bi-hbar__track { background: rgba(124,92,255,0.2); }
+:root[data-theme="dark"] .nexo-kpi-delta--up   { background: rgba(16,185,129,0.20); color: #34D399; }
+:root[data-theme="dark"] .nexo-kpi-delta--down { background: rgba(239,68,68,0.20);  color: #F87171; }
+:root[data-theme="dark"] .nexo-bi-stat__val    { color: #A78BFA; }
+
+/* ================================================================
+   VISTA TOGGLE — switch lista/tarjetas
+   ================================================================ */
+.nexo-vista-toggle {
+  display: inline-flex;
+  background: var(--n-card);
+  border: 1px solid var(--n-border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+.nexo-vista-toggle__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--n-text-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.nexo-vista-toggle__btn:hover {
+  background: var(--n-border);
+  color: var(--n-text-1);
+}
+.nexo-vista-toggle__btn--active {
+  background: var(--mud-palette-primary);
+  color: #fff;
+}
+
+/* ================================================================
+   NEXO CARDS GRID — grid estándar para todos los listados de tarjetas
+   ================================================================ */
+.nexo-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 1rem;
+}
+
+/* ── Tarjeta genérica ────────────────────────────────────────────
+   Modules use accent colors via modifier class:
+   nexo-ec--crm, nexo-ec--catalogo, nexo-ec--produccion,
+   nexo-ec--rrhh, nexo-ec--compras, nexo-ec--finanzas,
+   nexo-ec--admin, nexo-ec--logistica
+   ─────────────────────────────────────────────────────────────── */
+.nexo-ec {
+  background: var(--n-card);
+  border: 1px solid var(--n-border);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: default;
+}
+.nexo-ec:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+}
+.nexo-ec__header {
+  padding: 1rem 1rem 0.75rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  position: relative;
+}
+.nexo-ec__header::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: 14px 0 0 0;
+}
+/* .nexo-ec--crm: sin ::before estático — el border-top dinámico por etapa ya da el acento de color */
+.nexo-ec--catalogo .nexo-ec__header::before { background: #7C5CFF; }
+.nexo-ec--produccion .nexo-ec__header::before { background: #F59E0B; }
+.nexo-ec--rrhh     .nexo-ec__header::before { background: #EC4899; }
+.nexo-ec--compras  .nexo-ec__header::before { background: #10B981; }
+.nexo-ec--finanzas .nexo-ec__header::before { background: #3B82F6; }
+.nexo-ec--admin    .nexo-ec__header::before { background: #8B5CF6; }
+.nexo-ec--logistica .nexo-ec__header::before { background: #F97316; }
+.nexo-ec--marketing .nexo-ec__header::before { background: #EF4444; }
+
+.nexo-ec__avatar {
+  width: 44px; height: 44px; min-width: 44px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, var(--mud-palette-primary), var(--mud-palette-secondary));
+  margin-left: 8px;
+}
+.nexo-ec__title-block { flex: 1; min-width: 0; padding-left: 8px; }
+.nexo-ec__name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--n-text-1);
+  line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nexo-ec__sub {
+  font-size: 0.78rem;
+  color: var(--n-text-2);
+  margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nexo-ec__body {
+  padding: 0 1rem 0.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+.nexo-ec__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--n-text-2);
+}
+.nexo-ec__row strong { color: var(--n-text-1); font-weight: 600; }
+.nexo-ec__footer {
+  padding: 0.6rem 1rem;
+  border-top: 1px solid var(--n-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* Pipeline KPI strip */
+.nexo-pipeline-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.nexo-pipeline-kpi {
+  background: var(--n-surface);
+  border: 1px solid var(--n-border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem 0.75rem;
+  min-width: 180px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow .18s ease, transform .18s ease;
+}
+.nexo-pipeline-kpi:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  transform: translateY(-1px);
+}
+.nexo-pipeline-kpi--accent {
+  border-color: var(--mud-palette-primary);
+  background: color-mix(in srgb, var(--mud-palette-primary) 6%, var(--n-surface));
+}
+.nexo-pipeline-kpi__left {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.nexo-pipeline-kpi__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.nexo-pipeline-kpi__val {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--n-text-1);
+  line-height: 1.2;
+}
+.nexo-pipeline-kpi__lbl {
+  font-size: 0.7rem;
+  color: var(--n-text-1);
+  opacity: .55;
+  margin-top: 1px;
+}
+.nexo-pipeline-kpi__spark {
+  width: 100%;
+  height: 28px;
+  display: block;
+  opacity: .7;
+}
+
+/* Pipeline empty state */
+.nexo-pipeline-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  gap: 0.75rem;
+  text-align: center;
+}
+.nexo-pipeline-empty__blob {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--mud-palette-primary) 12%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+.nexo-pipeline-empty__ico {
+  font-size: 3rem !important;
+  color: var(--mud-palette-primary);
+  opacity: .7;
+}
+.nexo-pipeline-empty__plus {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--mud-palette-primary);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.nexo-pipeline-empty__title {
+  opacity: .75;
+  font-weight: 600;
+}
+.nexo-pipeline-empty__sub {
+  font-size: 0.85rem;
+  color: var(--n-text-3);
+  max-width: 340px;
+  margin-bottom: 0.5rem;
+}
+
+/* Pipeline action pills */
+.nexo-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.6;
+  transition: opacity .15s, transform .1s;
+}
+.nexo-pill-btn:hover  { opacity: .82; transform: translateY(-1px); }
+.nexo-pill-btn:active { transform: translateY(0); }
+.nexo-pill-btn--next {
+  background: color-mix(in srgb, var(--mud-palette-primary) 15%, transparent);
+  color: var(--mud-palette-primary);
+  border: 1px solid color-mix(in srgb, var(--mud-palette-primary) 35%, transparent);
+}
+.nexo-pill-btn--primary {
+  background: var(--mud-palette-primary);
+  color: #fff;
+}
+.nexo-pill-btn--danger {
+  background: color-mix(in srgb, var(--mud-palette-error) 12%, transparent);
+  color: var(--mud-palette-error);
+  border: 1px solid color-mix(in srgb, var(--mud-palette-error) 30%, transparent);
+}
+.nexo-pill-btn:focus-visible {
+  outline: 2px solid var(--mud-palette-primary);
+  outline-offset: 2px;
+}
+
+/* -- AppSelect custom NEXO ------------------------------------------------ */
+.app-select-wrap { position: relative; display: flex; flex-direction: column; gap: 4px; }
+
+.app-select-lbl {
+  font-size: 0.72rem; font-weight: 600; color: var(--n-text-2);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+.app-sel-combo {
+  display: flex; align-items: center;
+  border: 1px solid #D1D5E8; border-radius: 8px;
+  background: #fff; min-height: 42px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.app-sel-combo:hover:not(.app-sel--disabled) { border-color: #9B7FFF; }
+.app-sel--open  { border-color: #7C5CFF !important; box-shadow: 0 0 0 2px rgba(124,92,255,0.18); }
+.app-sel--disabled { opacity: 0.55; pointer-events: none; background: #ECECF3; }
+
+.app-sel-combo-input {
+  flex: 1; border: none; outline: none; background: transparent;
+  padding: 9px 4px 9px 12px; font-size: 0.875rem; color: #1A1C2E;
+  font-family: inherit; cursor: text; min-width: 0;
+}
+.app-sel-combo-input::placeholder { color: #9B9BB4; }
+
+.app-sel-arrow {
+  color: #6B6B8A; font-size: 1rem; padding: 0 10px;
+  cursor: pointer; flex-shrink: 0; user-select: none;
+  transition: transform 0.15s;
+}
+.app-sel--open .app-sel-arrow { transform: rotate(180deg); }
+
+.app-sel-backdrop {
+  position: fixed; inset: 0; z-index: 1400;
+}
+
+.app-sel-list {
+  position: fixed; left: -9999px; top: 0; width: 160px;
+  background: #fff; border: 1px solid #D1D5E8;
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(26,28,46,0.14);
+  z-index: 9999; max-height: 300px; overflow-y: auto;
+}
+
+.app-sel-item {
+  padding: 10px 14px; font-size: 0.875rem; color: #1A1C2E;
+  cursor: pointer; line-height: 1.4;
+  transition: background 0.1s;
+  border-bottom: 1px solid #E8E9EF;
+}
+.app-sel-item:last-child { border-bottom: none; }
+.app-sel-item:hover:not(.app-sel-item--ph) { background: #EEEDF8; }
+.app-sel-item--active { background: rgba(124,92,255,0.10); color: #7C5CFF; font-weight: 600; }
+.app-sel-item--ph { color: #9B9BB4; }
+.app-sel-item--ph:hover { background: transparent; cursor: default; }
+
+
+
+
+
+
+.app-sel-search-wrap {
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid #E8E9EF;
+  position: sticky; top: 0; background: #fff; z-index: 1;
+}
+.app-sel-search {
+  width: 100%; padding: 6px 10px;
+  border: 1px solid #D1D5E8; border-radius: 6px;
+  font-size: 0.8rem; font-family: inherit; color: #1A1C2E;
+  outline: none;
+}
+.app-sel-search:focus { border-color: #7C5CFF; box-shadow: 0 0 0 2px rgba(124,92,255,0.15); }
+
+/* ================================================================
+   EDITOR DE DOCUMENTOS — Quill + vista previa
+   ================================================================ */
+
+/* Quill color picker z-index dentro de MudDialog */
+.ql-toolbar .ql-picker-options { z-index: 1500 !important; }
+
+.nexo-quill-wrapper {
+  border: 1px solid rgba(0,0,0,0.23);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.nexo-quill-wrapper:focus-within {
+  border-color: #7C5CFF;
+  box-shadow: 0 0 0 2px rgba(124,92,255,0.18);
+}
+.nexo-quill-wrapper .ql-toolbar.ql-snow {
+  border: none !important;
+  border-bottom: 1px solid rgba(0,0,0,0.10) !important;
+  padding: 8px 12px;
+  background: #f9f9fc;
+  flex-wrap: wrap;
+}
+.nexo-quill-wrapper .ql-container.ql-snow {
+  border: none !important;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 13px;
+}
+.nexo-quill-wrapper .ql-editor {
+  min-height: 360px;
+  padding: 20px 24px;
+  line-height: 1.75;
+  color: #1a1a2e;
+}
+.nexo-quill-wrapper .ql-editor.ql-blank::before {
+  font-style: italic;
+  color: #b0b0c4;
+  left: 24px;
+}
+.nexo-quill-wrapper .ql-editor h1 { font-size: 1.8em; margin: 0.6em 0 0.3em; }
+.nexo-quill-wrapper .ql-editor h2 { font-size: 1.4em; margin: 0.5em 0 0.25em; }
+.nexo-quill-wrapper .ql-editor h3 { font-size: 1.15em; margin: 0.4em 0 0.2em; }
+.nexo-quill-wrapper .ql-editor p  { margin: 0 0 0.5em; }
+.nexo-quill-wrapper .ql-toolbar .ql-formats { margin-right: 8px; }
+
+/* Vista previa de documento */
+.nexo-doc-preview { font-size: 13px; line-height: 1.7; }
+.nexo-doc-preview p  { margin: 0 0 0.5em; }
+.nexo-doc-preview h1 { font-size: 1.6em; font-weight: 700; margin: 0.5em 0 0.3em; }
+.nexo-doc-preview h2 { font-size: 1.3em; font-weight: 700; margin: 0.4em 0 0.2em; }
+.nexo-doc-preview h3 { font-size: 1.1em; font-weight: 600; margin: 0.3em 0 0.15em; }
+
+/* ── Calculadora de materiales / chips RRHH ─────────────────────── */
+.nexo-calc-chip {
+    background: var(--n-bg-3);
+    border: 1px solid var(--n-border-1);
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.nexo-calc-chip--muted { opacity: 0.75; }
+.nexo-calc-chip__label {
+    font-size: 0.7rem;
+    color: var(--n-text-3);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.nexo-calc-chip__value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--n-text-1);
+    font-variant-numeric: tabular-nums;
+}

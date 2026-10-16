@@ -1,0 +1,719 @@
+﻿@page "/crm/campanas/nueva"
+@page "/crm/campanas/{Id:int}"
+@implements IDisposable
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@inject INexoApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snack
+@attribute [Authorize]
+
+<PageTitle>@(_esNueva ? "Nueva campaña" : "Editar campaña")</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">@(_esNueva ? "Nueva campaña" : _nombre)</MudText>
+<MudBreadcrumbs Items="_migas" Class="mb-4 pa-0" />
+
+@if (_cargando)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" />
+}
+else
+{
+    <MudGrid>
+        <!-- ══ Columna izquierda: editor ══════════════════════════════════════ -->
+        <MudItem xs="12" md="7">
+
+            <!-- Datos básicos -->
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.subtitle1" Class="mb-3" Style="font-weight:600">Datos de la campaña</MudText>
+                <MudTextField @bind-Value="_nombre" Label="Nombre de la campaña" Required Variant="Variant.Outlined" Class="mb-3" />
+                <MudTextField @bind-Value="_descripcion" Label="Descripción (opcional)" Variant="Variant.Outlined" Class="mb-3" />
+                <MudTextField @bind-Value="_asunto" Label="Asunto del email" Required Variant="Variant.Outlined" Class="mb-2"
+                              HelperText="Puedes usar {{nombre}} y {{empresa}} para personalizar" />
+                <MudStack Row Spacing="1" Class="mb-1" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Insertar:</MudText>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             OnClick="@(() => _asunto += " {{nombre}}")">{{nombre}}</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             OnClick="@(() => _asunto += " {{empresa}}")">{{empresa}}</MudChip>
+                </MudStack>
+            </MudPaper>
+
+            <!-- Segmento -->
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.subtitle1" Class="mb-3" Style="font-weight:600">Segmento de destinatarios</MudText>
+                <AppSelect TValue="string" Value="_segmentoTipo" Label="Tipo de segmento" Class="mb-3"
+                           ValueChanged="@(async (string v) => { _segmentoTipo = v; _segmentoValor = null; await ContarDestinatarios(); })"
+                           Items="@(new AppSelectItem<string>[]{ new("Todos los clientes con email","TODOS"), new("Por tipo de cliente","TIPO_CLIENTE"), new("Por fuente de contacto","FUENTE"), new("Clientes fríos (sin contacto reciente)","FRIOS"), new("Con cotización activa","CON_COTIZACION") })" />
+
+                @if (_segmentoTipo == "TIPO_CLIENTE")
+                {
+                    <AppSelect TValue="string" Value="_segmentoValor" Label="Tipo" Class="mb-3"
+                               ValueChanged="@(async (string v) => { _segmentoValor = v; await ContarDestinatarios(); })"
+                               Items="@(new AppSelectItem<string>[]{ new("Particular","Particular"), new("Empresa","Empresa"), new("Distribuidor","Distribuidor") })" />
+                }
+                else if (_segmentoTipo == "FUENTE")
+                {
+                    <MudTextField @bind-Value="_segmentoValor" Label="Fuente" Variant="Variant.Outlined" Class="mb-3"
+                                  @onblur="@(async () => await ContarDestinatarios())" />
+                }
+                else if (_segmentoTipo == "FRIOS")
+                {
+                    <MudNumericField T="int" @bind-Value="_diasFrios" Label="Días sin contacto" Variant="Variant.Outlined" Class="mb-3"
+                                     @onblur="@(async () => { _segmentoValor = _diasFrios.ToString(); await ContarDestinatarios(); })" />
+                }
+
+                <MudAlert Severity="Severity.Info" Dense>
+                    <b>@_totalDestinatarios</b> destinatario(s) en este segmento
+                </MudAlert>
+            </MudPaper>
+
+            <!-- Editor de bloques -->
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600">Contenido del email</MudText>
+                    <MudSpacer />
+                    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                        <MudButton OnClick="@(() => AgregarBloque("titulo"))">+ Título</MudButton>
+                        <MudButton OnClick="@(() => AgregarBloque("parrafo"))">+ Párrafo</MudButton>
+                        <MudButton OnClick="@(() => AgregarBloque("imagen"))">+ Imagen</MudButton>
+                        <MudButton OnClick="@(() => AgregarBloque("boton"))">+ Botón</MudButton>
+                        <MudButton OnClick="@(() => AgregarBloque("separador"))">― Sep.</MudButton>
+                    </MudButtonGroup>
+                </MudStack>
+
+                @if (_bloques.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Dense>
+                        Agrega bloques para construir el email.
+                    </MudAlert>
+                }
+
+                @for (int i = 0; i < _bloques.Count; i++)
+                {
+                    var idx = i;
+                    var bloque = _bloques[idx];
+                    var tipo = bloque["tipo"]?.ToString() ?? "";
+
+                    <MudPaper Outlined Class="pa-3 mb-2" Style="position:relative">
+                        <MudStack Row AlignItems="AlignItems.Center" Class="mb-2">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@EtiquetaTipo(tipo)</MudChip>
+                            <MudSpacer />
+                            @if (idx > 0)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
+                                               OnClick="@(() => MoverBloque(idx, -1))" />
+                            }
+                            @if (idx < _bloques.Count - 1)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
+                                               OnClick="@(() => MoverBloque(idx, 1))" />
+                            }
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           OnClick="@(() => EliminarBloque(idx))" />
+                        </MudStack>
+
+                        @switch (tipo)
+                        {
+                            case "titulo":
+                                <MudTextField Value="@bloque["texto"]?.ToString()"
+                                              ValueChanged="@((string v) => bloque["texto"] = v)"
+                                              Label="Texto del título" Variant="Variant.Outlined" FullWidth Class="mb-1" />
+                                <MudStack Row Spacing="1" Class="mb-1" AlignItems="AlignItems.Center">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Insertar:</MudText>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                             OnClick="@(() => { var t = bloque["texto"]?.ToString() ?? ""; bloque["texto"] = t + " {{nombre}}"; })">{{nombre}}</MudChip>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                             OnClick="@(() => { var t = bloque["texto"]?.ToString() ?? ""; bloque["texto"] = t + " {{empresa}}"; })">{{empresa}}</MudChip>
+                                </MudStack>
+                                break;
+
+                            case "parrafo":
+                                <MudTextField Value="@bloque["texto"]?.ToString()"
+                                              ValueChanged="@((string v) => bloque["texto"] = v)"
+                                              Label="Texto" Variant="Variant.Outlined" FullWidth Lines="4" Class="mb-1" />
+                                <MudStack Row Spacing="1" Class="mb-1" AlignItems="AlignItems.Center">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Insertar:</MudText>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                             OnClick="@(() => { var t = bloque["texto"]?.ToString() ?? ""; bloque["texto"] = t + " {{nombre}}"; })">{{nombre}}</MudChip>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                             OnClick="@(() => { var t = bloque["texto"]?.ToString() ?? ""; bloque["texto"] = t + " {{empresa}}"; })">{{empresa}}</MudChip>
+                                </MudStack>
+                                break;
+
+                            case "imagen":
+                                <MudStack Row AlignItems="AlignItems.Center" Class="mb-2">
+                                    @if (!string.IsNullOrWhiteSpace(bloque["src"]?.ToString()))
+                                    {
+                                        <img src="@bloque["src"]" style="height:60px;border-radius:6px;object-fit:cover" alt="preview" />
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">Sin imagen seleccionada</MudText>
+                                    }
+                                    <MudSpacer />
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                               StartIcon="@Icons.Material.Filled.Image"
+                                               OnClick="@(async () => await AbrirModalGaleria(idx))">
+                                        @(string.IsNullOrWhiteSpace(bloque["src"]?.ToString()) ? "Elegir imagen" : "Cambiar imagen")
+                                    </MudButton>
+                                </MudStack>
+                                <MudTextField Value="@bloque["alt"]?.ToString()"
+                                              ValueChanged="@((string v) => bloque["alt"] = v)"
+                                              Label="Texto alternativo (alt)" Variant="Variant.Outlined" FullWidth />
+                                break;
+
+                            case "boton":
+                                <MudGrid>
+                                    <MudItem xs="12" sm="6">
+                                        <MudTextField Value="@bloque["texto"]?.ToString()"
+                                                      ValueChanged="@((string v) => bloque["texto"] = v)"
+                                                      Label="Texto del botón" Variant="Variant.Outlined" FullWidth />
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6">
+                                        <MudTextField Value="@bloque["url"]?.ToString()"
+                                                      ValueChanged="@((string v) => bloque["url"] = v)"
+                                                      Label="URL destino" Variant="Variant.Outlined" FullWidth Placeholder="https://" />
+                                    </MudItem>
+                                </MudGrid>
+                                break;
+
+                            case "separador":
+                                <MudDivider />
+                                break;
+                        }
+                    </MudPaper>
+                }
+            </MudPaper>
+
+            <!-- Botones de acción principales -->
+            <MudStack Row>
+                <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                           OnClick="@(() => Nav.NavigateTo("/crm/campanas"))">Cancelar</MudButton>
+                <MudSpacer />
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Preview"
+                           OnClick="MostrarPreview" Disabled="@(_bloques.Count == 0)">Vista previa</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="Guardar" Disabled="@_guardando">
+                    @(_guardando ? "Guardando..." : "Guardar")
+                </MudButton>
+            </MudStack>
+        </MudItem>
+
+        <!-- ══ Columna derecha: acciones de envío ════════════════════════════ -->
+        <MudItem xs="12" md="5">
+
+            <!-- Envío de prueba -->
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.subtitle1" Class="mb-3" Style="font-weight:600">
+                    <MudIcon Icon="@Icons.Material.Filled.Science" Size="Size.Small" /> Prueba de envío
+                </MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                    Recibe el email tú mismo para ver cómo se ve antes de enviarlo a los clientes.
+                </MudText>
+                <MudTextField @bind-Value="_emailPrueba" Label="Email destino de prueba"
+                              Variant="Variant.Outlined" Class="mb-2" Placeholder="tu@email.com" />
+                <MudButton Variant="Variant.Outlined" FullWidth OnClick="EnviarPrueba"
+                           Disabled="@(string.IsNullOrWhiteSpace(_emailPrueba) || _enviandoPrueba || _esNueva)">
+                    @(_enviandoPrueba ? "Enviando..." : "Enviar prueba")
+                </MudButton>
+                @if (_esNueva)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Guarda la campaña primero para poder enviar una prueba.
+                    </MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(_resultadoPrueba))
+                {
+                    <MudAlert Severity="@_severidadPrueba" Dense Class="mt-2">@_resultadoPrueba</MudAlert>
+                }
+            </MudPaper>
+
+            <!-- Contador diario -->
+            @if (_contador is not null)
+            {
+                var pct = _contador.LimiteGmail > 0 ? (double)_contador.EmailsHoy / _contador.LimiteGmail * 100 : 0;
+                var colorContador = pct >= 90 ? Color.Error : pct >= 70 ? Color.Warning : Color.Success;
+                <MudPaper Class="pa-4 mb-4" Elevation="2">
+                    <MudStack Row AlignItems="AlignItems.Center" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Email" Size="Size.Small" Color="@colorContador" />
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:600">Emails enviados hoy</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.body2"><b>@_contador.EmailsHoy</b> / @_contador.LimiteGmail</MudText>
+                    </MudStack>
+                    <MudProgressLinear Value="@pct" Color="@colorContador" Rounded />
+                    @if (pct >= 90)
+                    {
+                        <MudAlert Severity="Severity.Error" Dense Class="mt-2">
+                            Límite casi alcanzado — evita enviar campañas grandes hoy para no bloquear la cuenta.
+                        </MudAlert>
+                    }
+                    else if (pct >= 70)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense Class="mt-2">
+                            Ya van @_contador.EmailsHoy emails. Considera el tamaño del segmento antes de enviar.
+                        </MudAlert>
+                    }
+                </MudPaper>
+            }
+
+            <!-- Envío masivo -->
+            @if (!_esNueva && _campana?.Estado == "BORRADOR")
+            {
+                <MudPaper Class="pa-4 mb-4" Elevation="2" Style="border:2px solid var(--mud-palette-primary)">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2" Style="font-weight:600;color:var(--mud-palette-primary)">
+                        <MudIcon Icon="@Icons.Material.Filled.Send" Size="Size.Small" /> Enviar campaña
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                        Se enviará a <b>@_totalDestinatarios</b> clientes. El envío corre en segundo plano —
+                        puedes seguir usando el sistema. Acción irreversible.
+                    </MudText>
+                    <MudAlert Severity="Severity.Warning" Dense Class="mb-3">
+                        Los emails pueden llegar a la carpeta de spam si el dominio no está verificado.
+                        Haz siempre una prueba primero.
+                    </MudAlert>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth
+                               StartIcon="@Icons.Material.Filled.RocketLaunch"
+                               OnClick="EnviarCampana" Disabled="@(_enviandoCampana || _totalDestinatarios == 0)">
+                        @(_enviandoCampana ? "Iniciando envío..." : $"Enviar a {_totalDestinatarios} clientes")
+                    </MudButton>
+                </MudPaper>
+            }
+
+            @if (!_esNueva && _campana?.Estado == "ENVIADA")
+            {
+                <MudPaper Class="pa-4 mb-4" Elevation="2">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2" Style="font-weight:600">Resultados</MudText>
+                    <MudStack Row Justify="Justify.SpaceBetween">
+                        <div style="text-align:center">
+                            <MudText Typo="Typo.h5" Color="Color.Primary">@_campana.TotalEnviados</MudText>
+                            <MudText Typo="Typo.caption">Enviados</MudText>
+                        </div>
+                        <div style="text-align:center">
+                            <MudText Typo="Typo.h5" Color="Color.Success">@_campana.TotalAbiertos</MudText>
+                            <MudText Typo="Typo.caption">Abiertos</MudText>
+                        </div>
+                        <div style="text-align:center">
+                            <MudText Typo="Typo.h5" Color="Color.Info">@_campana.TotalClicks</MudText>
+                            <MudText Typo="Typo.caption">Clicks</MudText>
+                        </div>
+                        <div style="text-align:center">
+                            <MudText Typo="Typo.h5" Color="Color.Warning">@_campana.TotalDesuscriptos</MudText>
+                            <MudText Typo="Typo.caption">Bajas</MudText>
+                        </div>
+                    </MudStack>
+                    <MudButton Variant="Variant.Outlined" FullWidth Class="mt-3"
+                               OnClick="@(() => Nav.NavigateTo($"/crm/campanas/{Id}/resultados"))">
+                        Ver detalle por destinatario
+                    </MudButton>
+                </MudPaper>
+            }
+
+            <!-- Galería de imágenes (gestión, no selección) -->
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600">Mis imágenes</MudText>
+                    <MudSpacer />
+                    <MudFileUpload T="IBrowserFile" Accept=".jpg,.jpeg,.png,.gif,.webp"
+                                   FilesChanged="SubirImagen">
+                        <ActivatorContent>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       StartIcon="@Icons.Material.Filled.Upload">Subir imagen</MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                </MudStack>
+
+                @if (_cargandoImagenes)
+                {
+                    <MudProgressLinear Indeterminate Color="Color.Primary" />
+                }
+                else if (_imagenes.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Sube imágenes para usarlas en tus campañas.
+                    </MudText>
+                }
+                else
+                {
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                        @foreach (var img in _imagenes)
+                        {
+                            <div style="border-radius:8px;overflow:hidden;position:relative">
+                                <img src="@img.Src" alt="@img.Nombre"
+                                     style="width:100%;height:70px;object-fit:cover;display:block" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                               Color="Color.Error"
+                                               Style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.4);color:white"
+                                               OnClick="@(() => EliminarImagen(img.ImagenID))" />
+                            </div>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+<!-- Modal de vista previa -->
+<MudDialog @bind-Visible="_mostrarPreview" Options="@(new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Vista previa del email</MudText>
+    </TitleContent>
+    <DialogContent>
+        <iframe srcdoc="@_htmlPreview" style="width:100%;height:500px;border:none;border-radius:8px"></iframe>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _mostrarPreview = false)">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Modal de galería de imágenes -->
+<MudDialog @bind-Visible="_mostrarGaleria" Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true })">
+    <TitleContent>
+        <MudStack Row AlignItems="AlignItems.Center">
+            <MudText Typo="Typo.h6">Seleccionar imagen</MudText>
+            <MudSpacer />
+            <MudFileUpload T="IBrowserFile" Accept=".jpg,.jpeg,.png,.gif,.webp" FilesChanged="SubirImagenYRecargar">
+                <ActivatorContent>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Upload">
+                        Subir nueva
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        @if (_cargandoImagenes)
+        {
+            <MudProgressLinear Indeterminate Color="Color.Primary" />
+        }
+        else if (_imagenes.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">
+                No hay imágenes. Usa el botón "Subir nueva" para agregar imágenes a tu galería.
+            </MudAlert>
+        }
+        else
+        {
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">
+                @foreach (var img in _imagenes)
+                {
+                    <div @onclick="@(() => InsertarImagenDesdeModal(img))"
+                         style="cursor:pointer;border-radius:10px;overflow:hidden;border:2px solid transparent;transition:border-color .15s"
+                         onmouseover="this.style.borderColor='var(--mud-palette-primary)'"
+                         onmouseout="this.style.borderColor='transparent'">
+                        <img src="@img.Src" alt="@img.Nombre"
+                             style="width:100%;height:100px;object-fit:cover;display:block" />
+                        <div style="padding:4px 6px;font-size:0.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                            @img.Nombre
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _mostrarGaleria = false)">Cancelar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    // DTO interno para imágenes con la data URI ya resuelta
+    private record ImagenVm(int ImagenID, string Nombre, string Src);
+
+    bool _esNueva => Id is null || Id == 0;
+    bool _cargando = true;
+    bool _guardando;
+    bool _enviandoPrueba;
+    bool _enviandoCampana;
+    bool _mostrarPreview;
+    bool _mostrarGaleria;
+    bool _cargandoImagenes;
+    int _bloqueImagenActivo = -1;
+    System.Timers.Timer? _timerContador;
+
+    string _nombre = "";
+    string? _descripcion;
+    string _asunto = "";
+    string _segmentoTipo = "TODOS";
+    string? _segmentoValor;
+    int _diasFrios = 60;
+    int _totalDestinatarios;
+    string _emailPrueba = "";
+    string _resultadoPrueba = "";
+    Severity _severidadPrueba = Severity.Info;
+    string _htmlPreview = "";
+
+    CampanaDetalle? _campana;
+    List<JsonObject> _bloques = [];
+    List<ImagenVm> _imagenes = [];
+    EmailContadorItem? _contador;
+
+    List<BreadcrumbItem> _migas =
+    [
+        new("CRM", "/crm"),
+        new("Campañas", "/crm/campanas"),
+        new("Editor", null, disabled: true)
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarImagenes();
+        try { _contador = await Api.GetAsync<EmailContadorItem>("api/email/contador"); } catch { }
+        if (!_esNueva)
+        {
+            _campana = await Api.GetAsync<CampanaDetalle>($"api/marketing/campanas/{Id}");
+            if (_campana is not null)
+            {
+                _nombre        = _campana.Nombre;
+                _descripcion   = _campana.Descripcion;
+                _asunto        = _campana.Asunto;
+                _segmentoTipo  = _campana.SegmentoTipo ?? "TODOS";
+                _segmentoValor = _campana.SegmentoValor;
+                _bloques = ParseBloques(_campana.BloqueJSON);
+                if (_segmentoTipo == "FRIOS" && int.TryParse(_segmentoValor, out var d))
+                    _diasFrios = d;
+            }
+        }
+        await ContarDestinatarios();
+        _cargando = false;
+
+        // Refresca el contador cada 2 minutos para mantenerlo actualizado
+        _timerContador = new System.Timers.Timer(120_000);
+        _timerContador.Elapsed += async (_, _) =>
+        {
+            try { _contador = await Api.GetAsync<EmailContadorItem>("api/email/contador"); }
+            catch { }
+            await InvokeAsync(StateHasChanged);
+        };
+        _timerContador.AutoReset = true;
+        _timerContador.Start();
+    }
+
+    async Task ContarDestinatarios()
+    {
+        var valEfectivo = _segmentoTipo == "FRIOS" ? _diasFrios.ToString() : _segmentoValor;
+        var url = $"api/marketing/campanas/destinatarios/contar?tipo={_segmentoTipo}" +
+                  (valEfectivo is not null ? $"&valor={Uri.EscapeDataString(valEfectivo)}" : "");
+        var r = await Api.GetAsync<ContarDestinatariosResponse>(url);
+        _totalDestinatarios = r?.Total ?? 0;
+        StateHasChanged();
+    }
+
+    async Task Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre) || string.IsNullOrWhiteSpace(_asunto))
+        {
+            Snack.Add("El nombre y asunto son obligatorios.", Severity.Warning);
+            return;
+        }
+        _guardando = true;
+        var valEfectivo = _segmentoTipo == "FRIOS" ? _diasFrios.ToString() : _segmentoValor;
+        var payload = new GuardarCampanaRequest(_nombre, _descripcion, _asunto,
+            JsonSerializer.Serialize(_bloques),
+            _segmentoTipo, valEfectivo);
+        try
+        {
+            if (_esNueva)
+            {
+                var data = await Api.PostAsync<GuardarCampanaRequest, JsonObject>("api/marketing/campanas", payload);
+                var newId = data?["campanaID"]?.GetValue<int>() ?? 0;
+                Snack.Add("Campaña creada.", Severity.Success);
+                Nav.NavigateTo($"/crm/campanas/{newId}");
+                return;
+            }
+            else
+            {
+                await Api.PutAsync<GuardarCampanaRequest, object>($"api/marketing/campanas/{Id}", payload);
+                Snack.Add("Campaña guardada.", Severity.Success);
+                _campana = await Api.GetAsync<CampanaDetalle>($"api/marketing/campanas/{Id}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Snack.Add(ex.Message, Severity.Error);
+        }
+        _guardando = false;
+    }
+
+    async Task MostrarPreview()
+    {
+        var res = await Api.PostAsync<object, JsonObject>("api/marketing/campanas/preview",
+            new { BloqueJSON = JsonSerializer.Serialize(_bloques), NombreCliente = "Juan Ejemplo" });
+        _htmlPreview  = res?["html"]?.GetValue<string>() ?? "";
+        _mostrarPreview = true;
+    }
+
+    async Task EnviarPrueba()
+    {
+        _enviandoPrueba = true;
+        _resultadoPrueba = "";
+        try
+        {
+            var data = await Api.PostAsync<EnviarPruebaRequest, JsonObject>(
+                $"api/marketing/campanas/{Id}/enviar-prueba", new EnviarPruebaRequest(_emailPrueba));
+            _resultadoPrueba = data?["mensaje"]?.GetValue<string>() ?? "Enviado";
+            _severidadPrueba = Severity.Success;
+        }
+        catch (Exception ex)
+        {
+            _resultadoPrueba = ex.Message;
+            _severidadPrueba = Severity.Error;
+        }
+        _enviandoPrueba = false;
+    }
+
+    async Task EnviarCampana()
+    {
+        _enviandoCampana = true;
+        try
+        {
+            await Api.PostAsync($"api/marketing/campanas/{Id}/enviar");
+            Snack.Add("¡Envío iniciado! El sistema está procesando los correos en segundo plano.", Severity.Success);
+            Nav.NavigateTo("/crm/campanas");
+        }
+        catch (Exception ex)
+        {
+            Snack.Add(ex.Message, Severity.Error);
+        }
+        _enviandoCampana = false;
+    }
+
+    // ── Bloques ───────────────────────────────────────────────────────────────
+
+    void AgregarBloque(string tipo)
+    {
+        var obj = new JsonObject { ["tipo"] = tipo };
+        switch (tipo)
+        {
+            case "titulo":   obj["texto"] = "Escribe tu título aquí"; break;
+            case "parrafo":  obj["texto"] = "Hola {{nombre}}, te escribimos para informarte..."; break;
+            case "imagen":   obj["src"] = ""; obj["alt"] = ""; break;
+            case "boton":    obj["texto"] = "Ver más"; obj["url"] = "https://"; break;
+        }
+        _bloques.Add(obj);
+    }
+
+    void EliminarBloque(int idx) { _bloques.RemoveAt(idx); }
+
+    void MoverBloque(int idx, int dir)
+    {
+        var dest = idx + dir;
+        if (dest < 0 || dest >= _bloques.Count) return;
+        (_bloques[idx], _bloques[dest]) = (_bloques[dest], _bloques[idx]);
+    }
+
+    static string EtiquetaTipo(string tipo) => tipo switch
+    {
+        "titulo"    => "Título",
+        "parrafo"   => "Párrafo",
+        "imagen"    => "Imagen",
+        "boton"     => "Botón",
+        "separador" => "Separador",
+        _           => tipo
+    };
+
+    // ── Galería de imágenes ───────────────────────────────────────────────────
+
+    async Task CargarImagenes()
+    {
+        _cargandoImagenes = true;
+        StateHasChanged();
+        var lista = await Api.GetAsync<List<ImagenItem>>("api/marketing/imagenes") ?? [];
+        _imagenes = [];
+        foreach (var img in lista)
+        {
+            var src = await ObtenerSrcImagenAsync(img.ImagenID, img.ContentType);
+            _imagenes.Add(new ImagenVm(img.ImagenID, img.Nombre, src));
+        }
+        _cargandoImagenes = false;
+        StateHasChanged();
+    }
+
+    async Task<string> ObtenerSrcImagenAsync(int id, string contentType)
+    {
+        try
+        {
+            var res = await Api.GetAsync<JsonObject>($"api/marketing/imagenes/{id}");
+            if (res is null) return "";
+            var b64 = res["base64"]?.GetValue<string>() ?? "";
+            var ct  = res["contentType"]?.GetValue<string>() ?? contentType;
+            return $"data:{ct};base64,{b64}";
+        }
+        catch { return ""; }
+    }
+
+    // Abre el modal de galería apuntando al bloque idx
+    async Task AbrirModalGaleria(int idx)
+    {
+        _bloqueImagenActivo = idx;
+        _mostrarGaleria = true;
+        // Si aún no hay imágenes cargadas las cargamos al abrir el modal
+        if (_imagenes.Count == 0)
+            await CargarImagenes();
+    }
+
+    // Llamado cuando el usuario hace clic en una imagen dentro del modal
+    void InsertarImagenDesdeModal(ImagenVm img)
+    {
+        if (_bloqueImagenActivo >= 0 && _bloqueImagenActivo < _bloques.Count)
+            _bloques[_bloqueImagenActivo]["src"] = img.Src;
+        _mostrarGaleria = false;
+        _bloqueImagenActivo = -1;
+    }
+
+    async Task SubirImagen(IBrowserFile file)
+    {
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            Snack.Add("La imagen no puede superar 5 MB.", Severity.Warning);
+            return;
+        }
+        try
+        {
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+            var b64 = Convert.ToBase64String(ms.ToArray());
+            var req = new SubirImagenRequest(file.Name, file.ContentType, b64);
+            await Api.PostAsync<SubirImagenRequest>("api/marketing/imagenes", req);
+            Snack.Add("Imagen subida.", Severity.Success);
+            await CargarImagenes();
+        }
+        catch (Exception ex) { Snack.Add($"No se pudo subir: {ex.Message}", Severity.Error); }
+    }
+
+    // Sube imagen desde dentro del modal de galería y recarga la lista
+    async Task SubirImagenYRecargar(IBrowserFile file)
+    {
+        await SubirImagen(file);
+    }
+
+    async Task EliminarImagen(int id)
+    {
+        try { await Api.DeleteAsync($"api/marketing/imagenes/{id}"); }
+        catch { /* continuar */ }
+        _imagenes.RemoveAll(i => i.ImagenID == id);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    static List<JsonObject> ParseBloques(string json)
+    {
+        try
+        {
+            var arr = JsonNode.Parse(json)?.AsArray();
+            return arr?.Select(n => n?.AsObject() ?? new JsonObject()).ToList() ?? [];
+        }
+        catch { return []; }
+    }
+
+    public void Dispose()
+    {
+        _timerContador?.Stop();
+        _timerContador?.Dispose();
+    }
+}

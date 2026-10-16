@@ -1,0 +1,78 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+
+<MudDialog>
+    <DialogContent>
+        <AppSelect TValue="int?" @bind-Value="_bodegaOrigenId" Label="Bodega Origen" Placeholder="Seleccionar..." Class="mb-3"
+                   Items="@(Bodegas.Select(bodega => new AppSelectItem<int?>($"{bodega.Nombre} ({bodega.CentroCosto})", (int?)bodega.BodegaID)))" />
+
+        <AppSelect TValue="int?" @bind-Value="_bodegaDestinoId" Label="Bodega Destino" Placeholder="Seleccionar..." Class="mb-4"
+                   Items="@(Bodegas.Where(b => b.BodegaID != _bodegaOrigenId).Select(bodega => new AppSelectItem<int?>($"{bodega.Nombre} ({bodega.CentroCosto})", (int?)bodega.BodegaID)))" />
+
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Articulos a trasladar</MudText>
+
+        @foreach (var linea in _lineas)
+        {
+            <MudGrid Class="mb-2" AlignItems="Center.Center">
+                <MudItem xs="12" sm="7">
+                    <ArticuloAutocomplete Value="linea.ArticuloSeleccionado"
+                                          ValueChanged="@((ArticuloItem? v) => linea.ArticuloSeleccionado = v)"
+                                          Label="Articulo" />
+                </MudItem>
+                <MudItem xs="10" sm="4">
+                    <MudNumericField @bind-Value="linea.Cantidad" Label="Cantidad" Min="0.01m" Format="N2" Dense="true" />
+                </MudItem>
+                <MudItem xs="2" sm="1">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   OnClick="@(() => _lineas.Remove(linea))" />
+                </MudItem>
+            </MudGrid>
+        }
+
+        <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AgregarLinea" Class="mt-2">
+            Agregar articulo
+        </MudButton>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirmar" Disabled="!FormularioValido">
+            Enviar Traspaso
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public List<BodegaItem> Bodegas { get; set; } = new();
+
+    private int? _bodegaOrigenId;
+    private int? _bodegaDestinoId;
+    private List<LineaFormulario> _lineas = new();
+
+    private class LineaFormulario
+    {
+        public ArticuloItem? ArticuloSeleccionado { get; set; }
+        public int ArticuloID => ArticuloSeleccionado?.ArticuloID ?? 0;
+        public decimal Cantidad { get; set; }
+    }
+
+    private bool FormularioValido =>
+        _bodegaOrigenId > 0 && _bodegaDestinoId > 0 && _bodegaOrigenId != _bodegaDestinoId &&
+        _lineas.Count > 0 && _lineas.All(l => l.ArticuloID > 0 && l.Cantidad > 0);
+        // int? > int funciona: null > 0 es false, lo que bloquea el boton correctamente
+
+    protected override void OnInitialized() => AgregarLinea();
+
+    private void AgregarLinea() => _lineas.Add(new LineaFormulario());
+
+    private void Confirmar()
+    {
+        var request = new CrearTraspasoRequest(
+            _bodegaOrigenId ?? 0, _bodegaDestinoId ?? 0,
+            _lineas.Select(l => new DetalleTraspasoRequest(l.ArticuloID, null, l.Cantidad)).ToList());
+
+        MudDialog.Close(DialogResult.Ok(request));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

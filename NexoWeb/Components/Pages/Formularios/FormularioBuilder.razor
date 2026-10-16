@@ -1,0 +1,237 @@
+@page "/formularios/{FormularioID:int}/builder"
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Editor de Formulario | NEXO ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+
+    @if (_cargando)
+    {
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="d-block mx-auto mt-8" />
+    }
+    else if (_formulario is not null)
+    {
+        @* Header *@
+        <div class="d-flex align-center justify-space-between mb-4">
+            <div>
+                <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack"
+                           OnClick="@(() => Nav.NavigateTo("/formularios"))" Size="Size.Small">
+                    Formularios
+                </MudButton>
+                <MudText Typo="Typo.h5" Class="font-weight-bold mt-1">Editor</MudText>
+            </div>
+            <div class="d-flex gap-2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.OpenInNew"
+                           Href="@($"/f/{_formulario.Token}")" Target="_blank">
+                    Vista previa
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="Guardar" Disabled="_guardando">
+                    @if (_guardando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+                    Guardar
+                </MudButton>
+            </div>
+        </div>
+
+        @* Configuración *@
+        <MudPaper Class="pa-4 mb-4" Elevation="0"
+                  Style="border:1px solid var(--mud-palette-lines-default);border-radius:12px">
+            <MudText Typo="Typo.subtitle2" Class="mb-3">Configuración del formulario</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_titulo" Label="Título *" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_descripcion" Label="Descripción" Variant="Variant.Outlined" Lines="2" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_mensajeExito" Label="Mensaje al enviar" Variant="Variant.Outlined"
+                                  Placeholder="¡Gracias por tu respuesta!" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudSwitch @bind-Value="_activo" Label="Activo" Color="Color.Primary" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudSwitch @bind-Value="_aceptaRespuestas" Label="Acepta respuestas" Color="Color.Success" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        @* Campos *@
+        <MudPaper Class="pa-4 mb-3" Elevation="0"
+                  Style="border:1px solid var(--mud-palette-lines-default);border-radius:12px">
+            <div class="d-flex justify-space-between align-center mb-3">
+                <MudText Typo="Typo.subtitle2">Campos (@_campos.Count)</MudText>
+                <MudMenu Label="+ Agregar campo" Variant="Variant.Outlined" Size="Size.Small"
+                         StartIcon="@Icons.Material.Filled.Add" Color="Color.Primary">
+                    @foreach (var tipo in _tipos)
+                    {
+                        <MudMenuItem OnClick="@(() => AgregarCampo(tipo.Key))">
+                            <MudIcon Icon="@tipo.Value.Icon" Size="Size.Small" Class="mr-2" />
+                            @tipo.Value.Label
+                        </MudMenuItem>
+                    }
+                </MudMenu>
+            </div>
+
+            @if (_campos.Count == 0)
+            {
+                <div class="frm-builder-empty">
+                    <MudIcon Icon="@Icons.Material.Filled.AddBox" Size="Size.Large" Color="Color.Secondary" />
+                    <MudText Color="Color.Secondary" Class="mt-2">Agrega campos usando el botón de arriba</MudText>
+                </div>
+            }
+
+            @foreach (var campo in _campos.OrderBy(c => c.Orden))
+            {
+                <div class="frm-campo-row">
+                    <div class="frm-campo-drag">
+                        <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Size="Size.Small" Color="Color.Secondary" />
+                    </div>
+                    <div class="frm-campo-icon">
+                        <MudIcon Icon="@(_tipos.TryGetValue(campo.Tipo, out var ti) ? ti.Icon : Icons.Material.Filled.TextFields)"
+                                 Size="Size.Small" Color="Color.Primary" />
+                    </div>
+                    <div class="frm-campo-body">
+                        <MudTextField @bind-Value="campo.Etiqueta" Label="Etiqueta" Variant="Variant.Outlined"
+                                      Dense="true" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="campo.Placeholder" Label="Placeholder" Variant="Variant.Outlined"
+                                      Dense="true" Margin="Margin.Dense" />
+                        @if (campo.Tipo is "SELECCION" or "MULTIPLE")
+                        {
+                            <MudTextField @bind-Value="campo.Opciones" Label="Opciones (una por línea)"
+                                          Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" Lines="3" />
+                        }
+                    </div>
+                    <div class="frm-campo-actions">
+                        <MudCheckBox @bind-Value="campo.Requerido" Label="Req." Size="Size.Small" Dense="true" />
+                        <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small"
+                                       OnClick="@(() => MoverArriba(campo))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small"
+                                       OnClick="@(() => MoverAbajo(campo))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => _campos.Remove(campo))" />
+                    </div>
+                </div>
+            }
+        </MudPaper>
+    }
+
+</MudContainer>
+
+@code {
+    [Parameter] public int FormularioID { get; set; }
+
+    private FormularioItem? _formulario;
+    private bool _cargando = true;
+    private bool _guardando;
+
+    private string _titulo = string.Empty;
+    private string? _descripcion;
+    private string? _mensajeExito;
+    private bool _activo = true;
+    private bool _aceptaRespuestas = true;
+
+    private List<CampoEditable> _campos = new();
+    private int _nextId = -1;
+
+    private class CampoEditable
+    {
+        public int? CampoID { get; set; }
+        public string Tipo { get; set; } = "TEXTO";
+        public string Etiqueta { get; set; } = string.Empty;
+        public string? Placeholder { get; set; }
+        public bool Requerido { get; set; }
+        public int Orden { get; set; }
+        public string? Opciones { get; set; }
+        public int TempID { get; set; }
+    }
+
+    private record TipoInfo(string Label, string Icon);
+    private static readonly Dictionary<string, TipoInfo> _tipos = new()
+    {
+        ["TEXTO"]     = new("Texto corto",      Icons.Material.Filled.ShortText),
+        ["PARRAFO"]   = new("Párrafo",           Icons.Material.Filled.Notes),
+        ["EMAIL"]     = new("Email",             Icons.Material.Filled.Email),
+        ["TELEFONO"]  = new("Teléfono",          Icons.Material.Filled.Phone),
+        ["NUMERO"]    = new("Número",            Icons.Material.Filled.Numbers),
+        ["FECHA"]     = new("Fecha",             Icons.Material.Filled.CalendarToday),
+        ["SELECCION"] = new("Selección única",   Icons.Material.Filled.RadioButtonChecked),
+        ["MULTIPLE"]  = new("Selección múltiple",Icons.Material.Filled.CheckBox),
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cargando = true;
+        _formulario = await Api.GetAsync<FormularioItem>($"api/formularios/{FormularioID}");
+        if (_formulario is not null)
+        {
+            _titulo          = _formulario.Titulo;
+            _descripcion     = _formulario.Descripcion;
+            _mensajeExito    = _formulario.MensajeExito;
+            _activo          = _formulario.Activo;
+            _aceptaRespuestas = _formulario.AceptaRespuestas;
+
+            var campos = await Api.GetAsync<List<FormularioCampoItem>>($"api/formularios/{FormularioID}/campos") ?? [];
+            _campos = campos.Select(c => new CampoEditable
+            {
+                CampoID = c.CampoID, Tipo = c.Tipo, Etiqueta = c.Etiqueta,
+                Placeholder = c.Placeholder, Requerido = c.Requerido,
+                Orden = c.Orden, Opciones = c.Opciones, TempID = c.CampoID
+            }).ToList();
+        }
+        _cargando = false;
+    }
+
+    private void AgregarCampo(string tipo)
+    {
+        var maxOrden = _campos.Any() ? _campos.Max(c => c.Orden) : 0;
+        _campos.Add(new CampoEditable
+        {
+            TempID = _nextId--, Tipo = tipo,
+            Etiqueta = _tipos[tipo].Label, Orden = maxOrden + 1
+        });
+    }
+
+    private void MoverArriba(CampoEditable c)
+    {
+        var idx = _campos.OrderBy(x => x.Orden).ToList().IndexOf(c);
+        if (idx <= 0) return;
+        var ordenados = _campos.OrderBy(x => x.Orden).ToList();
+        (ordenados[idx].Orden, ordenados[idx - 1].Orden) = (ordenados[idx - 1].Orden, ordenados[idx].Orden);
+    }
+
+    private void MoverAbajo(CampoEditable c)
+    {
+        var ordenados = _campos.OrderBy(x => x.Orden).ToList();
+        var idx = ordenados.IndexOf(c);
+        if (idx >= ordenados.Count - 1) return;
+        (ordenados[idx].Orden, ordenados[idx + 1].Orden) = (ordenados[idx + 1].Orden, ordenados[idx].Orden);
+    }
+
+    private async Task Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(_titulo)) { Snackbar.Add("El título es requerido", Severity.Warning); return; }
+        _guardando = true;
+
+        await Api.PutAsync($"api/formularios/{FormularioID}",
+            new ActualizarFormularioRequest(_titulo, _descripcion, _activo, _aceptaRespuestas, _mensajeExito));
+
+        var ordenados = _campos.OrderBy(c => c.Orden).ToList();
+        for (int i = 0; i < ordenados.Count; i++) ordenados[i].Orden = i + 1;
+
+        var req = new GuardarCamposRequest(_campos.Select(c => new CampoGuardarItem(
+            c.CampoID > 0 ? c.CampoID : null,
+            c.Tipo, c.Etiqueta, c.Placeholder, c.Requerido, c.Orden,
+            c.Tipo is "SELECCION" or "MULTIPLE" ? c.Opciones : null
+        )).ToList());
+
+        await Api.PostAsync($"api/formularios/{FormularioID}/campos", req);
+        Snackbar.Add("Formulario guardado", Severity.Success);
+        _guardando = false;
+    }
+}

@@ -1,0 +1,18 @@
+@* Boton de marcador para agregar/quitar la pagina actual de Favoritos
+   (menu lateral). Se coloca junto al titulo de cada subpagina. *@
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+
+<MudIconButton Icon="@(EsFavorito ? Icons.Material.Filled.Bookmark : Icons.Material.Outlined.BookmarkBorder)"
+               Color="@(EsFavorito ? Color.Warning : Color.Default)"
+               Size="Size.Small"
+               title="@(EsFavorito ? "Quitar de favoritos" : "Agregar a favoritos")"
+               OnClick="ToggleAsync" />
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = "";
+    [Parameter, EditorRequired] public string Etiqueta { get; set; } = "";
+
+    private bool EsFavorito => Preferencias.EsFavorito(Href);
+
+    private async Task ToggleAsync() => await Preferencias.ToggleFavoritoAsync(Href, Etiqueta);
+}

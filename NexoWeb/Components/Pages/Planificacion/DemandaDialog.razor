@@ -1,0 +1,132 @@
+﻿@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="@this">
+            @if (!EsEdicion)
+            {
+                <MudAutocomplete T="ArticuloItem?" Value="_articuloSeleccionado"
+                                 ValueChanged="@(a => { _articuloSeleccionado = a; _articuloId = a?.ArticuloID; _mensajeSugerencia = null; })"
+                                 Label="Artículo (Producto Terminado)"
+                                 SearchFunc="BuscarArticulos"
+                                 ToStringFunc="@(a => a is null ? "" : $"{a.Referencia} — {a.Nombre}")"
+                                 Variant="Variant.Outlined" Required="true" Class="mb-3"
+                                 MinCharacters="0" ResetValueOnEmptyText="true" DebounceInterval="300" />
+
+                <MudSelect T="int?" @bind-Value="_centroCostoId" Label="Centro de Costo"
+                           Variant="Variant.Outlined" Class="mb-3" Clearable="true">
+                    @foreach (var cc in CentrosCosto)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)cc.CentroCostoID)">@cc.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudDatePicker @bind-Date="_periodo" Label="Mes" Editable="true"
+                               HelperText="Cualquier dia del mes que proyectas -- solo se usa el mes" Class="mb-3" />
+
+                @if (_articuloId is not null && _centroCostoId is not null && _periodo is not null)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="CargarSugerenciaAsync" Class="mb-3">
+                        Usar sugerencia (promedio últimos 3 meses)
+                    </MudButton>
+                    @if (_mensajeSugerencia is not null)
+                    {
+                        <MudText Typo="Typo.caption" Class="d-block mb-3" Style="color: var(--n-text-3, #9B9BB4);">@_mensajeSugerencia</MudText>
+                    }
+                }
+            }
+
+            <MudNumericField T="decimal" @bind-Value="_cantidadProyectada" Label="Cantidad Proyectada" Required="true" Class="mb-3" />
+            <MudTextField @bind-Value="_notas" Label="Notas" Lines="2" Class="mb-3" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync">
+            @(EsEdicion ? "Guardar Cambios" : "Crear")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public DemandaProyectadaItem? Demanda { get; set; }
+    [Parameter] public List<CentroCostoItem> CentrosCosto { get; set; } = new();
+    [Parameter] public ArticuloItem? ArticuloSugerido { get; set; }
+    [Parameter] public decimal CantidadSugerida { get; set; }
+
+    private bool EsEdicion => Demanda is not null;
+
+    private MudForm _form = default!;
+    private ArticuloItem? _articuloSeleccionado;
+    private int? _articuloId;
+    private int? _centroCostoId;
+    private DateTime? _periodo = NexoWeb.Common.ColombiaClock.Today;
+    private decimal _cantidadProyectada;
+    private string? _notas;
+    private string? _mensajeSugerencia;
+
+    protected override void OnInitialized()
+    {
+        if (Demanda is not null)
+        {
+            _cantidadProyectada = Demanda.CantidadProyectada;
+            _notas = Demanda.Notas;
+        }
+        else if (ArticuloSugerido is not null)
+        {
+            _articuloSeleccionado = ArticuloSugerido;
+            _articuloId = ArticuloSugerido.ArticuloID;
+            _cantidadProyectada = CantidadSugerida;
+            _periodo = new DateTime(NexoWeb.Common.ColombiaClock.Today.Year, NexoWeb.Common.ColombiaClock.Today.Month, 1).AddMonths(1);
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid)
+            return;
+
+        if (EsEdicion)
+        {
+            var request = new ActualizarDemandaRequest(_cantidadProyectada, _notas);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+        else
+        {
+            if (_articuloId is null || _centroCostoId is null || _periodo is null)
+                return;
+
+            var periodoMes = new DateTime(_periodo.Value.Year, _periodo.Value.Month, 1);
+            var request = new CrearDemandaRequest(_articuloId.Value, _centroCostoId.Value, periodoMes, _cantidadProyectada, _notas);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+    }
+
+    private async Task CargarSugerenciaAsync()
+    {
+        if (_articuloId is null || _centroCostoId is null || _periodo is null)
+            return;
+        try
+        {
+            var periodoMes = new DateTime(_periodo.Value.Year, _periodo.Value.Month, 1);
+            var sugerencia = await ApiClient.GetAsync<SugerenciaDemandaItem>(
+                $"api/planificacion/demanda/sugerencia?articuloId={_articuloId}&centroCostoId={_centroCostoId}&periodo={periodoMes:yyyy-MM-dd}");
+            if (sugerencia is not null)
+            {
+                _cantidadProyectada = sugerencia.CantidadSugerida;
+                _mensajeSugerencia = $"Sugerido: {sugerencia.CantidadSugerida:N2} (promedio de los últimos {sugerencia.MesesConsiderados} meses producidos).";
+            }
+        }
+        catch { Snackbar.Add("No se pudo cargar la sugerencia.", Severity.Warning); }
+    }
+
+    private Task<IEnumerable<ArticuloItem>> BuscarArticulos(string? texto, CancellationToken ct)
+        => ApiClient.BuscarArticulosAsync(texto, ct, soloTerminados: true);
+
+    private void Cancelar() => MudDialog.Cancel();
+}

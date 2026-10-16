@@ -1,0 +1,326 @@
+﻿@page "/finanzas/gastos"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Gastos Operativos - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Finanzas</p>
+            <h1 class="nexo-page-hero__title">Gastos Operativos</h1>
+        </div>
+    </div>
+    <div class="d-flex align-center" style="gap:8px">
+        <VistaToggle OnCambio="StateHasChanged" />
+    </div>
+</div>
+<InfoAyuda Texto="Registro de todos los gastos de la empresa fuera de producción: eventos, viáticos, servicios, publicidad y más. Compara por categoría y mes." />
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_errorCarga</MudAlert>
+}
+
+@* ── Filtros ── *@
+<div class="gasto-filtros mb-4">
+    <MudDatePicker Label="Desde" Date="_desde" DateChanged="@(d => OnFiltroChanged(d, _hasta))"
+                   Variant="Variant.Outlined" Style="max-width:160px" />
+    <MudDatePicker Label="Hasta" Date="_hasta" DateChanged="@(d => OnFiltroChanged(_desde, d))"
+                   Variant="Variant.Outlined" Style="max-width:160px" />
+    <AppSelect TValue="string?" Value="_filtroCategoria" ValueChanged="OnCategoriaChanged"
+               Label="Categoría" Style="max-width:220px"
+               Items="@(CategoriasParaFiltro.Select(cat => new AppSelectItem<string?>(cat, cat)))" />
+    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+               StartIcon="@Icons.Material.Filled.Add" Class="ml-auto">
+        Registrar gasto
+    </MudButton>
+</div>
+
+@* ── KPI tiles ── *@
+@if (!_cargando && _gastos.Count > 0)
+{
+    <div class="gasto-kpi-row mb-4">
+        <div class="gasto-kpi-tile">
+            <span class="gasto-kpi-tile__label">Total periodo</span>
+            <span class="gasto-kpi-tile__value">@_gastos.Sum(g => g.Monto).ToString("C0")</span>
+        </div>
+        <div class="gasto-kpi-tile">
+            <span class="gasto-kpi-tile__label">Registros</span>
+            <span class="gasto-kpi-tile__value">@_gastos.Count</span>
+        </div>
+        <div class="gasto-kpi-tile">
+            <span class="gasto-kpi-tile__label">Promedio por gasto</span>
+            <span class="gasto-kpi-tile__value">@(_gastos.Count > 0 ? (_gastos.Sum(g => g.Monto) / _gastos.Count).ToString("C0") : "$0")</span>
+        </div>
+        @{
+            var topCat = _gastos.GroupBy(g => g.Categoria)
+                .OrderByDescending(g => g.Sum(x => x.Monto)).FirstOrDefault();
+        }
+        @if (topCat is not null)
+        {
+            <div class="gasto-kpi-tile gasto-kpi-tile--accent">
+                <span class="gasto-kpi-tile__label">Mayor categoría</span>
+                <span class="gasto-kpi-tile__value" style="font-size:1.1rem">@topCat.Key</span>
+                <span class="gasto-kpi-tile__sub">@topCat.Sum(x => x.Monto).ToString("C0")</span>
+            </div>
+        }
+    </div>
+
+    @* ── Desglose por categoría ── *@
+    <div class="gasto-cat-grid mb-4">
+        @foreach (var grp in _gastos.GroupBy(g => g.Categoria).OrderByDescending(g => g.Sum(x => x.Monto)))
+        {
+            var total = grp.Sum(x => x.Monto);
+            var grand = _gastos.Sum(g => g.Monto);
+            var pct   = grand > 0 ? (double)(total / grand * 100) : 0;
+            <div class="gasto-cat-card">
+                <div class="gasto-cat-card__icon">@CatIcon(grp.Key)</div>
+                <div class="gasto-cat-card__body">
+                    <span class="gasto-cat-card__nombre">@grp.Key</span>
+                    <span class="gasto-cat-card__monto">@total.ToString("C0")</span>
+                    <MudProgressLinear Value="@pct" Color="Color.Primary"
+                                       Rounded="true" Size="Size.Small" Class="mt-1" />
+                    <span class="gasto-cat-card__pct">@pct.ToString("N0")% del total · @grp.Count() gasto@(grp.Count() != 1 ? "s" : "")</span>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@* ── Lista de gastos ── *@
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_gastos.Count == 0)
+{
+    <NexoEmptyState
+        Icono="@Icons.Material.Outlined.Receipt"
+        Titulo="Sin gastos registrados"
+        Descripcion="Registra aquí los gastos operativos de la empresa: eventos, servicios, viáticos, publicidad y cualquier egreso que no sea producción."
+        BotonTexto="Registrar primer gasto"
+        BotonOnClick="AbrirCreacionAsync" />
+}
+else if (Preferencias.VistaListado == "lista")
+{
+    <MudTable Items="_gastosPorFecha" Hover="true" Dense="true" Groupable="false">
+        <HeaderContent>
+            <MudTh>Fecha</MudTh>
+            <MudTh>Categoría</MudTh>
+            <MudTh>Descripción</MudTh>
+            <MudTh>Proveedor</MudTh>
+            <MudTh>Comprobante</MudTh>
+            <MudTh>Centro de Costo</MudTh>
+            <MudTh Style="text-align:right">Monto</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Fecha">@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Categoría">
+                <div class="d-flex align-center" style="gap:5px">
+                    <span style="font-size:1rem">@CatIcon(context.Categoria)</span>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default"
+                             Style="height:20px;font-size:.72rem;margin:0">
+                        @context.Categoria
+                    </MudChip>
+                </div>
+            </MudTd>
+            <MudTd DataLabel="Descripción">
+                <div style="font-weight:500;font-size:.85rem">@context.Descripcion</div>
+                @if (!string.IsNullOrWhiteSpace(context.Notas))
+                {
+                    <div style="font-size:.72rem;color:var(--mud-palette-text-secondary)">@context.Notas</div>
+                }
+            </MudTd>
+            <MudTd DataLabel="Proveedor">@(context.Proveedor ?? "—")</MudTd>
+            <MudTd DataLabel="Comprobante">@(context.Comprobante ?? "—")</MudTd>
+            <MudTd DataLabel="Centro">@(context.CentroCosto ?? "—")</MudTd>
+            <MudTd DataLabel="Monto" Style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums">
+                @context.Monto.ToString("C2")
+            </MudTd>
+            <MudTd>
+                <div class="d-flex" style="gap:4px">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small"
+                                   OnClick="@(() => AbrirEdicionAsync(context))" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline" Size="Size.Small"
+                                   Color="Color.Error" OnClick="@(() => EliminarAsync(context))" />
+                </div>
+            </MudTd>
+        </RowTemplate>
+        <FooterContent>
+            <MudTd colspan="6" Style="text-align:right;font-weight:600">Total</MudTd>
+            <MudTd Style="text-align:right;font-weight:700;font-size:1rem">
+                @_gastos.Sum(g => g.Monto).ToString("C2")
+            </MudTd>
+            <MudTd />
+        </FooterContent>
+    </MudTable>
+}
+else
+{
+    <div class="nexo-cards-grid">
+        @foreach (var g in _gastosPorFecha)
+        {
+            <div class="nexo-ec nexo-ec--finanzas">
+                <div class="nexo-ec__header">
+                    <div class="nexo-ec__avatar" style="background:linear-gradient(135deg,#3B82F6,#1D4ED8)">
+                        <span style="font-size:1.3rem">@CatIcon(g.Categoria)</span>
+                    </div>
+                    <div class="nexo-ec__title-block">
+                        <div class="nexo-ec__name">@g.Descripcion</div>
+                        <div class="nexo-ec__sub">@g.Categoria · @g.Fecha.ToString("dd/MM/yyyy")</div>
+                    </div>
+                    <strong style="font-size:0.9rem;color:var(--n-text-1);white-space:nowrap">@g.Monto.ToString("C0")</strong>
+                </div>
+                <div class="nexo-ec__body">
+                    @if (g.Proveedor is not null)
+                    {
+                        <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.Store" Size="Size.Small" /><span>@g.Proveedor</span></div>
+                    }
+                    @if (g.CentroCosto is not null)
+                    {
+                        <div class="nexo-ec__row"><MudIcon Icon="@Icons.Material.Outlined.Business" Size="Size.Small" /><span>@g.CentroCosto</span></div>
+                    }
+                </div>
+                <div class="nexo-ec__footer">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => AbrirEdicionAsync(g))">Editar</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="@(() => EliminarAsync(g))">Eliminar</MudButton>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<GastoItem> _gastos = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+    private DateTime? _desde = new DateTime(NexoWeb.Common.ColombiaClock.Today.Year, NexoWeb.Common.ColombiaClock.Today.Month, 1);
+    private DateTime? _hasta = NexoWeb.Common.ColombiaClock.Today;
+    private string? _filtroCategoria;
+
+    private IEnumerable<GastoItem> _gastosPorFecha =>
+        _gastos.OrderByDescending(g => g.Fecha);
+
+    private static readonly string[] _categoriasDefecto =
+    {
+        "Eventos", "Viáticos y Transporte", "Publicidad y Marketing",
+        "Servicios y Suscripciones", "Mantenimiento", "Oficina y Suministros",
+        "Nómina y RRHH", "Impuestos y Legales", "Tecnología", "Otro"
+    };
+
+    private IEnumerable<string> CategoriasParaFiltro =>
+        _categoriasDefecto.Concat(_gastos.Select(g => g.Categoria))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c);
+
+    private static string CatIcon(string cat) => cat switch
+    {
+        "Eventos"                      => "🎉",
+        "Viáticos y Transporte"        => "🚗",
+        "Publicidad y Marketing"       => "📢",
+        "Servicios y Suscripciones"    => "🔧",
+        "Mantenimiento"                => "🛠️",
+        "Oficina y Suministros"        => "📦",
+        "Nómina y RRHH"                => "👥",
+        "Impuestos y Legales"          => "⚖️",
+        "Tecnología"                   => "💻",
+        _                              => "💰"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var t1 = CargarGastosAsync();
+        var t2 = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=true");
+        await Task.WhenAll(t1, t2.ContinueWith(t => _centrosCosto = t.Result ?? new()));
+    }
+
+    private async Task CargarGastosAsync()
+    {
+        try
+        {
+            _cargando = true;
+            var q = $"api/finanzas/gastos?desde={_desde:yyyy-MM-dd}&hasta={_hasta:yyyy-MM-dd}";
+            if (_filtroCategoria is not null) q += $"&categoria={Uri.EscapeDataString(_filtroCategoria)}";
+            _gastos = await ApiClient.GetAsync<List<GastoItem>>(q) ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task OnFiltroChanged(DateTime? desde, DateTime? hasta)
+    {
+        _desde = desde; _hasta = hasta;
+        await CargarGastosAsync();
+    }
+
+    private async Task OnCategoriaChanged(string? cat)
+    {
+        _filtroCategoria = cat;
+        await CargarGastosAsync();
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var catExistentes = _gastos.Select(g => g.Categoria).Distinct().ToArray();
+        var p = new DialogParameters<GastoDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.CategoriasExistentes, catExistentes }
+        };
+        var d = await DialogService.ShowAsync<GastoDialog>("Registrar gasto", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearGastoRequest, object?>("api/finanzas/gastos", (CrearGastoRequest)r.Data!);
+            Snackbar.Add("Gasto registrado.", Severity.Success);
+            await CargarGastosAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEdicionAsync(GastoItem gasto)
+    {
+        var catExistentes = _gastos.Select(g => g.Categoria).Distinct().ToArray();
+        var p = new DialogParameters<GastoDialog>
+        {
+            { x => x.Gasto, gasto },
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.CategoriasExistentes, catExistentes }
+        };
+        var d = await DialogService.ShowAsync<GastoDialog>("Editar gasto", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarGastoRequest, object?>($"api/finanzas/gastos/{gasto.GastoID}", (ActualizarGastoRequest)r.Data!);
+            Snackbar.Add("Gasto actualizado.", Severity.Success);
+            await CargarGastosAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EliminarAsync(GastoItem gasto)
+    {
+        var confirmar = await DialogService.ShowMessageBox(
+            "Eliminar gasto",
+            $"¿Eliminar el gasto de {gasto.Monto:C0} — {gasto.Descripcion}? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (confirmar != true) return;
+        try
+        {
+            await ApiClient.DeleteAsync($"api/finanzas/gastos/{gasto.GastoID}");
+            Snackbar.Add("Gasto eliminado.", Severity.Success);
+            await CargarGastosAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

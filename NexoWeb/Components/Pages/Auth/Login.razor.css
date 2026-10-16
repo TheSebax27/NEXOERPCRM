@@ -1,0 +1,295 @@
+/* ================================================================
+   Login.razor — Panel derecho: esferas, card glassmorphic, formulario
+   ================================================================ */
+
+/* ── Panel derecho ───────────────────────────────────────── */
+.right-panel {
+  width: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Bloom de color detrás del card para que el blur tenga algo que doblar */
+.right-panel::before {
+  content: '';
+  position: absolute;
+  inset: -60px -40px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(124,77,255,0.12), transparent 55%),
+    radial-gradient(circle at 80% 75%, rgba(255,77,157,0.06),  transparent 50%),
+    radial-gradient(circle at 50% 100%, rgba(79,172,254,0.08), transparent 55%);
+  filter: blur(14px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ── Esferas decorativas ─────────────────────────────────── */
+.deco-sphere {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at 32% 26%,
+    #d9c4ff 0%, #a97bff 30%, #7c4dff 58%, #3a1f7a 85%, #1d0f45 100%);
+  box-shadow:
+    0 25px 50px rgba(10,5,30,0.55),
+    inset -8px -12px 22px rgba(10,5,30,0.45),
+    inset 6px 8px 16px rgba(255,255,255,0.25);
+}
+.deco-sphere.s1 { width:150px; height:150px; top:-55px;  right:70px;  z-index:2; opacity:0.92; }
+.deco-sphere.s2 {
+  width:100px; height:100px; bottom:-35px; left:-35px; z-index:0; opacity:0.85;
+  background: radial-gradient(circle at 30% 25%,
+    #caa8ff 0%, #8a5cf6 32%, #5a2fc9 60%, #200f4a 90%, #0c0625 100%);
+}
+.deco-sphere.s3 { width:70px;  height:70px;  bottom:60px; right:-24px; z-index:2; opacity:0.8;  }
+
+/* ── Card glassmorphic ───────────────────────────────────── */
+.login-card {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  z-index: 1;
+  background: linear-gradient(155deg,
+    rgba(255,255,255,0.08),
+    rgba(10,8,22,0.55)  45%,
+    rgba(20,14,40,0.60)
+  );
+  backdrop-filter: blur(55px) saturate(130%) brightness(0.82);
+  -webkit-backdrop-filter: blur(55px) saturate(130%) brightness(0.82);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 26px;
+  padding: 44px 40px 36px;
+  box-shadow:
+    0 30px 90px rgba(0,0,0,0.55),
+    0 0 30px rgba(138,92,246,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    inset 0 -1px 0 rgba(255,255,255,0.05),
+    inset 0 0 90px rgba(167,139,250,0.04);
+}
+
+/* Brillo especular diagonal */
+.login-card::before {
+  content: '';
+  position: absolute;
+  top: -60%; left: -30%;
+  width: 80%; height: 220%;
+  background: linear-gradient(115deg, rgba(255,255,255,0.18) 0%, transparent 45%);
+  transform: rotate(8deg);
+  pointer-events: none;
+}
+
+/* Destellito de esquina */
+.login-card::after {
+  content: '';
+  position: absolute;
+  top: 14px; right: 22px;
+  width: 70px; height: 70px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%);
+  filter: blur(2px);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+/* ── Ícono de ojo / lock ─────────────────────────────────── */
+.lock-circle {
+  width: 76px; height: 76px;
+  margin: 0 auto 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(138,92,246,0.35), rgba(138,92,246,0.08) 70%);
+  border: 1px solid rgba(167,139,250,0.4);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 22px rgba(138,92,246,0.22);
+}
+.lock-circle svg { width: 28px; height: 28px; color: #fff; }
+
+.blink-eye {
+  transform-origin: center;
+  animation: eyeBlink 2.2s ease-in-out infinite;
+}
+@keyframes eyeBlink {
+  0%, 78%, 100% { transform: scaleY(1);    }
+  82%           { transform: scaleY(0.08); }
+  86%           { transform: scaleY(1);    }
+  90%           { transform: scaleY(0.08); }
+  93%           { transform: scaleY(1);    }
+}
+
+/* ── Títulos del card ────────────────────────────────────── */
+.card-title {
+  text-align: center;
+  font-size: 23px;
+  font-weight: 700;
+  color: #f4f5fb;
+  margin-bottom: 6px;
+}
+.card-subtitle {
+  text-align: center;
+  font-size: 13.5px;
+  color: #9aa0c0;
+  margin-bottom: 28px;
+}
+
+/* ── Campos de formulario ────────────────────────────────── */
+.lf { margin-bottom: 18px; }
+
+.lf__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d5d8ea;
+  margin-bottom: 8px;
+}
+
+.lf__input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Más translúcido — el card glass ya aporta el oscuro */
+  background: rgba(255,255,255,0.09);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 12px;
+  padding: 13px 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.lf__input:focus-within {
+  border-color: rgba(167,139,250,0.65);
+  box-shadow: 0 0 0 3px rgba(124,92,255,0.18);
+  background: rgba(255,255,255,0.13);
+}
+.lf__input > svg {
+  width: 17px; height: 17px;
+  color: #9aa0c0;
+  flex-shrink: 0;
+}
+.lf__input input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f4f5fb;
+  font-size: 14.5px;
+  width: 100%;
+  font-family: inherit;
+}
+.lf__input input::placeholder { color: #6b7099; }
+
+/* Override real en app.css (global, sin hash) — este selector con [b-hash] no aplica en Chrome */
+.lf__input input:-webkit-autofill,
+.lf__input input:-webkit-autofill:hover,
+.lf__input input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.07) inset !important;
+  -webkit-text-fill-color: #f4f5fb !important;
+  caret-color: #f4f5fb;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Toggle visibilidad contraseña */
+.lf__eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9aa0c0;
+  padding: 2px;
+  border-radius: 6px;
+  transition: color 0.15s ease;
+  flex-shrink: 0;
+}
+.lf__eye:hover { color: #d5d8ea; }
+.lf__eye svg { width: 16px; height: 16px; }
+
+/* ── Alerta de error ─────────────────────────────────────── */
+.login-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.30);
+  color: #FCA5A5;
+  font-size: 13.5px;
+  border-radius: 10px;
+  padding: 11px 14px;
+  margin-bottom: 14px;
+}
+
+/* ── Fila Recordarme ─────────────────────────────────────── */
+.lf__row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 26px;
+}
+.lf__remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #c8cbe0;
+  cursor: pointer;
+  user-select: none;
+}
+.lf__remember input {
+  position: absolute;
+  opacity: 0;
+  width: 0; height: 0;
+}
+.lf__checkbox {
+  width: 17px; height: 17px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #7c4dff, #5b3df0);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.lf__checkbox svg { width: 11px; height: 11px; color: #fff; }
+
+/* ── Botón de ingreso ────────────────────────────────────── */
+.btn-login {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(90deg, #7c4dff, #8a5cf6);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  padding: 15px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(124,77,255,0.40);
+  margin-bottom: 24px;
+  font-family: inherit;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+.btn-login:hover:not(:disabled)  { filter: brightness(1.08); }
+.btn-login:active:not(:disabled) { transform: translateY(1px); }
+.btn-login:disabled              { opacity: 0.60; cursor: not-allowed; }
+
+/* El spinner hereda el blanco del botón */
+.btn-login ::deep .mud-progress-circular { color: #fff; }
+
+/* ── Indicador de mejoras continuas ──────────────────────── */
+.login-updates {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(180,185,220,0.40);
+  text-align: center;
+}
+.login-updates__dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #34D399;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(52,211,153,0.6);
+  animation: pulse-dot 2.5s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%      { opacity: 0.6; transform: scale(0.85); }
+}

@@ -1,0 +1,219 @@
+﻿@page "/planificacion/metas-venta"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Metas de Venta - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Planificación</p>
+            <h1 class="nexo-page-hero__title">Metas de Venta</h1>
+        </div>
+    </div>
+</div>
+<InfoAyuda Texto="Objetivo comercial por Centro de Costo y mes. Se compara contra la venta real de Facturación y Visions (cantidad vendida × precio actual del artículo -- aproximación, no reconstruye el precio histórico de cada venta)." />
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar las metas: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_metas.Count == 0)
+{
+    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+               StartIcon="@Icons.Material.Filled.Add" Class="mb-4">
+        Nueva Meta
+    </MudButton>
+    <MudText>No hay metas registradas.</MudText>
+}
+else
+{
+    @* ── KPI panel global ── *@
+    <div class="mv-summary mb-4">
+        <div class="mv-summary__kpi">
+            <span class="mv-summary__kpi-label">Meta total</span>
+            <span class="mv-summary__kpi-value">@_totalMeta.ToString("C0")</span>
+        </div>
+        <div class="mv-summary__kpi">
+            <span class="mv-summary__kpi-label">Venta real</span>
+            <span class="mv-summary__kpi-value">@_totalReal.ToString("C0")</span>
+        </div>
+        <div class="mv-summary__kpi mv-summary__kpi--pct @(_pctGlobal >= 100 ? "mv-summary__kpi--ok" : _pctGlobal >= 70 ? "mv-summary__kpi--warn" : "mv-summary__kpi--risk")">
+            <span class="mv-summary__kpi-label">Cumplimiento global</span>
+            <span class="mv-summary__kpi-value">@_pctGlobal.ToString("N0")%</span>
+        </div>
+        <div style="margin-left:auto">
+            <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+                       StartIcon="@Icons.Material.Filled.Add">
+                Nueva Meta
+            </MudButton>
+        </div>
+    </div>
+
+    @* ── Agrupado por mes ── *@
+    @foreach (var grupo in _metasPorMes)
+    {
+        <div class="mv-mes-header">
+            <MudText Typo="Typo.subtitle1" Style="font-weight:600">
+                @grupo.Key.ToString("MMMM yyyy").ToUpper()
+            </MudText>
+            @{
+                var pctMes = grupo.Sum(m => m.MetaValor) > 0
+                    ? grupo.Sum(m => m.VentaReal) / grupo.Sum(m => m.MetaValor) * 100
+                    : 0;
+            }
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(pctMes >= 100 ? Color.Success : pctMes >= 70 ? Color.Warning : Color.Error)">
+                @pctMes.ToString("N0")% del mes
+            </MudChip>
+        </div>
+
+        <div class="mv-cards-grid mb-4">
+            @foreach (var meta in grupo.OrderByDescending(m => m.MetaValor))
+            {
+                var pct = meta.MetaValor > 0
+                        ? (double)(meta.VentaReal / meta.MetaValor * 100)
+                        : 0;
+                    var pctCap  = Math.Min(pct, 100);
+                    var colorPct = pct >= 100 ? Color.Success : pct >= 70 ? Color.Warning : Color.Error;
+                    var esMesActual = meta.Periodo.Year == NexoWeb.Common.ColombiaClock.Today.Year && meta.Periodo.Month == NexoWeb.Common.ColombiaClock.Today.Month;
+                    decimal ritmoProyectado = 0;
+                    double pctRitmo = 0;
+                    if (esMesActual && meta.VentaReal > 0 && NexoWeb.Common.ColombiaClock.Today.Day > 0)
+                    {
+                        var diasMes   = DateTime.DaysInMonth(NexoWeb.Common.ColombiaClock.Today.Year, NexoWeb.Common.ColombiaClock.Today.Month);
+                        ritmoProyectado = meta.VentaReal / NexoWeb.Common.ColombiaClock.Today.Day * diasMes;
+                        pctRitmo = meta.MetaValor > 0 ? (double)(ritmoProyectado / meta.MetaValor * 100) : 0;
+                    }
+                <div class="mv-card">
+                    <div class="mv-card__header">
+                        <span class="mv-card__centro">@meta.CentroCosto</span>
+                        <div class="d-flex" style="gap:4px">
+                            @if (esMesActual)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Style="height:20px;font-size:10px">Mes actual</MudChip>
+                            }
+                            <MudIcon Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
+                                     Style="cursor:pointer;color:var(--mud-palette-text-secondary)"
+                                     @onclick="@(() => VerHistorialAsync(meta))" />
+                        </div>
+                    </div>
+
+                    <div class="mv-card__pct-wrap">
+                        <span class="mv-card__pct" style="color:@(pct >= 100 ? "var(--mud-palette-success)" : pct >= 70 ? "var(--mud-palette-warning)" : "var(--mud-palette-error)")">
+                            @pct.ToString("N0")%
+                        </span>
+                        <span class="mv-card__pct-label">cumplimiento</span>
+                    </div>
+
+                    <MudProgressLinear Value="@pctCap" Color="@colorPct"
+                                       Rounded="true" Size="Size.Medium" Class="mv-card__bar" />
+
+                    <div class="mv-card__vals">
+                        <div>
+                            <div class="mv-card__val-label">Venta real</div>
+                            <div class="mv-card__val">@meta.VentaReal.ToString("C0")</div>
+                        </div>
+                        <div style="text-align:right">
+                            <div class="mv-card__val-label">Meta</div>
+                            <div class="mv-card__val">@meta.MetaValor.ToString("C0")</div>
+                        </div>
+                    </div>
+
+                    @if (esMesActual && ritmoProyectado > 0)
+                    {
+                        <div class="mv-card__ritmo @(pctRitmo >= 100 ? "mv-card__ritmo--ok" : pctRitmo >= 80 ? "mv-card__ritmo--warn" : "mv-card__ritmo--risk")">
+                            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small" />
+                            <span>A este ritmo: @ritmoProyectado.ToString("C0") (@pctRitmo.ToString("N0")%)</span>
+                        </div>
+                    }
+
+                    <div class="mv-card__actions">
+                        <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(meta))">Editar</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => VerHistorialAsync(meta))">Historial</MudButton>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<MetaVentaItem> _metas = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    private IEnumerable<IGrouping<DateTime, MetaVentaItem>> _metasPorMes =>
+        _metas.GroupBy(m => m.Periodo).OrderByDescending(g => g.Key);
+
+    private decimal _totalMeta => _metas.Sum(m => m.MetaValor);
+    private decimal _totalReal => _metas.Sum(m => m.VentaReal);
+    private double  _pctGlobal => _totalMeta > 0 ? (double)(_totalReal / _totalMeta * 100) : 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var t1 = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo?soloActivos=true");
+            var t2 = ApiClient.GetAsync<List<MetaVentaItem>>("api/planificacion/metas-venta");
+            await Task.WhenAll(t1, t2);
+            _centrosCosto = await t1 ?? new();
+            _metas        = await t2 ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarMetasAsync()
+    {
+        try { _metas = await ApiClient.GetAsync<List<MetaVentaItem>>("api/planificacion/metas-venta") ?? new(); }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var p = new DialogParameters<MetaVentaDialog> { { x => x.CentrosCosto, _centrosCosto } };
+        var d = await DialogService.ShowAsync<MetaVentaDialog>("Nueva Meta de Venta", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PostAsync<CrearMetaVentaRequest, object?>("api/planificacion/metas-venta", (CrearMetaVentaRequest)r.Data!);
+            Snackbar.Add("Meta creada correctamente.", Severity.Success);
+            await CargarMetasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AbrirEdicionAsync(MetaVentaItem meta)
+    {
+        var p = new DialogParameters<MetaVentaDialog> { { x => x.Meta, meta } };
+        var d = await DialogService.ShowAsync<MetaVentaDialog>("Editar Meta de Venta", p);
+        var r = await d.Result;
+        if (r is null || r.Canceled) return;
+        try
+        {
+            await ApiClient.PutAsync<ActualizarMetaVentaRequest, object?>(
+                $"api/planificacion/metas-venta/{meta.MetaID}", (ActualizarMetaVentaRequest)r.Data!);
+            Snackbar.Add("Meta actualizada correctamente.", Severity.Success);
+            await CargarMetasAsync();
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task VerHistorialAsync(MetaVentaItem meta)
+    {
+        var historial = await ApiClient.GetAsync<List<MetaVentaHistorialItem>>($"api/planificacion/metas-venta/{meta.MetaID}/historial") ?? new();
+        var p = new DialogParameters<HistorialMetaVentaDialog> { { x => x.Historial, historial } };
+        await DialogService.ShowAsync<HistorialMetaVentaDialog>($"Historial — {meta.CentroCosto} {meta.Periodo:MMM yyyy}", p);
+    }
+}

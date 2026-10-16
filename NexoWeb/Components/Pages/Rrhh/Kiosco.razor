@@ -1,0 +1,160 @@
+﻿@page "/rrhh/kiosco"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject IHttpClientFactory HttpFactory
+@implements IDisposable
+@layout NexoWeb.Components.Layout.EmptyLayout
+
+<PageTitle>Control de Asistencia</PageTitle>
+
+<style>
+    .kiosco { display:flex; flex-direction:column; align-items:center; justify-content:center;
+              min-height:100vh; background:#0f172a; color:#f1f5f9; text-align:center; padding:2rem; }
+    .k-time { font-size:4rem; font-weight:700; letter-spacing:.1em; font-variant-numeric:tabular-nums; }
+    @@media (max-width:480px) { .k-time { font-size:2.5rem; } .k-qr img { width:200px; height:200px; } }
+    .k-date { font-size:1.2rem; color:#94a3b8; margin-bottom:1.5rem; }
+    .k-qr   { background:#fff; padding:16px; border-radius:16px; margin:1.5rem 0;
+              box-shadow:0 20px 60px rgba(0,0,0,.5); }
+    .k-qr img { display:block; width:280px; height:280px; }
+    .k-hint { font-size:.9rem; color:#64748b; margin-top:.5rem; }
+    .k-counter { display:inline-flex; align-items:center; gap:6px; margin-top:1rem;
+                 background:#1e293b; border-radius:20px; padding:4px 14px; font-size:.85rem; color:#94a3b8; }
+    .k-badge-uso { display:inline-flex; align-items:center; gap:6px; margin-top:1rem;
+                   background:#1e293b; border-radius:20px; padding:4px 14px; font-size:.85rem;
+                   color:#38bdf8; border:1px solid #0ea5e9; }
+</style>
+
+<div class="kiosco">
+    <MudText Typo="Typo.h5" Style="color:#e2e8f0; font-weight:600; margin-bottom:.25rem">
+        Control de Asistencia
+    </MudText>
+
+    <div class="k-time">@_hora</div>
+    <div class="k-date">@_fecha</div>
+
+    <div class="k-qr">
+        @if (!string.IsNullOrEmpty(_qrSrc))
+        {
+            <img src="@_qrSrc" alt="QR de asistencia" />
+        }
+        else
+        {
+            <div style="width:280px;height:280px;display:flex;align-items:center;justify-content:center;color:#64748b;">
+                <MudProgressCircular Indeterminate />
+            </div>
+        }
+    </div>
+
+    <MudText Typo="Typo.body1" Style="color:#e2e8f0">
+        Escanea el código con la cámara de tu celular
+    </MudText>
+    <MudText Typo="Typo.caption" Style="color:#64748b">
+        Debes tener sesión iniciada en NEXO para marcar asistencia
+    </MudText>
+
+    @if (_modoQr == "SINGLE_USE")
+    {
+        <div class="k-badge-uso">
+            <MudIcon Icon="@Icons.Material.Filled.Security" Style="font-size:14px" />
+            Código de un solo uso — se renueva al escanear
+        </div>
+    }
+    else
+    {
+        <div class="k-counter">
+            <MudIcon Icon="@Icons.Material.Filled.Refresh" Style="font-size:14px" />
+            Código nuevo en @_segsRestantes s
+        </div>
+    }
+</div>
+
+@code {
+    string _hora = "", _fecha = "", _qrSrc = "";
+    int _segsRestantes = 300;
+    string _modoQr = "TTL";
+    string _tokenActual = "";
+    int _pollTick = 0;
+    string _tenantHost = "";
+
+    System.Timers.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Capturar el host del tenant aquí (durante el render inicial, HttpContext disponible).
+        // Se usará en los callbacks del timer donde HttpContext ya no está disponible.
+        _tenantHost = new Uri(Nav.BaseUri).Host;
+        RefrescarReloj();
+        await PollTokenAsync(); // carga inicial: obtiene token y modo
+
+        _timer = new(1000);
+        _timer.Elapsed += (_, _) => InvokeAsync(async () =>
+        {
+            RefrescarReloj();
+            _pollTick++;
+            if (_pollTick >= 5) // poll cada 5 segundos
+            {
+                _pollTick = 0;
+                await PollTokenAsync();
+            }
+            StateHasChanged();
+        });
+        _timer.Start();
+    }
+
+    void RefrescarReloj()
+    {
+        var now = NexoWeb.Common.ColombiaClock.Now;
+        _hora = now.ToString("HH:mm:ss");
+        _fecha = now.ToString("dddd, dd 'de' MMMM 'de' yyyy",
+            new System.Globalization.CultureInfo("es-CO"));
+        if (_modoQr == "TTL" && _segsRestantes > 0)
+            _segsRestantes--;
+    }
+
+    async Task PollTokenAsync()
+    {
+        try
+        {
+            var apiBase = (Config["NexoApi:BaseUrl"] ?? "").TrimEnd('/');
+            var http    = HttpFactory.CreateClient("img-proxy");
+            var req     = new HttpRequestMessage(HttpMethod.Get, $"{apiBase}/api/rrhh/asistencia/token");
+            if (!string.IsNullOrEmpty(_tenantHost))
+                req.Headers.TryAddWithoutValidation("X-Nexo-Host", _tenantHost);
+            using var response = await http.SendAsync(req);
+            if (!response.IsSuccessStatusCode) return;
+            var resp = await response.Content.ReadFromJsonAsync<TokenQrResponse>();
+            if (resp is null) return;
+
+            _modoQr = resp.Modo;
+
+            if (resp.Token != _tokenActual)
+            {
+                _tokenActual = resp.Token;
+                if (resp.SegundosRestantes > 0)
+                    _segsRestantes = resp.SegundosRestantes;
+                RefrescarQr();
+            }
+            else if (_modoQr == "TTL" && resp.SegundosRestantes > 0)
+            {
+                _segsRestantes = resp.SegundosRestantes;
+            }
+        }
+        catch { /* ignorar errores de polling — kiosco sigue mostrando el último QR */ }
+    }
+
+    void RefrescarQr()
+    {
+        var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var wb = Uri.EscapeDataString(Nav.BaseUri);
+        _qrSrc = $"/api/rrhh/asistencia/qr-imagen?wb={wb}&ts={ts}";
+    }
+
+    public void Dispose()
+    {
+        _timer?.Stop();
+        _timer?.Dispose();
+    }
+
+    private record TokenQrResponse(string Token, int SegundosRestantes, string Modo = "TTL");
+}

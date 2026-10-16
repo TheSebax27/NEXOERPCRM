@@ -1,0 +1,131 @@
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<MudDialog Style="min-width:680px">
+    <DialogContent>
+        @if (_cargando)
+        {
+            <MudProgressLinear Indeterminate Color="Color.Primary" Class="mb-3" />
+        }
+
+        @* Lista actual *@
+        @if (_subproductos.Count == 0 && !_cargando)
+        {
+            <MudText Color="Color.Secondary" Class="mb-4">Sin subproductos/residuos definidos para esta receta.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_subproductos" Dense Hover Class="mb-4">
+                <HeaderContent>
+                    <MudTh>Artículo</MudTh>
+                    <MudTh>Ref.</MudTh>
+                    <MudTh Style="text-align:right">Cant. / lote base</MudTh>
+                    <MudTh>Unidad</MudTh>
+                    <MudTh>Bodega destino</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Artículo">@context.Subproducto</MudTd>
+                    <MudTd DataLabel="Ref."><span class="inv-muted">@(context.Referencia ?? "—")</span></MudTd>
+                    <MudTd DataLabel="Cant." Style="text-align:right">@context.CantidadPorLoteBase.ToString("N4")</MudTd>
+                    <MudTd DataLabel="Unidad">@(context.Unidad ?? "—")</MudTd>
+                    <MudTd DataLabel="Bodega">@(context.BodegaDestino ?? "— (misma que PT)")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       Color="Color.Error" Title="Eliminar"
+                                       OnClick="@(() => EliminarAsync(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+
+        @* Formulario agregar *@
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Agregar subproducto / residuo</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="5">
+                <ArticuloAutocomplete @bind-Value="_nuevoArticulo" Label="Artículo" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                @{
+                    var unidadLabel = _nuevoArticulo?.PresentacionNombre ?? _nuevoArticulo?.PresentacionCodigo;
+                }
+                <MudNumericField @bind-Value="_nuevaCantidad"
+                                 Label="@($"Cant. / lote base{(unidadLabel != null ? $" ({unidadLabel})" : "")}")"
+                                 Min="0.0001m" Format="N4" T="decimal" />
+            </MudItem>
+            <MudItem xs="6" sm="4">
+                <AppSelect TValue="int?" @bind-Value="_nuevaBodegaId"
+                           Label="Bodega destino" Placeholder="Misma que PT"
+                           Items="@(_bodegas.Select(b => new AppSelectItem<int?>( b.Nombre, (int?)b.BodegaID)))" />
+            </MudItem>
+        </MudGrid>
+        <div class="d-flex justify-end mt-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       Disabled="@(_nuevoArticulo is null || _nuevaCantidad <= 0 || _guardando)"
+                       OnClick="AgregarAsync">
+                Agregar
+            </MudButton>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int RecetaID { get; set; }
+    [Parameter] public string NombreReceta { get; set; } = "";
+
+    private List<SubproductoRecetaItem> _subproductos = [];
+    private List<BodegaItem> _bodegas = [];
+    private bool _cargando = true;
+    private bool _guardando;
+
+    private ArticuloItem? _nuevoArticulo;
+    private decimal _nuevaCantidad = 1m;
+    private int? _nuevaBodegaId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(CargarSubproductosAsync(), CargarBodegasAsync());
+        _cargando = false;
+    }
+
+    private async Task CargarSubproductosAsync()
+        => _subproductos = await ApiClient.GetAsync<List<SubproductoRecetaItem>>(
+               $"api/produccion/ordenes/recetas/{RecetaID}/subproductos") ?? [];
+
+    private async Task CargarBodegasAsync()
+        => _bodegas = await ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas") ?? [];
+
+    private async Task AgregarAsync()
+    {
+        if (_nuevoArticulo is null || _nuevaCantidad <= 0) return;
+        _guardando = true;
+        try
+        {
+            var req = new AgregarSubproductoRecetaRequest(_nuevoArticulo.ArticuloID, _nuevaCantidad, _nuevaBodegaId);
+            await ApiClient.PostAsync<AgregarSubproductoRecetaRequest, object?>(
+                $"api/produccion/ordenes/recetas/{RecetaID}/subproductos", req);
+            Snackbar.Add($"Subproducto '{_nuevoArticulo.Nombre}' agregado.", Severity.Success);
+            _nuevoArticulo = null;
+            _nuevaCantidad = 1m;
+            _nuevaBodegaId = null;
+            await CargarSubproductosAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private async Task EliminarAsync(SubproductoRecetaItem item)
+    {
+        await ApiClient.DeleteAsync($"api/produccion/ordenes/recetas/subproductos/{item.SubproductoBOMID}");
+        Snackbar.Add($"'{item.Subproducto}' eliminado.", Severity.Warning);
+        await CargarSubproductosAsync();
+    }
+
+    private void Cerrar() => MudDialog.Close();
+}

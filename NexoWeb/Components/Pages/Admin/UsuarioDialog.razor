@@ -1,0 +1,149 @@
+@using NexoWeb.Common.Dtos
+@inject IJSRuntime JS
+
+<MudDialog Style="min-width:480px">
+    <DialogContent>
+        <div class="d-flex flex-column align-center mb-4">
+            <MudAvatar Color="Color.Primary" Size="Size.Large" Class="mb-2">
+                <MudIcon Icon="@(EsEdicion ? Icons.Material.Filled.ManageAccounts : Icons.Material.Filled.PersonAdd)" Size="Size.Medium" />
+            </MudAvatar>
+            <MudText Typo="Typo.h6" Class="font-weight-bold">@(EsEdicion ? "Editar Usuario" : "Nuevo Usuario")</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">@(EsEdicion ? "Modifica los datos del usuario" : "Completa los datos para crear la cuenta")</MudText>
+        </div>
+
+        <MudDivider Class="mb-4" />
+
+        <MudForm @ref="_form" Model="@this">
+            <MudGrid Spacing="2">
+                <MudItem xs="6">
+                    <MudTextField @bind-Value="_nombres" Label="Nombres" Required="true"
+                                  RequiredError="Requerido" Variant="Variant.Outlined"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Person" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField @bind-Value="_apellidos" Label="Apellidos" Required="true"
+                                  RequiredError="Requerido" Variant="Variant.Outlined" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_email" Label="Email" Required="true"
+                                  RequiredError="Requerido" Variant="Variant.Outlined"
+                                  InputType="InputType.Email"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email" />
+                </MudItem>
+
+                @if (!EsEdicion)
+                {
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_username" Label="Usuario" Required="true"
+                                      RequiredError="Requerido" Variant="Variant.Outlined"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountCircle" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_password" Label="Contraseña" Required="true"
+                                      RequiredError="Requerido" Variant="Variant.Outlined"
+                                      InputType="@(_verPwd ? InputType.Text : InputType.Password)"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@(_verPwd ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                      OnAdornmentClick="@(() => _verPwd = !_verPwd)" />
+                    </MudItem>
+                }
+
+                <MudItem xs="@(EsEdicion ? 6 : 12)">
+                    <AppSelect TValue="int?" @bind-Value="_rolId" Label="Rol"
+                               Items="@(Roles.Select(rol => new AppSelectItem<int?>(rol.Nombre, (int?)rol.RolID)))" />
+                </MudItem>
+
+                <MudItem xs="@(EsEdicion ? 6 : 12)">
+                    <AppSelect TValue="int?" @bind-Value="_centroCostoId" Label="Centro de Costo"
+                               Items="@(CentrosCosto.Select(centro => new AppSelectItem<int?>(centro.Nombre, (int?)centro.CentroCostoID)))" />
+                </MudItem>
+
+                @if (EsEdicion)
+                {
+                    <MudItem xs="12">
+                        <MudSwitch T="bool" @bind-Value="_estado" Color="Color.Success"
+                                   Label="@(_estado ? "Usuario activo" : "Usuario inactivo")" />
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancelar" Variant="Variant.Text">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync"
+                   StartIcon="@(EsEdicion ? Icons.Material.Filled.Save : Icons.Material.Filled.PersonAdd)">
+            @(EsEdicion ? "Guardar Cambios" : "Crear Usuario")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public List<RolItem> Roles { get; set; } = new();
+    [Parameter] public List<CentroCostoItem> CentrosCosto { get; set; } = new();
+    [Parameter] public UsuarioItem? Usuario { get; set; }
+    [Parameter] public EmpleadoItem? EmpleadoPrefil { get; set; }
+
+    private bool EsEdicion => Usuario is not null;
+
+    private MudForm _form = default!;
+    private string _nombres = string.Empty;
+    private string _apellidos = string.Empty;
+    private string _email = string.Empty;
+    private string _username = string.Empty;
+    private string _password = string.Empty;
+    private bool _verPwd;
+    private int? _rolId;
+    private int? _centroCostoId;
+    private bool _estado = true;
+    private int? _empleadoId;
+
+    protected override void OnInitialized()
+    {
+        if (Usuario is not null)
+        {
+            _nombres = Usuario.Nombres;
+            _apellidos = Usuario.Apellidos;
+            _email = Usuario.Email;
+            _rolId = (int?)Usuario.RolID;
+            _centroCostoId = Usuario.CentroCostoID;
+            _estado = Usuario.Estado;
+            _empleadoId = Usuario.EmpleadoID;
+        }
+        else if (EmpleadoPrefil is not null)
+        {
+            _nombres = EmpleadoPrefil.Nombres;
+            _apellidos = EmpleadoPrefil.Apellidos;
+            _email = EmpleadoPrefil.Email ?? string.Empty;
+            _centroCostoId = EmpleadoPrefil.CentroCostoID;
+            _empleadoId = EmpleadoPrefil.EmpleadoID;
+            _rolId = Roles.Count > 0 ? (int?)Roles[0].RolID : null;
+        }
+        else if (Roles.Count > 0)
+        {
+            _rolId = (int?)Roles[0].RolID;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid) return;
+
+        if (EsEdicion)
+        {
+            var request = new ActualizarUsuarioRequest(_nombres, _apellidos, _email, _rolId ?? 0, _centroCostoId, _estado);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+        else
+        {
+            var request = new CrearUsuarioRequest(_nombres, _apellidos, _email, _username, _password, _rolId ?? 0, _centroCostoId, _empleadoId);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

@@ -1,0 +1,165 @@
+/* ── Backdrop ─────────────────────────────────────────────────────────── */
+.ae-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 8, 25, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    animation: ae-fade-in 0.35s ease;
+}
+
+@keyframes ae-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────── */
+.ae-card {
+    position: relative;
+    width: min(420px, 92vw);
+    border-radius: 28px;
+    padding: 36px 32px 28px;
+    text-align: center;
+    overflow: hidden;
+    background: linear-gradient(145deg, #1a1135 0%, #0f0c22 100%);
+    box-shadow: 0 32px 80px rgba(0,0,0,.55), 0 0 0 1.5px rgba(255,255,255,.07);
+    animation: ae-pop-in 0.45s cubic-bezier(.34,1.56,.64,1);
+}
+
+@keyframes ae-pop-in {
+    from { transform: scale(.7) translateY(40px); opacity: 0; }
+    to   { transform: scale(1) translateY(0);      opacity: 1; }
+}
+
+/* Gradient border animado */
+.ae-card::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 30px;
+    background: conic-gradient(
+        from var(--ae-angle, 0deg),
+        #7c5cff, #c084fc, #f472b6, #fb923c, #facc15, #7c5cff
+    );
+    z-index: -1;
+    animation: ae-spin 4s linear infinite;
+}
+
+@property --ae-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+@keyframes ae-spin {
+    to { --ae-angle: 360deg; }
+}
+
+/* ── Decoraciones esquina ─────────────────────────────────────────────── */
+.ae-deco {
+    position: absolute;
+    font-size: 1.4rem;
+    animation: ae-float 3s ease-in-out infinite;
+    pointer-events: none;
+    user-select: none;
+}
+.ae-deco--tl { top: 14px; left: 16px; animation-delay: 0s; }
+.ae-deco--tr { top: 14px; right: 16px; animation-delay: .7s; }
+.ae-deco--bl { bottom: 14px; left: 16px; animation-delay: 1.4s; }
+.ae-deco--br { bottom: 14px; right: 16px; animation-delay: 2.1s; }
+
+@keyframes ae-float {
+    0%, 100% { transform: translateY(0) rotate(-5deg); }
+    50%       { transform: translateY(-6px) rotate(5deg); }
+}
+
+/* ── Botón cerrar ─────────────────────────────────────────────────────── */
+.ae-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,.1);
+    color: rgba(255,255,255,.6);
+    font-size: .85rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .2s, color .2s;
+    z-index: 2;
+}
+.ae-close:hover { background: rgba(255,255,255,.2); color: #fff; }
+
+/* ── Imagen perro ─────────────────────────────────────────────────────── */
+.ae-dog-wrap {
+    margin: 0 auto 12px;
+    width: 150px; height: 150px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(124,92,255,.25) 0%, transparent 70%);
+    display: flex; align-items: center; justify-content: center;
+}
+
+.ae-dog {
+    width: 135px;
+    height: 135px;
+    object-fit: contain;
+    border-radius: 50%;
+    animation: ae-bounce 2.2s ease-in-out infinite;
+    filter: drop-shadow(0 8px 24px rgba(124,92,255,.4));
+}
+
+@keyframes ae-bounce {
+    0%, 100% { transform: translateY(0) rotate(-2deg); }
+    50%       { transform: translateY(-8px) rotate(2deg); }
+}
+
+/* ── Burbuja de mensaje ───────────────────────────────────────────────── */
+.ae-bubble {
+    position: relative;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 18px;
+    padding: 16px 20px;
+    margin: 4px 0 22px;
+}
+
+.ae-bubble__tail {
+    position: absolute;
+    top: -10px; left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-bottom: 10px solid rgba(255,255,255,.06);
+}
+
+.ae-msg {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.55;
+    color: rgba(255,255,255,.9);
+    font-weight: 400;
+}
+
+/* ── Botón principal ──────────────────────────────────────────────────── */
+.ae-btn {
+    border: none;
+    border-radius: 50px;
+    padding: 13px 28px;
+    font-size: .92rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: linear-gradient(135deg, #7c5cff 0%, #c084fc 100%);
+    color: #fff;
+    letter-spacing: .3px;
+    transition: transform .15s, box-shadow .15s;
+    box-shadow: 0 6px 24px rgba(124,92,255,.4);
+}
+.ae-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 32px rgba(124,92,255,.5);
+}
+.ae-btn:active { transform: translateY(0); }

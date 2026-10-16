@@ -1,0 +1,355 @@
+@page "/documentos"
+@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+
+<PageTitle>Documentos y Contratos — NEXO</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <div class="d-flex align-center justify-space-between mb-4">
+        <MudText Typo="Typo.h5">Documentos y Contratos</MudText>
+        <div class="d-flex gap-2">
+            @if (_tabActivo == 0)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AbrirGenerarDocumentoAsync">
+                    Nuevo documento
+                </MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="@(() => AbrirEditorPlantillaAsync(null))">
+                    Nueva plantilla
+                </MudButton>
+            }
+        </div>
+    </div>
+
+    <MudTabs @bind-ActivePanelIndex="_tabActivo" Class="nexo-bi-tabs"
+             PanelClass="pt-2" ApplyEffectsToContainer="true">
+
+        @* ── Tab 0: Documentos ──────────────────────────────────────────────── *@
+        <MudTabPanel Text="Documentos" Icon="@Icons.Material.Filled.Article">
+            <MudPaper Elevation="1" Class="pa-3 mb-3" Style="border-radius: 12px;">
+                <MudGrid Spacing="2" AlignItems="Center">
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="string?" Value="_filtroEstado"
+                                   ValueChanged="@(async (string? v) => { _filtroEstado = v; await CargarDocumentosAsync(); })"
+                                   Label="Estado" Variant="Variant.Outlined" Clearable="true"
+                                   Dense="true" Margin="Margin.Dense">
+                            <MudSelectItem T="string?" Value="@("BORRADOR")">Borrador</MudSelectItem>
+                            <MudSelectItem T="string?" Value="@("FIRMADO")">Firmado</MudSelectItem>
+                            <MudSelectItem T="string?" Value="@("ARCHIVADO")">Archivado</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_busqueda" Label="Buscar"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                      Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"
+                                      Immediate="true" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            @if (_cargandoDocumentos)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
+            }
+            else if (!DocumentosFiltrados.Any())
+            {
+                <MudAlert Severity="Severity.Info" Class="mt-4">
+                    No hay documentos generados.
+                    @if (string.IsNullOrEmpty(_filtroEstado)) { <span> Crea uno con el botón "Nuevo documento".</span> }
+                </MudAlert>
+            }
+            else
+            {
+                <MudDataGrid Items="DocumentosFiltrados" Hover="true" Dense="true"
+                             SortMode="SortMode.Single" Filterable="false"
+                             Style="border-radius: 12px; overflow: hidden;">
+                    <Columns>
+                        <PropertyColumn Property="x => x.Titulo" Title="Título" />
+                        <PropertyColumn Property="x => x.PlantillaNombre" Title="Plantilla" />
+                        <TemplateColumn Title="Entidad">
+                            <CellTemplate>
+                                @(context.Item.EntidadNombre ?? "—")
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Estado">
+                            <CellTemplate>
+                                <MudChip T="string" Size="Size.Small" Color="@ColorEstado(context.Item.Estado)">
+                                    @context.Item.Estado
+                                </MudChip>
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Firma">
+                            <CellTemplate>
+                                @if (context.Item.TieneFirma)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Draw" Color="Color.Success" Size="Size.Small" />
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Outlined.Draw" Color="Color.Default" Size="Size.Small" />
+                                }
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <PropertyColumn Property="x => x.FechaGeneracion" Title="Fecha"
+                                        Format="dd/MM/yyyy" />
+                        <TemplateColumn Title="Acciones">
+                            <CellTemplate>
+                                <div class="d-flex gap-1">
+                                    <MudTooltip Text="Descargar PDF">
+                                        <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
+                                                       Size="Size.Small" Color="Color.Error"
+                                                       OnClick="@(() => DescargarPdfAsync(context.Item.DocumentoID))" />
+                                    </MudTooltip>
+                                    @if (!context.Item.TieneFirma && context.Item.Estado == "BORRADOR")
+                                    {
+                                        <MudTooltip Text="Agregar firma">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Draw"
+                                                           Size="Size.Small" Color="Color.Primary"
+                                                           OnClick="@(() => AbrirFirmaAsync(context.Item.DocumentoID))" />
+                                        </MudTooltip>
+                                    }
+                                    @if (context.Item.Estado != "ARCHIVADO")
+                                    {
+                                        <MudTooltip Text="Archivar">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Archive"
+                                                           Size="Size.Small" Color="Color.Default"
+                                                           OnClick="@(() => ArchivarAsync(context.Item.DocumentoID))" />
+                                        </MudTooltip>
+                                    }
+                                </div>
+                            </CellTemplate>
+                        </TemplateColumn>
+                    </Columns>
+                </MudDataGrid>
+            }
+        </MudTabPanel>
+
+        @* ── Tab 1: Plantillas ──────────────────────────────────────────────── *@
+        <MudTabPanel Text="Plantillas" Icon="@Icons.Material.Filled.Description">
+            @if (_cargandoPlantillas)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
+            }
+            else if (!_plantillas.Any())
+            {
+                <MudAlert Severity="Severity.Info" Class="mt-4">
+                    No hay plantillas. Crea la primera con el botón "Nueva plantilla".
+                </MudAlert>
+            }
+            else
+            {
+                <MudDataGrid Items="_plantillas" Hover="true" Dense="true"
+                             SortMode="SortMode.Single" Filterable="false"
+                             Style="border-radius: 12px; overflow: hidden;">
+                    <Columns>
+                        <PropertyColumn Property="x => x.Nombre" Title="Nombre" />
+                        <TemplateColumn Title="Aplica a">
+                            <CellTemplate>
+                                <MudChip T="string" Size="Size.Small" Color="@ColorTipoEntidad(context.Item.TipoEntidad)">
+                                    @context.Item.TipoEntidad
+                                </MudChip>
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <PropertyColumn Property="x => x.Descripcion" Title="Descripción" />
+                        <TemplateColumn Title="Estado">
+                            <CellTemplate>
+                                @if (context.Item.Activa)
+                                { <MudChip T="string" Size="Size.Small" Color="Color.Success">Activa</MudChip> }
+                                else
+                                { <MudChip T="string" Size="Size.Small" Color="Color.Default">Inactiva</MudChip> }
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <PropertyColumn Property="x => x.FechaCreacion" Title="Creada"
+                                        Format="dd/MM/yyyy" />
+                        <TemplateColumn Title="Acciones">
+                            <CellTemplate>
+                                <div class="d-flex gap-1">
+                                    <MudTooltip Text="Editar">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                       Size="Size.Small" Color="Color.Primary"
+                                                       OnClick="@(() => AbrirEditorPlantillaAsync(context.Item.PlantillaID))" />
+                                    </MudTooltip>
+                                    <MudTooltip Text="Eliminar">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Size="Size.Small" Color="Color.Error"
+                                                       OnClick="@(() => EliminarPlantillaAsync(context.Item.PlantillaID, context.Item.Nombre))" />
+                                    </MudTooltip>
+                                </div>
+                            </CellTemplate>
+                        </TemplateColumn>
+                    </Columns>
+                </MudDataGrid>
+            }
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+@code {
+    private int _tabActivo;
+    private string? _filtroEstado;
+    private string _busqueda = string.Empty;
+
+    private List<DocumentoResumen> _documentos = new();
+    private List<PlantillaResumen> _plantillas = new();
+    private bool _cargandoDocumentos;
+    private bool _cargandoPlantillas;
+
+    private IEnumerable<DocumentoResumen> DocumentosFiltrados =>
+        string.IsNullOrWhiteSpace(_busqueda)
+            ? _documentos
+            : _documentos.Where(d =>
+                d.Titulo.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ||
+                (d.EntidadNombre?.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (d.PlantillaNombre.Contains(_busqueda, StringComparison.OrdinalIgnoreCase)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(CargarDocumentosAsync(), CargarPlantillasAsync());
+    }
+
+    private async Task CargarDocumentosAsync()
+    {
+        _cargandoDocumentos = true;
+        try
+        {
+            var query = _filtroEstado is not null ? $"?estado={_filtroEstado}" : string.Empty;
+            _documentos = await ApiClient.GetAsync<List<DocumentoResumen>>($"api/documentos{query}") ?? new();
+        }
+        catch { Snackbar.Add("Error al cargar documentos.", Severity.Error); }
+        finally { _cargandoDocumentos = false; }
+    }
+
+    private async Task CargarPlantillasAsync()
+    {
+        _cargandoPlantillas = true;
+        try
+        {
+            _plantillas = await ApiClient.GetAsync<List<PlantillaResumen>>("api/documentos/plantillas") ?? new();
+        }
+        catch { Snackbar.Add("Error al cargar plantillas.", Severity.Error); }
+        finally { _cargandoPlantillas = false; }
+    }
+
+    private async Task AbrirGenerarDocumentoAsync()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<GenerarDocumentoDialog>("Nuevo documento", options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+            await CargarDocumentosAsync();
+    }
+
+    private async Task AbrirEditorPlantillaAsync(int? plantillaId)
+    {
+        PlantillaDetalle? detalle = null;
+        if (plantillaId.HasValue)
+        {
+            try { detalle = await ApiClient.GetAsync<PlantillaDetalle>($"api/documentos/plantillas/{plantillaId}"); }
+            catch { Snackbar.Add("Error al cargar la plantilla.", Severity.Error); return; }
+        }
+
+        var parameters = new DialogParameters<EditorPlantillaDialog>
+        {
+            { x => x.Plantilla, detalle }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true };
+        var titulo = plantillaId.HasValue ? "Editar plantilla" : "Nueva plantilla";
+        var dialog = await DialogService.ShowAsync<EditorPlantillaDialog>(titulo, parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+            await CargarPlantillasAsync();
+    }
+
+    private async Task EliminarPlantillaAsync(int id, string nombre)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Eliminar plantilla",
+            $"¿Eliminar la plantilla \"{nombre}\"? Esta acción no se puede deshacer si la plantilla no tiene documentos asociados.",
+            "Eliminar", cancelText: "Cancelar");
+        if (confirm != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/documentos/plantillas/{id}");
+            Snackbar.Add("Plantilla eliminada.", Severity.Success);
+            await CargarPlantillasAsync();
+        }
+        catch
+        {
+            Snackbar.Add("No se puede eliminar: la plantilla tiene documentos generados.", Severity.Warning);
+        }
+    }
+
+    private async Task DescargarPdfAsync(int documentoId)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/documentos/{documentoId}/pdf");
+            if (bytes is { Length: > 0 })
+                await JS_DescargarArchivo(bytes, $"documento-{documentoId}.pdf", "application/pdf");
+        }
+        catch { Snackbar.Add("Error al generar el PDF.", Severity.Error); }
+    }
+
+    private async Task AbrirFirmaAsync(int documentoId)
+    {
+        var parameters = new DialogParameters<FirmaDialog>
+        {
+            { x => x.DocumentoID, documentoId }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<FirmaDialog>("Agregar firma", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+            await CargarDocumentosAsync();
+    }
+
+    private async Task ArchivarAsync(int documentoId)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Archivar documento",
+            "¿Archivar este documento? Pasará a estado ARCHIVADO.",
+            "Archivar", cancelText: "Cancelar");
+        if (confirm != true) return;
+
+        try
+        {
+            await ApiClient.PostAsync<object?, object?>($"api/documentos/{documentoId}/archivar", null);
+            Snackbar.Add("Documento archivado.", Severity.Success);
+            await CargarDocumentosAsync();
+        }
+        catch { Snackbar.Add("Error al archivar.", Severity.Error); }
+    }
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private async Task JS_DescargarArchivo(byte[] bytes, string nombre, string tipo)
+    {
+        var base64 = Convert.ToBase64String(bytes);
+        await JS.InvokeVoidAsync("nexoDescargarArchivo", nombre, tipo, base64);
+    }
+
+    private static Color ColorEstado(string estado) => estado switch
+    {
+        "FIRMADO"   => Color.Success,
+        "ARCHIVADO" => Color.Default,
+        _           => Color.Warning
+    };
+
+    private static Color ColorTipoEntidad(string tipo) => tipo switch
+    {
+        "CLIENTE"   => Color.Primary,
+        "PROVEEDOR" => Color.Secondary,
+        "EMPLEADO"  => Color.Info,
+        _           => Color.Default
+    };
+}

@@ -1,0 +1,263 @@
+﻿@page "/rrhh/asistencia"
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialog
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+
+<PageTitle>Asistencia — NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Control de Asistencia</h1>
+        </div>
+    </div>
+    <div class="d-flex align-center" style="gap:8px">
+        <VistaToggle OnCambio="StateHasChanged" />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Tv"
+                   Href="/rrhh/kiosco" Target="_blank">
+            Abrir Kiosco
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                   StartIcon="@Icons.Material.Filled.EditNote"
+                   OnClick="AbrirManual">
+            Registrar Manual
+        </MudButton>
+    </div>
+</div>
+<InfoAyuda Texto="Consulta y registra entradas y salidas del personal. Revisa el historial por empleado y turno, o agrega marcas manuales." />
+
+@* Filtros *@
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid Spacing="2" AlignItems="AlignItems.End">
+        <MudItem xs="12" sm="4">
+            <AppSelect TValue="int?" @bind-Value="_filtroEmpleadoId" Label="Empleado" Placeholder="Todos"
+                       Items="@(_empleados.Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudDatePicker @bind-Date="_desde" Label="Desde" DateFormat="dd/MM/yyyy" />
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudDatePicker @bind-Date="_hasta" Label="Hasta" DateFormat="dd/MM/yyyy" />
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth
+                       StartIcon="@Icons.Material.Filled.Search" OnClick="Cargar">
+                Buscar
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_cargando)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" Class="mb-4" />
+}
+
+@if (Preferencias.VistaListado == "lista")
+{
+<MudTable Items="_registros" Dense Hover Bordered Loading="_cargando" LoadingProgressColor="Color.Primary">
+    <HeaderContent>
+        <MudTh>Empleado</MudTh>
+        <MudTh>Fecha</MudTh>
+        <MudTh>Entrada</MudTh>
+        <MudTh>Salida 1</MudTh>
+        <MudTh>Entrada 2</MudTh>
+        <MudTh>Salida 2</MudTh>
+        <MudTh>Horas</MudTh>
+        <MudTh>Tardanza</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Empleado">@context.Empleado</MudTd>
+        <MudTd DataLabel="Fecha">@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+
+        <MudTd DataLabel="Entrada">
+            @if (context.HoraEntrada is not null)
+            {
+                <MudText>@context.HoraEntrada.Value.ToString("HH:mm")</MudText>
+                @if (context.EntradaNota is not null)
+                {
+                    <MudTooltip Text="@($"Nota: {context.EntradaNota}")">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Warning" />
+                    </MudTooltip>
+                }
+            }
+            else
+            {
+                <MudText Color="Color.Secondary">—</MudText>
+            }
+        </MudTd>
+
+        <MudTd DataLabel="Salida 1">
+            @if (context.HoraSalida is not null)
+            {
+                <MudText>@context.HoraSalida.Value.ToString("HH:mm")</MudText>
+                @if (context.SalidaNota is not null)
+                {
+                    <MudTooltip Text="@($"Nota: {context.SalidaNota}")">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Warning" />
+                    </MudTooltip>
+                }
+            }
+            else
+            {
+                <MudText Color="Color.Secondary">—</MudText>
+            }
+        </MudTd>
+
+        <MudTd DataLabel="Entrada 2">
+            @(context.HoraEntrada2 is not null ? context.HoraEntrada2.Value.ToString("HH:mm") : "—")
+        </MudTd>
+
+        <MudTd DataLabel="Salida 2">
+            @(context.HoraSalida2 is not null ? context.HoraSalida2.Value.ToString("HH:mm") : "—")
+        </MudTd>
+
+        <MudTd DataLabel="Horas">
+            @(context.HorasEfectivas.HasValue ? $"{context.HorasEfectivas:F1}h" : "—")
+        </MudTd>
+
+        <MudTd DataLabel="Tardanza">
+            @if (context.MinutosTardanza.HasValue)
+            {
+                var min = context.MinutosTardanza.Value;
+                var color = min == 0 ? Color.Success : min <= 15 ? Color.Warning : Color.Error;
+                <MudChip T="string" Size="Size.Small" Color="@color">
+                    @(min == 0 ? "A tiempo" : $"+{min} min")
+                </MudChip>
+            }
+            else
+            {
+                <MudText Color="Color.Secondary">—</MudText>
+            }
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Color="Color.Secondary">No hay registros para los filtros seleccionados.</MudText>
+    </NoRecordsContent>
+</MudTable>
+}
+else
+{
+<div class="nexo-cards-grid">
+    @foreach (var r in _registros)
+    {
+        <div class="nexo-ec nexo-ec--rrhh">
+            <div class="nexo-ec__header">
+                <span class="nexo-ec__title">@r.Empleado</span>
+                <span class="nexo-ec__badge">@r.Fecha.ToString("dd/MM/yyyy")</span>
+            </div>
+            <div class="nexo-ec__body">
+                <div class="nexo-ec__row">
+                    <span class="nexo-ec__label">Entrada</span>
+                    <span class="nexo-ec__value">@(r.HoraEntrada?.ToString("HH:mm") ?? "—")</span>
+                </div>
+                <div class="nexo-ec__row">
+                    <span class="nexo-ec__label">Salida 1</span>
+                    <span class="nexo-ec__value">@(r.HoraSalida?.ToString("HH:mm") ?? "—")</span>
+                </div>
+                @if (r.HoraEntrada2 is not null || r.HoraSalida2 is not null)
+                {
+                    <div class="nexo-ec__row">
+                        <span class="nexo-ec__label">Entrada 2</span>
+                        <span class="nexo-ec__value">@(r.HoraEntrada2?.ToString("HH:mm") ?? "—")</span>
+                    </div>
+                    <div class="nexo-ec__row">
+                        <span class="nexo-ec__label">Salida 2</span>
+                        <span class="nexo-ec__value">@(r.HoraSalida2?.ToString("HH:mm") ?? "—")</span>
+                    </div>
+                }
+                <div class="nexo-ec__row">
+                    <span class="nexo-ec__label">Horas</span>
+                    <span class="nexo-ec__value">@(r.HorasEfectivas.HasValue ? $"{r.HorasEfectivas:F1}h" : "—")</span>
+                </div>
+                @if (r.MinutosTardanza.HasValue)
+                {
+                    var min = r.MinutosTardanza.Value;
+                    var col = min == 0 ? "color:var(--mud-palette-success)" : min <= 15 ? "color:var(--mud-palette-warning)" : "color:var(--mud-palette-error)";
+                    <div class="nexo-ec__row">
+                        <span class="nexo-ec__label">Tardanza</span>
+                        <span class="nexo-ec__value" style="@col">@(min == 0 ? "A tiempo" : $"+{min} min")</span>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    @if (!_registros.Any())
+    {
+        <MudText Color="Color.Secondary">No hay registros para los filtros seleccionados.</MudText>
+    }
+</div>
+}
+
+@code {
+    List<EmpleadoItem> _empleados = [];
+    List<RegistroAsistenciaItem> _registros = [];
+    bool _cargando;
+
+    int? _filtroEmpleadoId;
+    DateTime? _desde = NexoWeb.Common.ColombiaClock.Today.AddDays(-6);
+    DateTime? _hasta = NexoWeb.Common.ColombiaClock.Today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _empleados = await Api.GetAsync<List<EmpleadoItem>>("api/rrhh/empleados") ?? [];
+        await Cargar();
+    }
+
+    async Task Cargar()
+    {
+        _cargando = true;
+        try
+        {
+            var desde = _desde.HasValue ? $"desde={_desde.Value:yyyy-MM-dd}&" : "";
+            var hasta = _hasta.HasValue ? $"hasta={_hasta.Value:yyyy-MM-dd}&" : "";
+            var emp   = _filtroEmpleadoId.HasValue ? $"empleadoId={_filtroEmpleadoId}&" : "";
+            _registros = await Api.GetAsync<List<RegistroAsistenciaItem>>(
+                $"api/rrhh/asistencia/lista?{emp}{desde}{hasta}") ?? [];
+        }
+        finally { _cargando = false; }
+    }
+
+    async Task AbrirManual()
+    {
+        var params_ = new DialogParameters<RegistrarManualAsistenciaDialog>
+        {
+            { x => x.Empleados, _empleados }
+        };
+        var opts = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+        var dialogo = await Dialog.ShowAsync<RegistrarManualAsistenciaDialog>(
+            "Registro Manual de Asistencia", params_, opts);
+        var resultado = await dialogo.Result;
+        if (resultado is { Canceled: false, Data: MarcarManualRequest req })
+        {
+            try
+            {
+                await Api.PostAsync<MarcarManualRequest, object?>(
+                    "api/rrhh/asistencia/marcar/manual", req);
+                Snackbar.Add($"Registro manual de {req.Tipo} guardado.", Severity.Warning);
+                await Cargar();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add(ex.Message, Severity.Error);
+            }
+        }
+    }
+
+    RenderFragment ChipMetodo(string? metodo, string? registradoPor) => __builder =>
+    {
+        if (metodo is null) { __builder.AddMarkupContent(0, "<span style='color:var(--mud-palette-text-secondary)'>—</span>"); return; }
+        var esManual = metodo == "MANUAL";
+        var label    = esManual ? "✎ MANUAL" : "QR";
+        var color    = esManual ? "var(--mud-palette-warning)" : "var(--mud-palette-success)";
+        var tooltip  = esManual && registradoPor is not null ? $" title=\"Registrado por: {registradoPor}\"" : "";
+        __builder.AddMarkupContent(0,
+            $"<span style='font-size:.75rem;font-weight:600;color:{color};border:1px solid {color};border-radius:12px;padding:2px 8px'{tooltip}>{label}</span>");
+    };
+}

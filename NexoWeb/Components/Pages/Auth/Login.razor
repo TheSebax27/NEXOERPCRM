@@ -1,0 +1,183 @@
+@page "/login"
+@layout AuthLayout
+@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+@inject NexoWeb.Common.Auth.AuthStateService AuthState
+@inject NavigationManager Navegacion
+
+<PageTitle>Iniciar sesión - NEXO ERP</PageTitle>
+
+<div class="right-panel">
+
+    @* Esferas decorativas de profundidad *@
+    <div class="deco-sphere s1"></div>
+    <div class="deco-sphere s2"></div>
+    <div class="deco-sphere s3"></div>
+
+    <div class="login-card">
+
+        @* ── Ícono central con ojo parpadeante ──────────── *@
+        <div class="lock-circle">
+            <svg class="blink-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+            </svg>
+        </div>
+
+        <div class="card-title">Bienvenido de nuevo</div>
+        <div class="card-subtitle">Ingresa tus credenciales para acceder.</div>
+
+        @* ── Campo Usuario ───────────────────────────────── *@
+        <div class="lf">
+            <label class="lf__label" for="lf-user">Usuario</label>
+            <div class="lf__input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="8" r="4"/>
+                    <path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>
+                </svg>
+                <input id="lf-user"
+                       type="text"
+                       autocomplete="username"
+                       placeholder="Ingresa tu usuario"
+                       @bind="_username"
+                       @bind:event="oninput"
+                       @onkeydown="HandleKeyDownAsync"
+                       disabled="@_cargando" />
+            </div>
+        </div>
+
+        @* ── Campo Contraseña ────────────────────────────── *@
+        <div class="lf">
+            <label class="lf__label" for="lf-pw">Contraseña</label>
+            <div class="lf__input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="5" y="11" width="14" height="10" rx="2"/>
+                    <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+                </svg>
+                <input id="lf-pw"
+                       type="@(_mostrarPassword ? "text" : "password")"
+                       autocomplete="current-password"
+                       placeholder="••••••••"
+                       @bind="_password"
+                       @bind:event="oninput"
+                       @onkeydown="HandleKeyDownAsync"
+                       disabled="@_cargando" />
+                <button type="button"
+                        class="lf__eye"
+                        title="@(_mostrarPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                        aria-label="@(_mostrarPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                        @onclick="() => _mostrarPassword = !_mostrarPassword">
+                    @if (_mostrarPassword)
+                    {
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                            <line x1="1" y1="1" x2="23" y2="23"/>
+                        </svg>
+                    }
+                    else
+                    {
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    }
+                </button>
+            </div>
+        </div>
+
+        @* ── Alerta de error ────────────────────────────── *@
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="login-alert" role="alert">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span>@_error</span>
+            </div>
+        }
+
+        @* ── Recordarme ──────────────────────────────────── *@
+        <div class="lf__row">
+            <label class="lf__remember">
+                <input type="checkbox" @bind="_recordarme" disabled="@_cargando" />
+                <span class="lf__checkbox">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                </span>
+                Recordarme
+            </label>
+        </div>
+
+        @* ── Botón de ingreso ────────────────────────────── *@
+        <button type="button"
+                class="btn-login"
+                disabled="@_cargando"
+                @onclick="EntrarAsync">
+            @if (_cargando)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Inherit" />
+                <span>Ingresando...</span>
+            }
+            else
+            {
+                <span>Iniciar sesión</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px;">
+                    <polyline points="9 18 15 12 9 6"/>
+                </svg>
+            }
+        </button>
+
+        @* ── Indicador de mejoras continuas ─────────────── *@
+        <div class="login-updates">
+            <span class="login-updates__dot"></span>
+            <span>Mejorando e implementando nuevas funcionalidades constantemente</span>
+        </div>
+
+    </div>
+</div>
+
+@code {
+    private string _username = "";
+    private string _password = "";
+    private bool _mostrarPassword;
+    private bool _recordarme;
+    private string? _error;
+    private bool _cargando;
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !_cargando)
+            await EntrarAsync();
+    }
+
+    private async Task EntrarAsync()
+    {
+        _error = null;
+        _cargando = true;
+
+        try
+        {
+            var respuesta = await ApiClient.LoginAsync(new NexoWeb.Common.Dtos.LoginRequest(_username, _password));
+
+            if (respuesta is null)
+            {
+                _error = "Usuario o contraseña incorrectos.";
+                return;
+            }
+
+            await AuthState.IniciarSesionAsync(respuesta, _recordarme);
+            Navegacion.NavigateTo("/", forceLoad: false);
+        }
+        catch (Exception)
+        {
+            _error = "No se pudo conectar con el servidor. Verifique su conexión de red.";
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+}

@@ -1,0 +1,233 @@
+﻿@page "/catalogo/bodegas"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Bodegas - NEXO</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-4">
+    <MudText Typo="Typo.h5">Bodegas</MudText>
+    <VistaToggle OnCambio="StateHasChanged" />
+</div>
+<InfoAyuda Texto="Las bodegas almacenan el inventario f�sico (o virtual, ej. para tr�nsito) dentro de un Centro de Costo. Cada movimiento de inventario queda asociado a una bodega espec�fica." />
+
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="6" md="4">
+        <AppSelect TValue="int?" Value="_filtroCentroCostoId" ValueChanged="OnFiltroCambiadoAsync"
+                   Label="Filtrar por Centro de Costo"
+                   Items="@(_centrosCosto.Select(centro => new AppSelectItem<int?>(centro.Nombre, (int?)centro.CentroCostoID)))" />
+    </MudItem>
+</MudGrid>
+
+<MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="AbrirCreacionAsync"
+           StartIcon="@Icons.Material.Filled.Add" Class="mb-4"
+           Disabled="_centrosCosto.Count == 0">
+    Nueva Bodega
+</MudButton>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar las bodegas: @_errorCarga</MudAlert>
+}
+@if (_cargando)
+{
+    <MudProgressCircular Indeterminate="true" Class="ma-4" />
+}
+else if (_bodegas.Count == 0)
+{
+    <MudText>No hay bodegas registradas para este filtro.</MudText>
+}
+else if (Preferencias.VistaListado == "tarjetas")
+{
+    <div class="nexo-card-grid">
+        @foreach (var bodega in _bodegas)
+        {
+            <div class="nexo-item-card">
+                <div class="d-flex align-center justify-space-between">
+                    <div class="nexo-item-card__title">@bodega.Nombre</div>
+                    <MudChip T="string" Color="@(bodega.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                        @(bodega.Estado ? "Activa" : "Inactiva")
+                    </MudChip>
+                </div>
+                <div class="nexo-item-card__sub">@bodega.CentroCosto</div>
+                <div class="nexo-item-card__row"><span>Tipo</span><strong>@bodega.TipoBodega</strong></div>
+                <div class="nexo-item-card__row"><span>Virtual</span><strong>@(bodega.EsVirtual ? "Si" : "No")</strong></div>
+                <div class="nexo-item-card__actions">
+                    <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(bodega))">Editar</MudButton>
+                    @if (bodega.Estado)
+                    {
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => DesactivarAsync(bodega))">Desactivar</MudButton>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <MudTable Items="_bodegas" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Centro de Costo</MudTh>
+            <MudTh>Tipo</MudTh>
+            <MudTh>Virtual</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Accion</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+            <MudTd DataLabel="Centro de Costo">@context.CentroCosto</MudTd>
+            <MudTd DataLabel="Tipo">@context.TipoBodega</MudTd>
+            <MudTd DataLabel="Virtual">@(context.EsVirtual ? "Si" : "No")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Color="@(context.Estado ? Color.Success : Color.Error)" Size="Size.Small">
+                    @(context.Estado ? "Activa" : "Inactiva")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Accion">
+                <MudButton Size="Size.Small" OnClick="@(() => AbrirEdicionAsync(context))">
+                    Editar
+                </MudButton>
+                @if (context.Estado)
+                {
+                    <MudButton Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => DesactivarAsync(context))">
+                        Desactivar
+                    </MudButton>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No hay bodegas registradas para este filtro.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private List<BodegaItem> _bodegas = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private int? _filtroCentroCostoId;
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _centrosCosto = await ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo") ?? new();
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+            _cargando = false;
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        _errorCarga = null;
+
+        try
+        {
+            var ruta = _filtroCentroCostoId.HasValue
+                ? $"api/catalogo/bodegas?centroCostoId={_filtroCentroCostoId}"
+                : "api/catalogo/bodegas";
+
+            _bodegas = await ApiClient.GetAsync<List<BodegaItem>>(ruta) ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task OnFiltroCambiadoAsync(int? nuevoValor)
+    {
+        _filtroCentroCostoId = nuevoValor;
+        await CargarAsync();
+    }
+
+    private async Task AbrirCreacionAsync()
+    {
+        var parametros = new DialogParameters<BodegaDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto }
+        };
+
+        var dialogo = await DialogService.ShowAsync<BodegaDialog>("Nueva Bodega", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (CrearBodegaRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearBodegaRequest, object?>("api/catalogo/bodegas", request);
+            Snackbar.Add("Bodega creada correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirEdicionAsync(BodegaItem bodega)
+    {
+        var parametros = new DialogParameters<BodegaDialog>
+        {
+            { x => x.CentrosCosto, _centrosCosto },
+            { x => x.Bodega, bodega }
+        };
+
+        var dialogo = await DialogService.ShowAsync<BodegaDialog>("Editar Bodega", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (ActualizarBodegaRequest)resultado.Data!;
+            await ApiClient.PutAsync<ActualizarBodegaRequest, object?>($"api/catalogo/bodegas/{bodega.BodegaID}", request);
+            Snackbar.Add("Bodega actualizada correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DesactivarAsync(BodegaItem bodega)
+    {
+        var confirmado = await DialogService.ShowMessageBox(
+            "Confirmar",
+            $"�Desactivar la bodega '{bodega.Nombre}'? No podra usarse en nuevos movimientos de inventario.",
+            yesText: "Desactivar", cancelText: "Cancelar");
+
+        if (confirmado != true)
+            return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/catalogo/bodegas/{bodega.BodegaID}");
+            Snackbar.Add("Bodega desactivada.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

@@ -1,0 +1,103 @@
+@* Campo de dinero: se enlaza a un decimal, pero se ve como texto con separador
+   de miles (punto) mientras escribes, prefijado por $. El $ y los puntos son
+   solo presentacion -- el valor que llega por ValueChanged es un decimal limpio,
+   nunca se guarda el simbolo ni el formato en la base de datos. *@
+<MudTextField T="string" Value="_texto" ValueChanged="OnTextoCambiadoAsync"
+              Label="@Label" HelperText="@HelperText"
+              Adornment="Adornment.Start" AdornmentText="$"
+              Immediate="true" Required="@Required" RequiredError="@RequiredError"
+              Class="@Class" Disabled="@Disabled" />
+
+@code {
+    [Parameter] public decimal Value { get; set; }
+    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? HelperText { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool Required { get; set; }
+    [Parameter] public string? RequiredError { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private string _texto = "";
+    private decimal _valorExterno;
+
+    protected override void OnInitialized()
+    {
+        _valorExterno = Value;
+        _texto = FormatearCompleto(Value);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Value != _valorExterno)
+        {
+            _valorExterno = Value;
+            _texto = FormatearCompleto(Value);
+        }
+    }
+
+    private async Task OnTextoCambiadoAsync(string nuevoTexto)
+    {
+        var (textoFormateado, valor) = ReformatearEnVivo(nuevoTexto);
+        _texto = textoFormateado;
+        _valorExterno = valor;
+        Value = valor;
+        await ValueChanged.InvokeAsync(valor);
+    }
+
+    private static string FormatearCompleto(decimal valor)
+    {
+        if (valor == 0) return "";
+
+        var absoluto = Math.Abs(valor);
+        var parteEntera = ((long)Math.Truncate(absoluto)).ToString();
+        var conPuntos = InsertarPuntosMiles(parteEntera);
+        var signo = valor < 0 ? "-" : "";
+
+        var decimales = absoluto - Math.Truncate(absoluto);
+        if (decimales == 0) return signo + conPuntos;
+
+        var centavos = (int)Math.Round(decimales * 100);
+        return $"{signo}{conPuntos},{centavos:D2}";
+    }
+
+    private static (string texto, decimal valor) ReformatearEnVivo(string entrada)
+    {
+        if (string.IsNullOrWhiteSpace(entrada))
+            return ("", 0m);
+
+        // Solo digitos y como mucho una coma decimal (el punto lo ponemos nosotros)
+        var soloValidos = new string(entrada.Where(c => char.IsDigit(c) || c == ',').ToArray());
+
+        var tieneComa = soloValidos.Contains(',');
+        var partes = soloValidos.Split(',', 2);
+
+        var parteEntera = partes[0].TrimStart('0');
+        var parteDecimal = partes.Length > 1 ? partes[1] : null;
+        if (parteDecimal is { Length: > 2 })
+            parteDecimal = parteDecimal[..2];
+
+        var conPuntos = InsertarPuntosMiles(parteEntera);
+
+        var texto = tieneComa ? $"{conPuntos},{parteDecimal}" : conPuntos;
+
+        var parteEnteraParaValor = parteEntera.Length == 0 ? "0" : parteEntera;
+        var decimalStr = parteDecimal is null ? parteEnteraParaValor : $"{parteEnteraParaValor}.{parteDecimal.PadRight(2, '0')}";
+        decimal.TryParse(decimalStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var valor);
+
+        return (texto, valor);
+    }
+
+    private static string InsertarPuntosMiles(string digitos)
+    {
+        if (digitos.Length == 0) return "";
+
+        var reversa = new string(digitos.Reverse().ToArray());
+        var grupos = new List<string>();
+        for (var i = 0; i < reversa.Length; i += 3)
+            grupos.Add(new string(reversa.Skip(i).Take(3).Reverse().ToArray()));
+
+        grupos.Reverse();
+        return string.Join(".", grupos);
+    }
+}

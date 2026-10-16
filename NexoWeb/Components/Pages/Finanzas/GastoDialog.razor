@@ -1,0 +1,153 @@
+﻿@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="6">
+                <MudDatePicker @bind-Date="_fecha" Label="Fecha *" Required="true"
+                               Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudAutocomplete T="string" Value="_categoria"
+                                 ValueChanged="@(v => _categoria = v ?? "")"
+                                 Label="Categoría *" Variant="Variant.Outlined"
+                                 Placeholder="Selecciona o escribe una nueva..."
+                                 SearchFunc="BuscarCategoria"
+                                 Strict="false" CoerceText="true" CoerceValue="false"
+                                 ResetValueOnEmptyText="false" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_descripcion" Label="Descripción *" Required="true"
+                              Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudNumericField T="decimal" @bind-Value="_monto" Label="Monto *" Required="true"
+                                 Format="N2" Min="0" Variant="Variant.Outlined"
+                                 Adornment="Adornment.Start" AdornmentText="$" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="int?" @bind-Value="_centroCostoId" Label="Centro de Costo"
+                           Variant="Variant.Outlined">
+                    <MudSelectItem T="int?" Value="@((int?)null)">🏢 Empresa en general</MudSelectItem>
+                    @foreach (var cc in CentrosCosto)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)cc.CentroCostoID)">@cc.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudAutocomplete T="string?" @bind-Value="_proveedor"
+                                 Label="Proveedor / Beneficiario" Variant="Variant.Outlined"
+                                 Placeholder="Busca por nombre o NIT..."
+                                 SearchFunc="BuscarProveedor"
+                                 Strict="false" CoerceText="false" CoerceValue="false"
+                                 ResetValueOnEmptyText="true" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_comprobante" Label="N° Comprobante / Factura"
+                              Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_notas" Label="Notas" Lines="2"
+                              Variant="Variant.Outlined" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   Disabled="@(!PuedeGuardar)" OnClick="Guardar">
+            @(EsEdicion ? "Guardar cambios" : "Registrar gasto")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public GastoItem? Gasto { get; set; }
+    [Parameter] public List<CentroCostoItem> CentrosCosto { get; set; } = new();
+    [Parameter] public IReadOnlyList<string> CategoriasExistentes { get; set; } = [];
+
+    private bool EsEdicion => Gasto is not null;
+
+    private DateTime? _fecha = NexoWeb.Common.ColombiaClock.Today;
+    private string   _categoria    = "";
+    private string   _descripcion  = "";
+    private decimal  _monto;
+    private int?     _centroCostoId;
+    private string?  _proveedor;
+    private string?  _comprobante;
+    private string?  _notas;
+    private List<ProveedorItem> _proveedores = new();
+
+    private bool PuedeGuardar =>
+        _fecha.HasValue && !string.IsNullOrWhiteSpace(_categoria) &&
+        !string.IsNullOrWhiteSpace(_descripcion) && _monto > 0;
+
+    private static readonly string[] CategoriasDefecto =
+    {
+        "Eventos", "Viáticos y Transporte", "Publicidad y Marketing",
+        "Servicios y Suscripciones", "Mantenimiento", "Oficina y Suministros",
+        "Nómina y RRHH", "Impuestos y Legales", "Tecnología", "Otro"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _proveedores = await ApiClient.GetAsync<List<ProveedorItem>>("api/catalogo/proveedores") ?? new(); }
+        catch { /* mejor esfuerzo */ }
+    }
+
+    private bool _inicializado;
+
+    protected override void OnParametersSet()
+    {
+        if (Gasto is not null && !_inicializado)
+        {
+            _inicializado  = true;
+            _fecha         = Gasto.Fecha;
+            _categoria     = Gasto.Categoria;
+            _descripcion   = Gasto.Descripcion;
+            _monto         = Gasto.Monto;
+            _centroCostoId = Gasto.CentroCostoID;
+            _proveedor     = Gasto.Proveedor;
+            _comprobante   = Gasto.Comprobante;
+            _notas         = Gasto.Notas;
+        }
+    }
+
+    private Task<IEnumerable<string>> BuscarCategoria(string? texto, CancellationToken _)
+    {
+        var todas = CategoriasDefecto.Concat(CategoriasExistentes)
+                        .Distinct(StringComparer.OrdinalIgnoreCase);
+        IEnumerable<string> resultado = string.IsNullOrWhiteSpace(texto)
+            ? todas
+            : todas.Where(c => c.Contains(texto, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(resultado);
+    }
+
+    private Task<IEnumerable<string?>> BuscarProveedor(string? texto, CancellationToken _)
+    {
+        IEnumerable<string?> resultado = string.IsNullOrWhiteSpace(texto)
+            ? _proveedores.Select(p => (string?)p.RazonSocial).Take(20)
+            : _proveedores
+                .Where(p => p.RazonSocial.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                         || p.NIT.Contains(texto, StringComparison.OrdinalIgnoreCase))
+                .Select(p => (string?)p.RazonSocial)
+                .Take(20);
+        return Task.FromResult(resultado);
+    }
+
+    private void Guardar()
+    {
+        object resultado = EsEdicion
+            ? new ActualizarGastoRequest(_fecha!.Value, _categoria, _descripcion, _monto,
+                _proveedor?.Trim(), _comprobante?.Trim(), _centroCostoId, _notas?.Trim())
+            : new CrearGastoRequest(_fecha!.Value, _categoria, _descripcion, _monto,
+                _proveedor?.Trim(), _comprobante?.Trim(), _centroCostoId, _notas?.Trim());
+
+        MudDialog.Close(DialogResult.Ok(resultado));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

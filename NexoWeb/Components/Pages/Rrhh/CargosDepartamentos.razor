@@ -1,0 +1,216 @@
+﻿@page "/rrhh/cargos"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Cargos y Departamentos - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Recursos Humanos</p>
+            <h1 class="nexo-page-hero__title">Cargos y Departamentos</h1>
+        </div>
+    </div>
+</div>
+<InfoAyuda Texto="Define la estructura organizacional: departamentos y cargos que se asignan al crear o editar empleados en el sistema." />
+
+<MudPaper Class="pa-4 mb-4" Elevation="0" Style="border:1px solid var(--mud-palette-lines-default); border-radius:8px">
+    <div style="display:flex; align-items:center; gap:8px">
+        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Secondary" />
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Estructura organizacional: cada Cargo pertenece a un Departamento. Se usa al crear o editar un Empleado.
+        </MudText>
+    </div>
+</MudPaper>
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudo cargar: @_errorCarga</MudAlert>
+}
+
+<MudTabs Class="nexo-bi-tabs">
+    <MudTabPanel Text="Departamentos">
+        <MudForm @ref="_formDepartamento" Class="mb-3">
+            <div class="d-flex align-center flex-wrap mb-2" style="gap: 0.5rem;">
+                <MudTextField @bind-Value="_nombreDepartamento" Label="Nombre del Departamento" Style="flex: 1;" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CrearDepartamentoAsync">Agregar</MudButton>
+            </div>
+        </MudForm>
+
+        @if (_cargando)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else
+        {
+            <MudTable Items="_departamentos" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>Cargos activos</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Accion</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+                    <MudTd DataLabel="Cargos activos">@context.TotalCargos</MudTd>
+                    <MudTd DataLabel="Estado">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.Estado ? Color.Success : Color.Error)">
+                            @(context.Estado ? "Activo" : "Inactivo")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Accion">
+                        <MudButton Size="Size.Small" OnClick="@(() => ToggleEstadoDepartamentoAsync(context))">
+                            @(context.Estado ? "Desactivar" : "Activar")
+                        </MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Cargos">
+        <MudForm @ref="_formCargo" Class="mb-3">
+            <div class="d-flex align-center flex-wrap mb-2" style="gap: 0.5rem;">
+                <MudTextField @bind-Value="_nombreCargo" Label="Nombre del Cargo" Style="flex: 2;" />
+                <AppSelect TValue="int?" @bind-Value="_departamentoIdCargo" Label="Departamento (opcional)" Style="flex: 1;"
+                           Items="@(_departamentos.Where(d => d.Estado).Select(d => new AppSelectItem<int?>(d.Nombre, (int?)d.DepartamentoID)))" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CrearCargoAsync">Agregar</MudButton>
+            </div>
+        </MudForm>
+
+        @if (_cargando)
+        {
+            <MudProgressCircular Indeterminate="true" Class="ma-4" />
+        }
+        else
+        {
+            <MudTable Items="_cargos" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>Departamento</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Accion</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+                    <MudTd DataLabel="Departamento">@(context.Departamento ?? "-")</MudTd>
+                    <MudTd DataLabel="Estado">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.Estado ? Color.Success : Color.Error)">
+                            @(context.Estado ? "Activo" : "Inactivo")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Accion">
+                        <MudButton Size="Size.Small" OnClick="@(() => ToggleEstadoCargoAsync(context))">
+                            @(context.Estado ? "Desactivar" : "Activar")
+                        </MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private MudForm _formDepartamento = default!;
+    private MudForm _formCargo = default!;
+    private List<DepartamentoItem> _departamentos = new();
+    private List<CargoItem> _cargos = new();
+    private bool _cargando = true;
+    private string? _errorCarga;
+
+    private string _nombreDepartamento = string.Empty;
+    private string _nombreCargo = string.Empty;
+    private int? _departamentoIdCargo;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var tareaDepartamentos = ApiClient.GetAsync<List<DepartamentoItem>>("api/rrhh/departamentos");
+            var tareaCargos = ApiClient.GetAsync<List<CargoItem>>("api/rrhh/cargos");
+
+            await Task.WhenAll(tareaDepartamentos, tareaCargos);
+
+            _departamentos = await tareaDepartamentos ?? new();
+            _cargos = await tareaCargos ?? new();
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task CrearDepartamentoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombreDepartamento))
+            return;
+
+        try
+        {
+            await ApiClient.PostAsync<CrearDepartamentoRequest, object?>("api/rrhh/departamentos", new CrearDepartamentoRequest(_nombreDepartamento.Trim()));
+            _nombreDepartamento = string.Empty;
+            Snackbar.Add("Departamento creado.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ToggleEstadoDepartamentoAsync(DepartamentoItem d)
+    {
+        try
+        {
+            await ApiClient.PutAsync<ActualizarDepartamentoRequest, object?>(
+                $"api/rrhh/departamentos/{d.DepartamentoID}", new ActualizarDepartamentoRequest(d.Nombre, !d.Estado));
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task CrearCargoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombreCargo))
+            return;
+
+        try
+        {
+            await ApiClient.PostAsync<CrearCargoRequest, object?>("api/rrhh/cargos", new CrearCargoRequest(_nombreCargo.Trim(), _departamentoIdCargo));
+            _nombreCargo = string.Empty;
+            _departamentoIdCargo = null;
+            Snackbar.Add("Cargo creado.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ToggleEstadoCargoAsync(CargoItem c)
+    {
+        try
+        {
+            await ApiClient.PutAsync<ActualizarCargoRequest, object?>(
+                $"api/rrhh/cargos/{c.CargoID}", new ActualizarCargoRequest(c.Nombre, c.DepartamentoID, !c.Estado));
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

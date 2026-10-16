@@ -1,0 +1,61 @@
+﻿@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" />
+            Historial — @NombreMaquina
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTable Items="Historial" Dense Hover Bordered>
+            <HeaderContent>
+                <MudTh>Fecha</MudTh>
+                <MudTh>Tipo</MudTh>
+                <MudTh>Descripción</MudTh>
+                <MudTh>Técnico</MudTh>
+                <MudTh>Costo</MudTh>
+                <MudTh>Horas</MudTh>
+                <MudTh>Próx. mant.</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.FechaRealizado.ToString("dd/MM/yyyy")</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@ChipColor(context.TipoMantenimiento)">
+                        @context.TipoMantenimiento
+                    </MudChip>
+                </MudTd>
+                <MudTd>@context.Descripcion</MudTd>
+                <MudTd>@(context.Tecnico ?? "—")</MudTd>
+                <MudTd>@(context.Costo.HasValue ? $"${context.Costo:0.00}" : "—")</MudTd>
+                <MudTd>@(context.HorasFueraServicio.HasValue ? $"{context.HorasFueraServicio:0.#} h" : "—")</MudTd>
+                <MudTd>
+                    @if (context.ProximoMantenimiento.HasValue)
+                    {
+                        var vencido = context.ProximoMantenimiento.Value < DateOnly.FromDateTime(NexoWeb.Common.ColombiaClock.Today);
+                        <MudChip T="string" Size="Size.Small" Color="@(vencido ? Color.Error : Color.Success)">
+                            @context.ProximoMantenimiento.Value.ToString("dd/MM/yyyy")
+                        </MudChip>
+                    }
+                    else { <span style="opacity:.4">—</span> }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Close())">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string NombreMaquina { get; set; } = "";
+    [Parameter] public List<MantenimientoItem> Historial { get; set; } = [];
+
+    static Color ChipColor(string tipo) => tipo switch
+    {
+        "Correctivo"  => Color.Error,
+        "Predictivo"  => Color.Info,
+        _             => Color.Success
+    };
+}

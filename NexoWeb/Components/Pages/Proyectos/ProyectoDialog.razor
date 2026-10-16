@@ -1,0 +1,100 @@
+﻿@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="@this">
+            <MudTextField @bind-Value="_nombre" Label="Nombre del Proyecto" Required="true"
+                          RequiredError="El nombre es obligatorio" Class="mb-3" />
+
+            <ClienteAutocomplete Value="_clienteSeleccionado"
+                                 ValueChanged="@(c => { _clienteSeleccionado = c; _clienteId = c?.ClienteID; })"
+                                 Label="Cliente" />
+
+            <AppSelect TValue="int?" @bind-Value="_centroCostoId" Label="Centro de Costo" Class="mb-3"
+                       Items="@(CentrosCosto.Select(cc => new AppSelectItem<int?>(cc.Nombre, (int?)cc.CentroCostoID)))" />
+
+            <MudTextField @bind-Value="_descripcion" Label="Descripcion" Lines="2" Class="mb-3" />
+
+            <MudDatePicker @bind-Date="_fechaInicio" Label="Fecha de Inicio" Required="true" Class="mb-3" />
+            <MudDatePicker @bind-Date="_fechaFin" Label="Fecha Estimada de Fin" Class="mb-3" />
+
+            <MudNumericField T="decimal" @bind-Value="_presupuesto" Label="Presupuesto ($)" Class="mb-3" />
+
+            <AppSelect TValue="string" @bind-Value="_prioridad" Label="Prioridad" Class="mb-3"
+                       Items="@(new AppSelectItem<string>[]{ new("Alta","ALTA"), new("Media","MEDIA"), new("Baja","BAJA") })" />
+
+            @if (EsEdicion)
+            {
+                <AppSelect TValue="string" @bind-Value="_estado" Label="Estado" Class="mb-3"
+                           Items="@(new AppSelectItem<string>[]{ new("Planeado","PLANEADO"), new("En Curso","EN_CURSO"), new("Finalizado","FINALIZADO"), new("Cancelado","CANCELADO") })" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync">
+            @(EsEdicion ? "Guardar Cambios" : "Crear")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public ProyectoItem? Proyecto { get; set; }
+    [Parameter] public List<CentroCostoItem> CentrosCosto { get; set; } = new();
+
+    private bool EsEdicion => Proyecto is not null;
+
+    private MudForm _form = default!;
+    private string _nombre = string.Empty;
+    private ClienteItem? _clienteSeleccionado;
+    private int? _clienteId;
+    private int? _centroCostoId;
+    private string? _descripcion;
+    private DateTime? _fechaInicio = NexoWeb.Common.ColombiaClock.Today;
+    private DateTime? _fechaFin;
+    private decimal _presupuesto;
+    private string _estado = "PLANEADO";
+    private string _prioridad = "MEDIA";
+
+    protected override void OnInitialized()
+    {
+        if (Proyecto is not null)
+        {
+            _nombre = Proyecto.Nombre;
+            _clienteId = Proyecto.ClienteID;
+            if (Proyecto.ClienteID.HasValue && Proyecto.Cliente is not null)
+                _clienteSeleccionado = new ClienteItem(Proyecto.ClienteID.Value, "", Proyecto.Cliente, null, null, null, null, null, true, null, null, null, null, null, 0, null, null, null, null, null, null, null, null, null, null, null);
+            _centroCostoId = Proyecto.CentroCostoID;
+            _descripcion = Proyecto.Descripcion;
+            _fechaInicio = Proyecto.FechaInicio;
+            _fechaFin = Proyecto.FechaFin;
+            _presupuesto = Proyecto.Presupuesto;
+            _estado = Proyecto.Estado;
+            _prioridad = Proyecto.Prioridad;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid || _fechaInicio is null)
+            return;
+
+        if (EsEdicion)
+        {
+            var request = new ActualizarProyectoRequest(
+                _nombre, _clienteId, _centroCostoId, _descripcion, _fechaInicio.Value, _fechaFin, _estado, _presupuesto, _prioridad);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+        else
+        {
+            var request = new CrearProyectoRequest(
+                _nombre, _clienteId, _centroCostoId, _descripcion, _fechaInicio.Value, _fechaFin, _presupuesto, _prioridad);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

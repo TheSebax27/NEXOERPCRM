@@ -1,0 +1,86 @@
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="@this">
+            @if (!EsEdicion)
+            {
+                <MudTextField @bind-Value="_codigo" Label="Codigo" Required="true"
+                              RequiredError="El codigo es obligatorio" Class="mb-3" />
+
+                <AppSelect TValue="string" @bind-Value="_tipoCentro" Label="Tipo de Centro" Class="mb-3"
+                           Items="@(new AppSelectItem<string>[]{ new("Planta Central","PLANTA_CENTRAL"), new("Sucursal","SUCURSAL"), new("Franquicia","FRANQUICIA"), new("Punto de Venta","PUNTO_VENTA") })" />
+            }
+
+            <MudTextField @bind-Value="_nombre" Label="Nombre" Required="true"
+                          RequiredError="El nombre es obligatorio" Class="mb-3" />
+
+            <MudTextField @bind-Value="_direccion" Label="Direccion" Class="mb-3" />
+
+            <MudTextField @bind-Value="_telefono" Label="Telefono" Class="mb-3" />
+
+            @if (EsEdicion)
+            {
+                <MudSwitch T="bool" @bind-Value="_estado" Color="Color.Success" Label="Activo" Class="mb-3" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync">
+            @(EsEdicion ? "Guardar Cambios" : "Crear")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public CentroCostoItem? CentroCosto { get; set; }
+
+    private bool EsEdicion => CentroCosto is not null;
+
+    private MudForm _form = default!;
+    private string _codigo = string.Empty;
+    private string _tipoCentro = "SUCURSAL";
+    private string _nombre = string.Empty;
+    private string? _direccion;
+    private string? _telefono;
+    private bool _estado = true;
+
+    protected override void OnInitialized()
+    {
+        if (CentroCosto is not null)
+        {
+            _nombre    = CentroCosto.Nombre;
+            _direccion = CentroCosto.Direccion;
+            _estado    = CentroCosto.Estado;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid)
+            return;
+
+        if (EsEdicion)
+        {
+            // Visions fields are managed from Integracion Visions page — preserve them unchanged.
+            var request = new ActualizarCentroCostoRequest(
+                _nombre, _direccion, _telefono, _estado,
+                CentroCosto!.TieneVisions,
+                CentroCosto.IdentificadorClienteVisions,
+                CentroCosto.BodegaVentaVisionsID,
+                CentroCosto.PrefijosDocumentoVentaVisions);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+        else
+        {
+            var request = new CrearCentroCostoRequest(_codigo, _nombre, _tipoCentro, _direccion, _telefono);
+            MudDialog.Close(DialogResult.Ok(request));
+        }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

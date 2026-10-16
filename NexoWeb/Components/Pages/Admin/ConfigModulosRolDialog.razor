@@ -1,0 +1,238 @@
+﻿@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<MudDialog Style="min-width:min(540px,90vw); max-width:min(660px,95vw)">
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:8px">
+            <MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Módulos — @RolNombre</MudText>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        @if (_cargando)
+        {
+            <div class="d-flex justify-center pa-6">
+                <MudProgressCircular Indeterminate Color="Color.Primary" />
+            </div>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-4 d-block">
+                Activa o desactiva qué secciones y submódulos son visibles en el menú para este rol.
+                El switch de la sección activa o desactiva todos sus submódulos a la vez.
+            </MudText>
+
+            @foreach (var seccion in _secciones)
+            {
+                var modulosSeccion = GetModulosSeccion(seccion.Key);
+                if (modulosSeccion.Count == 0) continue;
+
+                var leaves = modulosSeccion.Where(m => m.Codigo.Contains('.')).ToList();
+                var todasActivas = leaves.Count > 0
+                    ? leaves.All(m => _pending.TryGetValue(m.ModuloID, out var v) ? v : (m.Visible ?? true))
+                    : false;
+
+                <div class="cmd-seccion">
+                    @* Cabecera de sección con toggle-all *@
+                    <div class="cmd-seccion__header">
+                        <MudIcon Icon="@seccion.Icon" Size="Size.Small" Class="cmd-seccion__icon" />
+                        <span class="cmd-seccion__label">@seccion.Label</span>
+                        <MudSpacer />
+                        @if (leaves.Count > 1)
+                        {
+                            <MudTooltip Text="@(todasActivas ? "Desactivar todos" : "Activar todos")">
+                                <MudSwitch T="bool"
+                                           Value="@todasActivas"
+                                           ValueChanged="@(async val => await ToggleSeccionAsync(seccion.Key, val, modulosSeccion))"
+                                           Color="Color.Primary"
+                                           Size="Size.Small" />
+                            </MudTooltip>
+                        }
+                    </div>
+
+                    @* Filas de módulos *@
+                    @foreach (var m in modulosSeccion.OrderBy(x => x.Nombre))
+                    {
+                        var activo = _pending.TryGetValue(m.ModuloID, out var vis) ? vis : (m.Visible ?? true);
+                        var mLocal = m;
+                        var esHoja = m.Codigo.Contains('.');
+
+                        @if (!esHoja) continue;  @* skip padres de DB — su estado se controla por cascade *@
+
+                        <div class="cmd-mod @(esHoja ? "cmd-mod--leaf" : "")">
+                            <MudSwitch T="bool"
+                                       Value="@activo"
+                                       ValueChanged="@(async val => await CambiarModuloAsync(mLocal, val))"
+                                       Color="Color.Primary"
+                                       Size="Size.Small" />
+                            <span class="cmd-mod__nombre @(activo ? "" : "cmd-mod__nombre--off")">@m.Nombre</span>
+                            @if (!esHoja)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-auto">
+                                    grupo
+                                </MudChip>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cerrar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="Guardar" Disabled="@_guardando">
+            @if (_guardando)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate Class="mr-2" />
+                <span>Guardando...</span>
+            }
+            else
+            {
+                <span>Guardar cambios</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int RolId { get; set; }
+    [Parameter] public string RolNombre { get; set; } = "";
+
+    private List<ModuloVisibilidadItem> _modulos = [];
+    private Dictionary<int, bool> _pending = [];
+    private bool _cargando = true;
+    private bool _guardando;
+
+    // â”€â”€ Definición de secciones alineadas al nav lateral â”€â”€â”€â”€â”€â”€â”€â”€
+    private record SeccionNav(string Key, string Label, string Icon, Func<string, bool> Match);
+
+    private static readonly List<SeccionNav> _secciones =
+    [
+        new("ventas", "Comercial", Icons.Material.Outlined.PointOfSale, code =>
+            code == "OPERACIONES"              ||
+            code == "OPERACIONES.FACTURACION"  ||
+            code == "OPERACIONES.DESPACHOS"    ||
+            code == "CRM.COTIZACIONES"         ||
+            code == "CRM.CLIENTES"             ||
+            code == "FINANZAS"                 ||
+            code == "FINANZAS.GASTOS"),
+
+        new("crm", "CRM & Marketing", Icons.Material.Outlined.Groups, code =>
+            (code == "CRM" || code.StartsWith("CRM.") ||
+             code == "FORMULARIOS" || code.StartsWith("FORMULARIOS.") ||
+             code == "SOPORTE"     || code.StartsWith("SOPORTE.")) &&
+            code != "CRM.COTIZACIONES" &&
+            code != "CRM.CLIENTES"),
+
+        new("catalogo", "Catálogo", Icons.Material.Outlined.Category, code =>
+            code == "CATALOGO" || code.StartsWith("CATALOGO.")),
+
+        new("produccion", "Producción", Icons.Material.Outlined.PrecisionManufacturing, code =>
+            code == "PRODUCCION" || code.StartsWith("PRODUCCION.")),
+
+        new("inventario", "Inventario", Icons.Material.Outlined.Warehouse, code =>
+            code == "INVENTARIO" || code.StartsWith("INVENTARIO.")),
+
+        new("planificacion", "Planificación", Icons.Material.Outlined.CalendarMonth, code =>
+            code == "PLANIFICACION" || code.StartsWith("PLANIFICACION.")),
+
+        new("documentos", "Herramientas", Icons.Material.Outlined.Build, code =>
+            code == "DOCUMENTOS" || code.StartsWith("DOCUMENTOS.")),
+
+        new("rrhh", "RRHH", Icons.Material.Outlined.Badge, code =>
+            (code == "RRHH" || code.StartsWith("RRHH.")) &&
+            code != "RRHH.USUARIOS"),
+
+        new("admin", "Administración", Icons.Material.Outlined.AdminPanelSettings, code =>
+            code == "RRHH.USUARIOS" || code.StartsWith("ADMIN.")),
+    ];
+
+    private List<ModuloVisibilidadItem> GetModulosSeccion(string key) =>
+        _secciones.FirstOrDefault(s => s.Key == key) is { } sec
+            ? _modulos.Where(m => sec.Match(m.Codigo)).ToList()
+            : [];
+
+    // â”€â”€ Módulos hijos directos (en DB) de un módulo padre â”€â”€â”€â”€â”€â”€â”€
+    private List<ModuloVisibilidadItem> HijosDB(ModuloVisibilidadItem padre) =>
+        _modulos.Where(m => m.Codigo.StartsWith(padre.Codigo + ".")).ToList();
+
+    // â”€â”€ Toggle individual con cascade a hijos DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    private async Task CambiarModuloAsync(ModuloVisibilidadItem m, bool valor)
+    {
+        if (valor && m.Codigo.StartsWith("RRHH"))
+        {
+            var ok = await DialogService.ShowMessageBox(
+                "Módulo sensible — RRHH",
+                $"'{m.Nombre}' pertenece a Recursos Humanos, un área con información confidencial. " +
+                $"¿Confirmas habilitarlo para el rol '{RolNombre}'?",
+                yesText: "Sí, habilitar", cancelText: "Cancelar");
+            if (ok != true) { StateHasChanged(); return; }
+        }
+
+        _pending[m.ModuloID] = valor;
+
+        // Cascade a hijos DB (si el módulo actúa como padre)
+        foreach (var hijo in HijosDB(m))
+            _pending[hijo.ModuloID] = valor;
+
+        StateHasChanged();
+    }
+
+    // â”€â”€ Toggle de todos los módulos de una sección â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    private async Task ToggleSeccionAsync(string key, bool valor, List<ModuloVisibilidadItem> modulos)
+    {
+        var tieneRrhh = modulos.Any(m => m.Codigo.StartsWith("RRHH") && valor);
+        if (tieneRrhh)
+        {
+            var ok = await DialogService.ShowMessageBox(
+                "Módulos sensibles — RRHH",
+                $"Esta sección incluye módulos de Recursos Humanos con información confidencial. " +
+                $"¿Confirmas habilitarlos para el rol '{RolNombre}'?",
+                yesText: "Sí, habilitar", cancelText: "Cancelar");
+            if (ok != true) { StateHasChanged(); return; }
+        }
+
+        foreach (var m in modulos)
+            _pending[m.ModuloID] = valor;
+
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _modulos = await Api.GetAsync<List<ModuloVisibilidadItem>>(
+                $"api/seguridad/roles/{RolId}/modulos") ?? [];
+            foreach (var m in _modulos)
+                _pending[m.ModuloID] = m.Visible ?? true;
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _cargando = false; }
+    }
+
+    private async Task Guardar()
+    {
+        _guardando = true;
+        try
+        {
+            var items = _pending.Select(kv => new ItemVisibilidad(kv.Key, kv.Value)).ToList();
+            await Api.PutAsync($"api/seguridad/roles/{RolId}/modulos",
+                new ActualizarVisibilidadRolRequest(items));
+            Snackbar.Add("Cambios guardados", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}
+

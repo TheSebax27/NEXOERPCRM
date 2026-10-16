@@ -1,0 +1,24 @@
+@inject NavigationManager Nav
+
+<nav class="prod-nav">
+    <a class="prod-nav__link @(EsActiva("/produccion/ordenes") ? "prod-nav__link--active" : "")"
+       href="/produccion/ordenes">
+        <span class="prod-nav__icon">🏭</span>
+        <span class="prod-nav__label">Órdenes</span>
+    </a>
+    <a class="prod-nav__link @(EsActiva("/produccion/recetas") ? "prod-nav__link--active" : "")"
+       href="/produccion/recetas">
+        <span class="prod-nav__icon">📋</span>
+        <span class="prod-nav__label">Recetas</span>
+    </a>
+    <a class="prod-nav__link @(EsActiva("/produccion/maquinaria") ? "prod-nav__link--active" : "")"
+       href="/produccion/maquinaria">
+        <span class="prod-nav__icon">⚙️</span>
+        <span class="prod-nav__label">Maquinaria</span>
+    </a>
+</nav>
+
+@code {
+    private bool EsActiva(string href) =>
+        Nav.Uri.TrimEnd('/').Contains(href.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+}

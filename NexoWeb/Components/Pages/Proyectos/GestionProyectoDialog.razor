@@ -1,0 +1,495 @@
+﻿@using NexoWeb.Common.Dtos
+@inject INexoApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject IDialogService DialogService
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.subtitle2" Class="mb-1">@Proyecto.Nombre</MudText>
+        <MudText Typo="Typo.body2" Class="mb-3" Style="color: var(--n-text-3, #9B9BB4);">
+            Presupuesto: @Proyecto.Presupuesto.ToString("C0") · Costo actual: @_costoTotal.ToString("C0")
+            <MudChip T="string" Size="Size.Small" Class="ml-2"
+                     Color="@(_costoTotal > Proyecto.Presupuesto ? Color.Error : Color.Success)">
+                @(Proyecto.Presupuesto > 0 ? (_costoTotal / Proyecto.Presupuesto * 100).ToString("N0") : "0")%
+            </MudChip>
+        </MudText>
+
+        <MudTabs Class="nexo-proyecto-tabs">
+            <MudTabPanel Text="Tareas (Kanban)">
+                <MudForm @ref="_formTarea" Class="mb-3">
+                    <div class="d-flex align-center flex-wrap mb-2" style="gap: 0.5rem;">
+                        <MudTextField @bind-Value="_tituloTarea" Label="Nueva tarea" Style="flex: 2; min-width: 160px;" />
+                        <AppSelect TValue="int?" @bind-Value="_responsableId" Label="Responsable" Style="flex: 1; min-width: 140px;"
+                                   Items="@(Empleados.Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+                        <MudDatePicker @bind-Date="_fechaLimiteTarea" Label="Fecha limite" Style="flex: 1; min-width: 140px;" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" OnClick="AgregarTareaAsync" />
+                    </div>
+                    @if (_tareas.Count > 0)
+                    {
+                        <MudSelect T="int" MultiSelection="true" @bind-SelectedValues="_dependenciasSeleccionadas"
+                                   Label="Depende de (opcional)" Class="mb-2">
+                            @foreach (var t in _tareas)
+                            {
+                                <MudSelectItem T="int" Value="@t.TareaID">@t.Titulo</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudForm>
+
+                @if (_tareas.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin tareas todavia.</MudText>
+                }
+                else
+                {
+                    <div class="nexo-kanban">
+                        @foreach (var columna in _columnas)
+                        {
+                            <div class="nexo-kanban__columna">
+                                <div class="nexo-kanban__columna-titulo">
+                                    @columna.Titulo
+                                    <span class="nexo-kanban__contador">@_tareas.Count(t => t.Estado == columna.Estado)</span>
+                                </div>
+                                @foreach (var tarea in _tareas.Where(t => t.Estado == columna.Estado))
+                                {
+                                    <div class="nexo-kanban__tarjeta">
+                                        <div class="nexo-kanban__tarjeta-titulo">@tarea.Titulo</div>
+                                        @if (tarea.Responsable is not null)
+                                        {
+                                            <div class="nexo-kanban__tarjeta-meta">@tarea.Responsable</div>
+                                        }
+                                        @if (tarea.FechaLimite is not null)
+                                        {
+                                            <div class="nexo-kanban__tarjeta-meta">@tarea.FechaLimite.Value.ToString("dd/MM/yyyy")</div>
+                                        }
+                                        @if (tarea.DependeDeTareaIds.Count > 0)
+                                        {
+                                            <div class="nexo-kanban__tarjeta-dependencia">
+                                                Depende de: @string.Join(", ", tarea.DependeDeTareaIds.Select(id => _tareas.FirstOrDefault(t => t.TareaID == id)?.Titulo ?? "?"))
+                                            </div>
+                                        }
+                                        <div class="nexo-kanban__tarjeta-acciones">
+                                            @if (columna.Estado != "PENDIENTE")
+                                            {
+                                                <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                                                               OnClick="@(() => MoverTareaAsync(tarea, ColumnaAnterior(columna.Estado)))" />
+                                            }
+                                            @if (columna.Estado != "COMPLETADA")
+                                            {
+                                                <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                                                               OnClick="@(() => MoverTareaAsync(tarea, ColumnaSiguiente(columna.Estado)))" />
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Hitos">
+                <MudForm @ref="_formHito" Class="mb-3">
+                    <div class="d-flex align-center flex-wrap" style="gap: 0.5rem;">
+                        <MudTextField @bind-Value="_nombreHito" Label="Nombre del hito" Style="flex: 2; min-width: 160px;" />
+                        <MudDatePicker @bind-Date="_fechaObjetivoHito" Label="Fecha objetivo" Style="flex: 1; min-width: 140px;" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" OnClick="AgregarHitoAsync" />
+                    </div>
+                </MudForm>
+
+                @if (_hitos.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin hitos definidos todavia.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_hitos" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Hito</MudTh>
+                            <MudTh>Fecha Objetivo</MudTh>
+                            <MudTh>Estado</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Hito">@context.Nombre</MudTd>
+                            <MudTd DataLabel="Fecha Objetivo">@context.FechaObjetivo.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Estado">
+                                <AppSelect TValue="string" Value="context.Estado" ValueChanged="@((string v) => CambiarEstadoHitoAsync(context, v))"
+                                           Items="@(new AppSelectItem<string>[]{ new("Pendiente","PENDIENTE"), new("En Progreso","EN_PROGRESO"), new("Completado","COMPLETADO") })" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Costos">
+                <MudForm @ref="_formCosto" Class="mb-3">
+                    <div class="d-flex align-center mb-2" style="gap: 0.5rem;">
+                        <AppSelect TValue="string" @bind-Value="_tipoCosto" Label="Tipo" Style="flex: 1;"
+                                   Items="@(new AppSelectItem<string>[]{ new("Mano de Obra","MANO_OBRA"), new("Material","MATERIAL"), new("Otro","OTRO") })" />
+                        <MudTextField @bind-Value="_descripcionCosto" Label="Descripcion" Style="flex: 2;" />
+                        <MudNumericField T="decimal" @bind-Value="_valorCosto" Label="Valor ($)" Style="flex: 1;" />
+                    </div>
+                    @if (_tipoCosto == "MANO_OBRA")
+                    {
+                        <AppSelect TValue="int?" @bind-Value="_empleadoIdCosto" Label="Empleado" Class="mb-2"
+                                   Items="@(Empleados.Select(e => new AppSelectItem<int?>($"{e.Nombres} {e.Apellidos}", (int?)e.EmpleadoID)))" />
+                    }
+                    else if (_tipoCosto == "MATERIAL")
+                    {
+                        <ArticuloAutocomplete Value="_articuloCostoSeleccionado"
+                                              ValueChanged="@(a => _articuloCostoSeleccionado = a)"
+                                              Label="Articulo" />
+                    }
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="AgregarCostoAsync">Registrar Costo</MudButton>
+                </MudForm>
+
+                @if (_costos.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin costos registrados todavia.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_costos" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Descripcion</MudTh>
+                            <MudTh>Vinculado a</MudTh>
+                            <MudTh Style="text-align:right">Valor</MudTh>
+                            <MudTh>Fecha</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Tipo">@context.Tipo</MudTd>
+                            <MudTd DataLabel="Descripcion">@context.Descripcion</MudTd>
+                            <MudTd DataLabel="Vinculado a">@(context.Empleado ?? context.Articulo ?? "-")</MudTd>
+                            <MudTd DataLabel="Valor" Style="text-align:right">@context.Valor.ToString("C0")</MudTd>
+                            <MudTd DataLabel="Fecha">@context.Fecha.ToLocalTime().ToString("dd/MM/yyyy")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Documentos">
+                <div class="d-flex align-center flex-wrap mb-3" style="gap: 0.5rem;">
+                    <AppSelect TValue="string" @bind-Value="_tipoDocumento" Label="Tipo" Style="max-width: 200px;"
+                               Items="@(new AppSelectItem<string>[]{ new("Contrato","CONTRATO"), new("Plano","PLANO"), new("Cotización","COTIZACION"), new("Otro","OTRO") })" />
+                    <InputFile id="nexo-proyecto-doc-input" OnChange="OnDocumentoSeleccionadoAsync" style="display:none;" />
+                    <label for="nexo-proyecto-doc-input" class="nexo-perfil-panel__btn-archivo">
+                        Subir Documento
+                    </label>
+                </div>
+                <MudText Typo="Typo.caption" Class="mb-3 d-block" Style="color: var(--n-text-3, #9B9BB4);">Maximo 5 MB por documento.</MudText>
+
+                @if (_documentos.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin documentos todavía.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="_documentos" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Archivo</MudTh>
+                            <MudTh>Fecha</MudTh>
+                            <MudTh>Accion</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Tipo">@context.TipoDocumento</MudTd>
+                            <MudTd DataLabel="Archivo">@context.NombreArchivo</MudTd>
+                            <MudTd DataLabel="Fecha">@context.FechaSubida.ToLocalTime().ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Accion">
+                                <MudButton Size="Size.Small" OnClick="@(() => DescargarDocumentoAsync(context))">Descargar</MudButton>
+                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => EliminarDocumentoAsync(context))">Eliminar</MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Bitacora">
+                <MudForm @ref="_formComentario" Class="mb-3">
+                    <MudTextField @bind-Value="_textoComentario" Label="Nueva nota" Lines="2" Class="mb-2" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="AgregarComentarioAsync">
+                        Registrar
+                    </MudButton>
+                </MudForm>
+
+                <MudDivider Class="mb-3" />
+
+                @if (_comentarios.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="color: var(--n-text-3, #9B9BB4);">Sin notas todavia.</MudText>
+                }
+                else
+                {
+                    @foreach (var c in _comentarios)
+                    {
+                        <div class="mb-3">
+                            <MudText Typo="Typo.caption" Style="color: var(--n-text-3, #9B9BB4);">
+                                @c.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm") @(c.Usuario is not null ? $"· {c.Usuario}" : "")
+                            </MudText>
+                            <MudText Typo="Typo.body2">@c.Texto</MudText>
+                        </div>
+                    }
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public ProyectoItem Proyecto { get; set; } = default!;
+    [Parameter] public List<EmpleadoItem> Empleados { get; set; } = new();
+
+    private record ColumnaKanban(string Estado, string Titulo);
+    private readonly List<ColumnaKanban> _columnas = new()
+    {
+        new("PENDIENTE", "Pendiente"),
+        new("EN_CURSO", "En Curso"),
+        new("COMPLETADA", "Completada")
+    };
+
+    private MudForm _formTarea = default!;
+    private MudForm _formHito = default!;
+    private MudForm _formCosto = default!;
+    private MudForm _formComentario = default!;
+
+    private List<TareaItem> _tareas = new();
+    private List<HitoItem> _hitos = new();
+    private List<CostoItem> _costos = new();
+    private List<ProyectoDocumentoItem> _documentos = new();
+    private List<ComentarioProyectoItem> _comentarios = new();
+    private decimal _costoTotal;
+
+    private string _tituloTarea = string.Empty;
+    private int? _responsableId;
+    private DateTime? _fechaLimiteTarea;
+    private IEnumerable<int> _dependenciasSeleccionadas = new List<int>();
+
+    private string _nombreHito = string.Empty;
+    private DateTime? _fechaObjetivoHito = NexoWeb.Common.ColombiaClock.Today;
+
+    private string _tipoCosto = "MANO_OBRA";
+    private string _descripcionCosto = string.Empty;
+    private decimal _valorCosto;
+    private int? _empleadoIdCosto;
+    private ArticuloItem? _articuloCostoSeleccionado;
+
+    private string _tipoDocumento = "CONTRATO";
+    private string _textoComentario = string.Empty;
+
+    private static string ColumnaAnterior(string estado) => estado switch
+    {
+        "EN_CURSO" => "PENDIENTE",
+        "COMPLETADA" => "EN_CURSO",
+        _ => estado
+    };
+
+    private static string ColumnaSiguiente(string estado) => estado switch
+    {
+        "PENDIENTE" => "EN_CURSO",
+        "EN_CURSO" => "COMPLETADA",
+        _ => estado
+    };
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        var tTareas      = ApiClient.GetAsync<List<TareaItem>>($"api/proyectos/{Proyecto.ProyectoID}/tareas");
+        var tHitos       = ApiClient.GetAsync<List<HitoItem>>($"api/proyectos/{Proyecto.ProyectoID}/hitos");
+        var tCostos      = ApiClient.GetAsync<List<CostoItem>>($"api/proyectos/{Proyecto.ProyectoID}/costos");
+        var tDocumentos  = ApiClient.GetAsync<List<ProyectoDocumentoItem>>($"api/proyectos/{Proyecto.ProyectoID}/documentos");
+        var tComentarios = ApiClient.GetAsync<List<ComentarioProyectoItem>>($"api/proyectos/{Proyecto.ProyectoID}/comentarios");
+        await Task.WhenAll(tTareas, tHitos, tCostos, tDocumentos, tComentarios);
+        _tareas      = tTareas.Result      ?? new();
+        _hitos       = tHitos.Result       ?? new();
+        _costos      = tCostos.Result      ?? new();
+        _documentos  = tDocumentos.Result  ?? new();
+        _comentarios = tComentarios.Result ?? new();
+        _costoTotal  = _costos.Sum(c => c.Valor);
+    }
+
+    private async Task AgregarTareaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_tituloTarea))
+            return;
+
+        try
+        {
+            var request = new CrearTareaRequest(Proyecto.ProyectoID, _tituloTarea.Trim(), _responsableId, _fechaLimiteTarea, _dependenciasSeleccionadas.ToList());
+            await ApiClient.PostAsync<CrearTareaRequest, object?>("api/proyectos/tareas", request);
+            _tituloTarea = string.Empty;
+            _responsableId = null;
+            _fechaLimiteTarea = null;
+            _dependenciasSeleccionadas = new List<int>();
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task MoverTareaAsync(TareaItem tarea, string nuevoEstado)
+    {
+        if (nuevoEstado == tarea.Estado)
+            return;
+
+        try
+        {
+            var request = new ActualizarTareaRequest(tarea.Titulo, tarea.ResponsableID, nuevoEstado, tarea.FechaLimite, tarea.DependeDeTareaIds);
+            await ApiClient.PutAsync<ActualizarTareaRequest, object?>($"api/proyectos/tareas/{tarea.TareaID}", request);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            // 409 -- tarea bloqueada por dependencias sin completar (ver ProyectosService.ActualizarTareaAsync)
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+    }
+
+    private async Task AgregarHitoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombreHito) || _fechaObjetivoHito is null)
+            return;
+
+        try
+        {
+            var request = new CrearHitoRequest(Proyecto.ProyectoID, _nombreHito.Trim(), _fechaObjetivoHito.Value, _hitos.Count);
+            await ApiClient.PostAsync<CrearHitoRequest, object?>("api/proyectos/hitos", request);
+            _nombreHito = string.Empty;
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task CambiarEstadoHitoAsync(HitoItem hito, string nuevoEstado)
+    {
+        try
+        {
+            var request = new ActualizarHitoRequest(hito.Nombre, hito.FechaObjetivo, nuevoEstado, hito.Orden);
+            await ApiClient.PutAsync<ActualizarHitoRequest, object?>($"api/proyectos/hitos/{hito.HitoID}", request);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AgregarCostoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_descripcionCosto) || _valorCosto <= 0)
+            return;
+
+        try
+        {
+            var request = new CrearCostoRequest(
+                Proyecto.ProyectoID, _tipoCosto, _descripcionCosto.Trim(), _valorCosto,
+                _tipoCosto == "MANO_OBRA" ? _empleadoIdCosto : null,
+                _tipoCosto == "MATERIAL" ? _articuloCostoSeleccionado?.ArticuloID : null);
+            await ApiClient.PostAsync<CrearCostoRequest, object?>("api/proyectos/costos", request);
+            _descripcionCosto = string.Empty;
+            _valorCosto = 0;
+            _empleadoIdCosto = null;
+            _articuloCostoSeleccionado = null;
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task OnDocumentoSeleccionadoAsync(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 5_000_000;
+
+        if (e.File.Size > maxBytes)
+        {
+            Snackbar.Add("El documento es muy grande (máximo 5 MB).", Severity.Warning);
+            return;
+        }
+
+        using var stream = e.File.OpenReadStream(maxBytes);
+        using var memoria = new MemoryStream();
+        await stream.CopyToAsync(memoria);
+        var base64 = Convert.ToBase64String(memoria.ToArray());
+
+        try
+        {
+            var request = new SubirDocumentoProyectoRequest(_tipoDocumento, e.File.Name, e.File.ContentType, base64);
+            await ApiClient.PostAsync<SubirDocumentoProyectoRequest, object?>($"api/proyectos/{Proyecto.ProyectoID}/documentos", request);
+            Snackbar.Add("Documento subido.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DescargarDocumentoAsync(ProyectoDocumentoItem documento)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/proyectos/documentos/{documento.DocumentoID}");
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", documento.NombreArchivo, documento.ContentType, streamRef);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task EliminarDocumentoAsync(ProyectoDocumentoItem documento)
+    {
+        var ok = await DialogService.ShowMessageBox(
+            "Eliminar documento",
+            $"¿Eliminar \"{documento.NombreArchivo}\"? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (ok != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/proyectos/documentos/{documento.DocumentoID}");
+            Snackbar.Add("Documento eliminado.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AgregarComentarioAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_textoComentario))
+            return;
+
+        try
+        {
+            var request = new CrearComentarioRequest(Proyecto.ProyectoID, _textoComentario.Trim());
+            await ApiClient.PostAsync<CrearComentarioRequest, object?>("api/proyectos/comentarios", request);
+            _textoComentario = string.Empty;
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void Cerrar() => MudDialog.Close();
+}

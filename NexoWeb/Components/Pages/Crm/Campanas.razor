@@ -1,0 +1,245 @@
+﻿@page "/crm/campanas"
+@using NexoWeb.Common.Dtos
+@using NexoWeb.Common.ApiClient
+@inject INexoApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snack
+@inject IDialogService Dialog
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@attribute [Authorize]
+
+<PageTitle>Campañas de Email</PageTitle>
+<InfoAyuda Texto="Crea y envía campañas de email masivo a tus clientes. Diseña el contenido, selecciona destinatarios y mide resultados de apertura." />
+
+@if (_cargando)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" Class="mb-4" />
+}
+else if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar las campañas: @_errorCarga</MudAlert>
+}
+else if (_campanas.Count == 0)
+{
+    <NexoEmptyState
+        Icono="@Icons.Material.Outlined.Campaign"
+        Titulo="Crea tu primera campaña"
+        Descripcion="Llega a tus clientes con emails profesionales. Diseña el contenido, elige los destinatarios y mide los resultados en un solo lugar."
+        BotonTexto="Nueva campaña"
+        BotonHref="/crm/campanas/nueva" />
+}
+else
+{
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h5">Campañas de Email</MudText>
+        <MudSpacer />
+        <VistaToggle OnCambio="StateHasChanged" />
+        @if (_contador is not null)
+        {
+            var pct = (double)_contador.EmailsHoy / _contador.LimiteGmail * 100;
+            var col = pct >= 90 ? Color.Error : pct >= 70 ? Color.Warning : Color.Success;
+            <MudTooltip Text="@($"Emails enviados hoy: {_contador.EmailsHoy}/{_contador.LimiteGmail} (límite Gmail diario)")">
+                <MudChip T="string" Size="Size.Small" Color="@col" Variant="Variant.Outlined"
+                         Icon="@Icons.Material.Filled.Email">
+                    @_contador.EmailsHoy / @_contador.LimiteGmail emails hoy
+                </MudChip>
+            </MudTooltip>
+        }
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => Nav.NavigateTo("/crm/campanas/nueva"))">
+            Nueva campaña
+        </MudButton>
+    </MudStack>
+    @if (Preferencias.VistaListado == "lista")
+    {
+    <MudTable Items="_campanas" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Asunto</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Enviados</MudTh>
+            <MudTh>Abiertos</MudTh>
+            <MudTh>Fecha</MudTh>
+            <MudTh>Acción</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Nombre</MudTd>
+            <MudTd DataLabel="Asunto">@context.Asunto</MudTd>
+            <MudTd DataLabel="Estado"><MudChip T="string" Size="Size.Small" Color="@ColorEstado(context.Estado)">@context.Estado</MudChip></MudTd>
+            <MudTd DataLabel="Enviados">@context.TotalEnviados</MudTd>
+            <MudTd DataLabel="Abiertos">@context.TotalAbiertos</MudTd>
+            <MudTd DataLabel="Fecha">@context.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Acción">
+                <MudButton Size="Size.Small" OnClick="@(() => Nav.NavigateTo($"/crm/campanas/{context.CampanaID}"))">Editar</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    }
+    else
+    {
+    <MudGrid>
+        @foreach (var c in _campanas)
+        {
+            <MudItem xs="12" md="6" lg="4">
+                <MudCard Elevation="2" Style="height:100%">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudStack Row AlignItems="AlignItems.Center">
+                                <MudText Typo="Typo.subtitle1" Style="font-weight:600">@c.Nombre</MudText>
+                                <MudSpacer />
+                                <MudChip T="string" Size="Size.Small" Color="@ColorEstado(c.Estado)">@c.Estado</MudChip>
+                            </MudStack>
+                            @if (!string.IsNullOrWhiteSpace(c.Descripcion))
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">@c.Descripcion</MudText>
+                            }
+                        </CardHeaderContent>
+                    </MudCardHeader>
+
+                    <MudCardContent>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Asunto</MudText>
+                        <MudText Typo="Typo.body2" Class="mb-3">@c.Asunto</MudText>
+
+                        @if (c.Estado != "BORRADOR")
+                        {
+                            <MudGrid Spacing="1">
+                                <MudItem xs="3">
+                                    <div style="text-align:center">
+                                        <MudText Typo="Typo.h6" Color="Color.Primary">@c.TotalEnviados</MudText>
+                                        <MudText Typo="Typo.caption">Enviados</MudText>
+                                    </div>
+                                </MudItem>
+                                <MudItem xs="3">
+                                    <div style="text-align:center">
+                                        <MudText Typo="Typo.h6" Color="Color.Success">@c.TotalAbiertos</MudText>
+                                        <MudText Typo="Typo.caption">Abiertos</MudText>
+                                    </div>
+                                </MudItem>
+                                <MudItem xs="3">
+                                    <div style="text-align:center">
+                                        <MudText Typo="Typo.h6" Color="Color.Info">@c.TotalClicks</MudText>
+                                        <MudText Typo="Typo.caption">Clicks</MudText>
+                                    </div>
+                                </MudItem>
+                                <MudItem xs="3">
+                                    <div style="text-align:center">
+                                        <MudText Typo="Typo.h6" Color="Color.Warning">@c.TotalDesuscriptos</MudText>
+                                        <MudText Typo="Typo.caption">Baja</MudText>
+                                    </div>
+                                </MudItem>
+                            </MudGrid>
+
+                            @if (c.TotalEnviados > 0)
+                            {
+                                var pct = (double)c.TotalAbiertos / c.TotalEnviados * 100;
+                                <MudProgressLinear Value="@pct" Color="Color.Success" Class="mt-2" Rounded />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @pct.ToString("F0")% tasa de apertura
+                                </MudText>
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Small" /> Segmento: @EtiquetaSegmento(c)
+                            </MudText>
+                        }
+                    </MudCardContent>
+
+                    <MudCardActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Default"
+                                       OnClick="@(() => Nav.NavigateTo($"/crm/campanas/{c.CampanaID}"))"
+                                       Title="Editar / Ver detalle" />
+                        @if (c.Estado == "BORRADOR")
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           OnClick="@(() => ConfirmarEliminar(c))" Title="Eliminar" />
+                        }
+                        @if (c.Estado != "BORRADOR")
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.BarChart" Size="Size.Small" Color="Color.Info"
+                                           OnClick="@(() => Nav.NavigateTo($"/crm/campanas/{c.CampanaID}/resultados"))"
+                                           Title="Ver resultados" />
+                        }
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @c.FechaCreacion.ToLocalTime().ToString("dd/MM/yy")
+                        </MudText>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+    }
+}
+
+@code {
+    List<CampanaResumen> _campanas = [];
+    bool _cargando = true;
+    string? _errorCarga;
+    EmailContadorItem? _contador;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Cargar();
+        try { _contador = await Api.GetAsync<EmailContadorItem>("api/email/contador"); } catch { }
+    }
+
+    async Task Cargar()
+    {
+        _cargando = true;
+        _errorCarga = null;
+        try
+        {
+            _campanas = await Api.GetAsync<List<CampanaResumen>>("api/marketing/campanas") ?? [];
+        }
+        catch (Exception ex)
+        {
+            _errorCarga = ex.Message;
+            _campanas = [];
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    async Task ConfirmarEliminar(CampanaResumen c)
+    {
+        var ok = await Dialog.ShowMessageBox(
+            "Eliminar campaña",
+            $"¿Eliminar \"{c.Nombre}\"? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (ok != true) return;
+
+        try
+        {
+            await Api.DeleteAsync($"api/marketing/campanas/{c.CampanaID}");
+            Snack.Add("Campaña eliminada.", Severity.Success);
+            await Cargar();
+        }
+        catch
+        {
+            Snack.Add("No se pudo eliminar.", Severity.Error);
+        }
+    }
+
+    static Color ColorEstado(string e) => e switch
+    {
+        "BORRADOR"  => Color.Default,
+        "ENVIANDO"  => Color.Warning,
+        "ENVIADA"   => Color.Success,
+        _           => Color.Default
+    };
+
+    static string EtiquetaSegmento(CampanaResumen c) => c.SegmentoTipo switch
+    {
+        "TODOS"          => "Todos los clientes",
+        "TIPO_CLIENTE"   => $"Tipo: {c.SegmentoValor}",
+        "FUENTE"         => $"Fuente: {c.SegmentoValor}",
+        "RESPONSABLE"    => $"Responsable ID {c.SegmentoValor}",
+        "FRIOS"          => $"Sin contacto +{c.SegmentoValor} días",
+        "CON_COTIZACION" => "Con cotización activa",
+        _                => "Todos"
+    };
+}

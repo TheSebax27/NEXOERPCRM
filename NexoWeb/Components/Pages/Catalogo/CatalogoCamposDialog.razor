@@ -1,0 +1,49 @@
+@using NexoWeb.Common.Dtos
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            @if (MostrarCodigo)
+            {
+                <MudTextField @bind-Value="_codigo" Label="@CodigoLabel" Required="true"
+                              RequiredError="El codigo es obligatorio" Class="mb-3"
+                              MaxLength="10" HelperText="Maximo 10 caracteres" />
+            }
+            <MudTextField @bind-Value="_nombre" Label="@NombreLabel" Required="true"
+                          RequiredError="Este campo es obligatorio" Class="mb-1" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="GuardarAsync">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public record Result(string Codigo, string Nombre);
+
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string CodigoLabel { get; set; } = "Codigo";
+    [Parameter] public string NombreLabel { get; set; } = "Nombre";
+    [Parameter] public bool MostrarCodigo { get; set; } = true;
+    [Parameter] public string? NombreInicial { get; set; }
+
+    private MudForm _form = default!;
+    private string _codigo = string.Empty;
+    private string _nombre = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        _nombre = NombreInicial ?? string.Empty;
+    }
+
+    private async Task GuardarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid) return;
+        MudDialog.Close(DialogResult.Ok(new Result(_codigo.Trim(), _nombre.Trim())));
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

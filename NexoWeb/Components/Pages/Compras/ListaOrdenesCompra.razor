@@ -1,0 +1,846 @@
+﻿@page "/compras/ordenes"
+@attribute [Authorize]
+@inject INexoApiClient ApiClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NexoWeb.Common.Auth.PreferenciasState Preferencias
+@inject IJSRuntime JS
+@using NexoWeb.Common.Dtos
+
+<PageTitle>Entradas - NEXO</PageTitle>
+
+<div class="nexo-page-hero">
+    <div class="nexo-page-hero__left">
+        <div class="nexo-page-hero__accent"></div>
+        <div>
+            <p class="nexo-page-hero__module">Operaciones</p>
+            <h1 class="nexo-page-hero__title">Entradas</h1>
+        </div>
+    </div>
+    <div class="d-flex align-center" style="gap:8px">
+        <VistaToggle OnCambio="StateHasChanged" />
+        <MudButton Variant="Variant.Outlined" Color="Color.Warning"
+                   StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="AbrirOCSugeridaAsync"
+                   Disabled="_cargandoSugerencia">
+            @(_cargandoSugerencia ? "Calculando…" : "OC Sugerida")
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AbrirCreacionAsync(null))">
+            Nuevo Pedido
+        </MudButton>
+    </div>
+</div>
+
+<InfoAyuda Texto="Registra pedidos a proveedores. Puedes recibirlos en varias entregas parciales desde 'Ver / Recibir'. Al crearse, el pedido se exporta automáticamente a Visions para su procesamiento como Entrada de Mercancía." />
+
+@if (_errorCarga is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">No se pudieron cargar los pedidos: @_errorCarga</MudAlert>
+}
+
+<MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true"
+         Class="nexo-bi-tabs mb-2"
+         ActivePanelIndexChanged="OnTabCambiado">
+
+    @* ════ Tab 1: Pendientes ════ *@
+    <MudTabPanel Text="Pendientes" Icon="@Icons.Material.Filled.Schedule">
+        @if (_cargando)
+        { <MudProgressLinear Indeterminate="true" Class="mt-2" /> }
+        @if (_enVisions.Any())
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-2 mb-1">
+                Los siguientes pedidos están en proceso en VISIONS. Se recibirán automáticamente en NEXO cuando VISIONS los confirme.
+            </MudAlert>
+            <MudTable Items="_enVisions" Hover="true" Dense="true" Striped="true" Class="mb-3">
+                <HeaderContent>
+                    <MudTh>Código</MudTh>
+                    <MudTh>Proveedor</MudTh>
+                    <MudTh>Emisión</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh>Detalle</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Código">@context.Codigo</MudTd>
+                    <MudTd DataLabel="Proveedor">@context.Proveedor</MudTd>
+                    <MudTd DataLabel="Emisión">@context.FechaEmision.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C0")</MudTd>
+                    <MudTd DataLabel="Detalle">
+                        <div class="d-flex" style="gap:4px">
+                            <MudButton Size="Size.Small" OnClick="@(() => VerDetalleAsync(context.OrdenCompraID))">Ver</MudButton>
+                            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                           Size="Size.Small" Title="Descargar PDF"
+                                           OnClick="@(() => DescargarPdfOCAsync(context.OrdenCompraID))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Print" Color="Color.Default"
+                                           Size="Size.Small" Title="Imprimir"
+                                           OnClick="@(() => ImprimirOCAsync(context.OrdenCompraID))" />
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        @if (!_pendientes.Any() && !_enVisions.Any())
+        { <MudAlert Severity="Severity.Success" Class="mt-2">No hay pedidos pendientes de recibir.</MudAlert> }
+        else if (_pendientes.Any())
+        {
+            <MudTable Items="_pendientesPagina" Hover="true" Dense="true" Striped="true" Class="mt-2">
+                <HeaderContent>
+                    <MudTh>Código</MudTh>
+                    <MudTh>Proveedor</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh>Emisión</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh>Detalle</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Código">@context.Codigo</MudTd>
+                    <MudTd DataLabel="Proveedor">@context.Proveedor</MudTd>
+                    <MudTd DataLabel="Estado">
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small">@context.EstadoOC</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Emisión">@context.FechaEmision.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C0")</MudTd>
+                    <MudTd DataLabel="Detalle">
+                        <div class="d-flex" style="gap:4px">
+                            <MudButton Size="Size.Small" OnClick="@(() => VerDetalleAsync(context.OrdenCompraID))">
+                                Ver / Recibir
+                            </MudButton>
+                            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                           Size="Size.Small" Title="Descargar PDF"
+                                           OnClick="@(() => DescargarPdfOCAsync(context.OrdenCompraID))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Print" Color="Color.Default"
+                                           Size="Size.Small" Title="Imprimir"
+                                           OnClick="@(() => ImprimirOCAsync(context.OrdenCompraID))" />
+                            @if (!context.ExportadoVisions)
+                            {
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.DeleteOutline"
+                                               Color="Color.Error" Title="Eliminar pedido"
+                                               OnClick="@(() => EliminarOrdenAsync(context))" />
+                            }
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+            @if (_pendTotalPaginas > 1)
+            {
+                <div class="d-flex align-center justify-end gap-2 mt-2">
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                                   Disabled="@(_pendPagina <= 1)"
+                                   OnClick="@(() => { _pendPagina--; StateHasChanged(); })" />
+                    <MudText Typo="Typo.body2">@_pendPagina / @_pendTotalPaginas</MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                                   Disabled="@(_pendPagina >= _pendTotalPaginas)"
+                                   OnClick="@(() => { _pendPagina++; StateHasChanged(); })" />
+                </div>
+            }
+        }
+    </MudTabPanel>
+
+    @* ════ Tab 2: Comparación de Precios ════ *@
+    <MudTabPanel Text="Comparación" Icon="@Icons.Material.Filled.BarChart">
+        @if (_cmpCargando)
+        { <MudProgressLinear Indeterminate="true" Class="mt-2" /> }
+        else
+        {
+            @* Filtros *@
+            <div class="d-flex flex-wrap gap-2 mt-2 mb-3">
+                <AppSelect TValue="int?" Value="_cmpFiltroArticulo"
+                           ValueChanged="@((int? v) => { _cmpFiltroArticulo = v; _cmpPagina = 1; StateHasChanged(); })"
+                           Label="Filtrar por artículo" Style="width:100%"
+                           Items="@(_cmpArticulos.Select(art => new AppSelectItem<int?>(art.Value, (int?)art.Key)))" />
+                <AppSelect TValue="int?" Value="_cmpFiltroProveedor"
+                           ValueChanged="@((int? v) => { _cmpFiltroProveedor = v; _cmpPagina = 1; StateHasChanged(); })"
+                           Label="Filtrar por proveedor" Style="width:100%"
+                           Items="@(_cmpProveedores.Select(prov => new AppSelectItem<int?>(prov.Value, (int?)prov.Key)))" />
+            </div>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                @_cmpGruposFiltrados.Count artículo(s) · página @_cmpPagina de @_cmpTotalPaginas
+            </MudText>
+
+            @if (!_cmpGruposFiltrados.Any())
+            {
+                <MudAlert Severity="Severity.Info">Sin datos de compra para comparar con los filtros actuales.</MudAlert>
+            }
+            else
+            {
+                @foreach (var grupo in _cmpGruposPagina)
+                {
+                    var filas = grupo.ToList();
+                    var precioMenor = filas.Min(f => f.PrecioPromedio);
+
+                    <MudPaper Class="pa-3 mb-3" Elevation="1">
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <MudText Typo="Typo.subtitle1"><strong>@filas[0].Articulo</strong></MudText>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">@filas[0].SKU</MudChip>
+                        </div>
+                        <MudTable Items="@filas" Dense="true" Hover="true" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>Proveedor</MudTh>
+                                <MudTh Style="text-align:right">Pedidos</MudTh>
+                                <MudTh Style="text-align:right">Precio Mín.</MudTh>
+                                <MudTh Style="text-align:right">Precio Prom.</MudTh>
+                                <MudTh Style="text-align:right">Precio Máx.</MudTh>
+                                <MudTh Style="text-align:right">Último</MudTh>
+                                <MudTh Style="text-align:right">Variación</MudTh>
+                                <MudTh>Últ. compra</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                @{
+                                    var esMasBarato = context.PrecioPromedio == precioMenor;
+                                    var variacion = precioMenor > 0
+                                        ? (context.PrecioPromedio - precioMenor) / precioMenor * 100m
+                                        : 0m;
+                                }
+                                <MudTd DataLabel="Proveedor">
+                                    @if (esMasBarato)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.Star" Color="Color.Success"
+                                                 Size="Size.Small" Class="mr-1" Style="vertical-align:middle" />
+                                    }
+                                    @context.Proveedor
+                                </MudTd>
+                                <MudTd DataLabel="Pedidos" Style="text-align:right">@context.TotalPedidos</MudTd>
+                                <MudTd DataLabel="Precio Mín." Style="text-align:right">@context.PrecioMin.ToString("C2")</MudTd>
+                                <MudTd DataLabel="Precio Prom." Style="@($"text-align:right;font-weight:{(esMasBarato ? "700" : "400")};color:{(esMasBarato ? "var(--mud-palette-success)" : "inherit")}")">
+                                    @context.PrecioPromedio.ToString("C2")
+                                </MudTd>
+                                <MudTd DataLabel="Precio Máx." Style="text-align:right">@context.PrecioMax.ToString("C2")</MudTd>
+                                <MudTd DataLabel="Último" Style="text-align:right">@context.UltimoPrecio.ToString("C2")</MudTd>
+                                <MudTd DataLabel="Variación" Style="text-align:right">
+                                    @if (variacion == 0)
+                                    { <MudChip T="string" Size="Size.Small" Color="Color.Success" Style="pointer-events:none">Más barato</MudChip> }
+                                    else
+                                    { <MudChip T="string" Size="Size.Small" Color="Color.Warning" Style="pointer-events:none">+@variacion.ToString("N1")%</MudChip> }
+                                </MudTd>
+                                <MudTd DataLabel="Últ. compra">@context.UltimaCompra.ToString("dd/MM/yyyy")</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudPaper>
+                }
+                @if (_cmpTotalPaginas > 1)
+                {
+                    <div class="d-flex align-center justify-end gap-2 mt-2">
+                        <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                                       Disabled="@(_cmpPagina <= 1)"
+                                       OnClick="@(() => { _cmpPagina--; StateHasChanged(); })" />
+                        <MudText Typo="Typo.body2">@_cmpPagina / @_cmpTotalPaginas</MudText>
+                        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                                       Disabled="@(_cmpPagina >= _cmpTotalPaginas)"
+                                       OnClick="@(() => { _cmpPagina++; StateHasChanged(); })" />
+                    </div>
+                }
+            }
+        }
+    </MudTabPanel>
+
+    @* ════ Tab 3: Entradas de Visions ════ *@
+    <MudTabPanel Text="Entradas Visions" Icon="@Icons.Material.Filled.MoveToInbox">
+        @if (_visionsEntradasCargando)
+        { <MudProgressLinear Indeterminate="true" Class="mt-2" /> }
+        else
+        {
+        <div class="d-flex align-center justify-space-between mt-2 mb-1">
+            <MudText Typo="Typo.body2">@_evTotal documento(s) · página @_evPagina de @_evTotalPaginas</MudText>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="RefrescarEntradasVisionsAsync">Actualizar</MudButton>
+        </div>
+        }
+        @if (!_visionsEntradasCargando && _visionsEntradas.Count == 0 && _visionsEntradasCargadas)
+        { <MudAlert Severity="Severity.Info" Class="mt-1">No hay entradas directas de Visions registradas aún.</MudAlert> }
+        else if (!_visionsEntradasCargando && _visionsEntradas.Count > 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Estas entradas fueron generadas directamente desde Visions (no por pedido NEXO). El inventario ya fue actualizado en el momento de la sincronización.
+            </MudAlert>
+            <MudTable Items="_visionsEntradas" Hover="true" Dense="true" Striped="true" Class="mt-2">
+                <HeaderContent>
+                    <MudTh>Tipo/Número</MudTh>
+                    <MudTh>Proveedor (NIT)</MudTh>
+                    <MudTh>Fecha Documento</MudTh>
+                    <MudTh>Fecha Procesado</MudTh>
+                    <MudTh Style="text-align:right">Total Costo</MudTh>
+                    <MudTh>Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Tipo/Número">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Style="pointer-events:none">@context.TipDoc</MudChip>
+                        @context.NroDoc
+                    </MudTd>
+                    <MudTd DataLabel="Proveedor (NIT)">@(string.IsNullOrWhiteSpace(context.NitProveedor) ? "-" : context.NitProveedor)</MudTd>
+                    <MudTd DataLabel="Fecha Documento">@context.FechaDocumento.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Fecha Procesado">@(context.FechaProcesado?.ToString("dd/MM/yyyy HH:mm") ?? "-")</MudTd>
+                    <MudTd DataLabel="Total Costo" Style="text-align:right">@context.Total.ToString("C0")</MudTd>
+                    <MudTd DataLabel="Acciones">
+                        <div class="d-flex" style="gap:4px">
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       StartIcon="@Icons.Material.Filled.ListAlt"
+                                       OnClick="@(() => ToggleLineasEntrada(context))">
+                                @context.Lineas.Count línea(s)
+                            </MudButton>
+                            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                           Size="Size.Small" Title="Descargar PDF"
+                                           OnClick="@(() => DescargarPdfEntradaVisionsAsync(context))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Print" Color="Color.Default"
+                                           Size="Size.Small" Title="Imprimir"
+                                           OnClick="@(() => ImprimirEntradaVisionsAsync(context))" />
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+                <ChildRowContent>
+                    @if (_entradaExpandida != null &&
+                         _entradaExpandida.TipDoc == context.TipDoc &&
+                         _entradaExpandida.NroDoc == context.NroDoc &&
+                         _entradaExpandida.CentroCostoID == context.CentroCostoID)
+                    {
+                        <MudTd colspan="6" Style="padding:0 1rem 0.5rem">
+                            <MudTable Items="context.Lineas" Dense="true" Elevation="0"
+                                      Style="background:var(--mud-palette-background-grey)">
+                                <HeaderContent>
+                                    <MudTh>Código</MudTh>
+                                    <MudTh>Artículo</MudTh>
+                                    <MudTh Style="text-align:right">Cantidad</MudTh>
+                                    <MudTh Style="text-align:right">Costo Unit.</MudTh>
+                                    <MudTh Style="text-align:right">Subtotal</MudTh>
+                                </HeaderContent>
+                                <RowTemplate Context="linea">
+                                    <MudTd>@linea.CodigoVisions</MudTd>
+                                    <MudTd>@linea.NombreVisions</MudTd>
+                                    <MudTd Style="text-align:right">@linea.Cantidad.ToString("N0")</MudTd>
+                                    <MudTd Style="text-align:right">@linea.Costo.ToString("C0")</MudTd>
+                                    <MudTd Style="text-align:right">@((linea.Cantidad * linea.Costo).ToString("C0"))</MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </MudTd>
+                    }
+                </ChildRowContent>
+            </MudTable>
+            @if (_evTotalPaginas > 1)
+            {
+                <div class="d-flex align-center justify-end gap-2 mt-2">
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                                   Disabled="@(_evPagina <= 1)"
+                                   OnClick="@(async () => { _evPagina--; await CargarEntradasVisionsAsync(); })" />
+                    <MudText Typo="Typo.body2">@_evPagina / @_evTotalPaginas</MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                                   Disabled="@(_evPagina >= _evTotalPaginas)"
+                                   OnClick="@(async () => { _evPagina++; await CargarEntradasVisionsAsync(); })" />
+                </div>
+            }
+        }
+    </MudTabPanel>
+
+    @* ════ Tab 4: Historial ════ *@
+    <MudTabPanel Text="Historial" Icon="@Icons.Material.Filled.History">
+        @if (_historialCargando && !_historialCargado)
+        { <MudProgressLinear Indeterminate="true" Class="mt-2" /> }
+        else if (_historial.Count == 0 && _historialCargado)
+        { <MudAlert Severity="Severity.Info" Class="mt-2">No hay pedidos recibidos registrados.</MudAlert> }
+        else if (_historial.Count > 0)
+        {
+            @if (Preferencias.VistaListado == "tarjetas")
+            {
+                <div class="nexo-card-grid mt-2">
+                    @foreach (var orden in _historial)
+                    {
+                        <div class="nexo-item-card">
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="nexo-item-card__title">@orden.Codigo</div>
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small">@orden.EstadoOC</MudChip>
+                            </div>
+                            <div class="nexo-item-card__sub">@orden.Proveedor</div>
+                            <div class="nexo-item-card__row"><span>Emisión</span><strong>@orden.FechaEmision.ToString("dd/MM/yyyy")</strong></div>
+                            <div class="nexo-item-card__row"><span>Recibido</span><strong>@(orden.FechaRecepcion?.ToString("dd/MM/yyyy") ?? "-")</strong></div>
+                            <div class="nexo-item-card__row"><span>Total</span><strong>@orden.Total.ToString("C0")</strong></div>
+                            <div class="nexo-item-card__actions">
+                                <MudButton Size="Size.Small" OnClick="@(() => VerDetalleAsync(orden.OrdenCompraID))">Ver detalle</MudButton>
+                                <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                               Size="Size.Small" Title="Descargar PDF"
+                                               OnClick="@(() => DescargarPdfOCAsync(orden.OrdenCompraID))" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <MudTable Items="_historial" Hover="true" Dense="true" Striped="true" Class="mt-2">
+                    <HeaderContent>
+                        <MudTh>Código</MudTh>
+                        <MudTh>Proveedor</MudTh>
+                        <MudTh>Emisión</MudTh>
+                        <MudTh>Recepción</MudTh>
+                        <MudTh Style="text-align:right">Total</MudTh>
+                        <MudTh>Detalle</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Código">@context.Codigo</MudTd>
+                        <MudTd DataLabel="Proveedor">@context.Proveedor</MudTd>
+                        <MudTd DataLabel="Emisión">@context.FechaEmision.ToString("dd/MM/yyyy")</MudTd>
+                        <MudTd DataLabel="Recepción">@(context.FechaRecepcion?.ToString("dd/MM/yyyy") ?? "-")</MudTd>
+                        <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C0")</MudTd>
+                        <MudTd DataLabel="Detalle">
+                            <div class="d-flex" style="gap:4px">
+                                <MudButton Size="Size.Small" OnClick="@(() => VerDetalleAsync(context.OrdenCompraID))">
+                                    Ver detalle
+                                </MudButton>
+                                <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                                               Size="Size.Small" Title="Descargar PDF"
+                                               OnClick="@(() => DescargarPdfOCAsync(context.OrdenCompraID))" />
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+            @if (_histHayMas)
+            {
+                <div class="d-flex justify-center mt-3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                               Disabled="_historialCargando"
+                               OnClick="@(async () => { _histPagina++; await CargarHistorialAsync(); })">
+                        @(_historialCargando ? "Cargando…" : "Cargar más")
+                    </MudButton>
+                </div>
+            }
+            else
+            {
+                <div style="text-align:center;margin-top:12px;font-size:.8rem;color:var(--n-text-3)">
+                    Mostrando @_historial.Count pedido(s) — sin más resultados
+                </div>
+            }
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@if (_detalleAbierto is not null)
+{
+    <MudPaper Class="pa-4 mt-4">
+        <div class="d-flex align-center justify-space-between mb-2">
+            <MudText Typo="Typo.subtitle1">Detalle del pedido</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Default"
+                           Size="Size.Small" Title="Descargar PDF"
+                           OnClick="@(() => DescargarPdfOCAsync(_detalleAbierto!.Value))" />
+        </div>
+        @{ var _ordenDetalle = _ordenes.FirstOrDefault(o => o.OrdenCompraID == _detalleAbierto); }
+        @if (_ordenDetalle?.NroDocVisions is not null)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3">
+                Procesado en VISIONS — <strong>@_ordenDetalle.TipDocVisions @_ordenDetalle.NroDocVisions</strong>
+            </MudAlert>
+        }
+        <MudTable Items="_detalle" Dense="true">
+            <HeaderContent>
+                <MudTh>Artículo</MudTh>
+                <MudTh Style="text-align:right">Solicitado</MudTh>
+                <MudTh Style="text-align:right">Recibido</MudTh>
+                <MudTh>Fecha Recibido</MudTh>
+                <MudTh Style="text-align:right">Costo Unit.</MudTh>
+                <MudTh>Acción</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Artículo">@context.Articulo</MudTd>
+                <MudTd DataLabel="Solicitado" Style="text-align:right">@context.CantidadSolicitada.ToString("N2")</MudTd>
+                <MudTd DataLabel="Recibido" Style="text-align:right">@context.CantidadRecibida.ToString("N2")</MudTd>
+                <MudTd DataLabel="Fecha Recibido">@(context.FechaUltimaRecepcion?.ToString("dd/MM/yyyy") ?? "-")</MudTd>
+                <MudTd DataLabel="Costo Unit." Style="text-align:right">@context.CostoUnitario.ToString("C2")</MudTd>
+                <MudTd DataLabel="Acción">
+                    @if (context.CantidadRecibida >= context.CantidadSolicitada)
+                    {
+                        <MudChip T="string" Color="Color.Success" Size="Size.Small">Completo</MudChip>
+                    }
+                    else if (!_ordenDetalleEsVisions)
+                    {
+                        <MudButton Size="Size.Small" Color="Color.Primary"
+                                   OnClick="@(() => AbrirRecepcionAsync(context))">
+                            Recibir
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Info" Size="Size.Small">En VISIONS</MudChip>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    // Activas (no RECIBIDA) — para Pendientes tab, cargadas al init
+    private List<OrdenCompraResumen> _ordenes = new();
+    private IEnumerable<OrdenCompraResumen> _pendientes   => _ordenes.Where(o => o.EstadoOC != "RECIBIDA" && !o.ExportadoVisions);
+    private IEnumerable<OrdenCompraResumen> _enVisions    => _ordenes.Where(o => o.EstadoOC != "RECIBIDA" && o.ExportadoVisions);
+    private int _pendPagina = 1;
+    private const int _pendTamano = 50;
+    private IEnumerable<OrdenCompraResumen> _pendientesPagina => _pendientes.Skip((_pendPagina - 1) * _pendTamano).Take(_pendTamano);
+    private int _pendTotalPaginas => Math.Max(1, (int)Math.Ceiling((double)_pendientes.Count() / _pendTamano));
+
+    // Historial (RECIBIDA) — cargado lazy con paginación al abrir tab 3
+    private List<OrdenCompraResumen> _historial     = new();
+    private bool   _historialCargado;
+    private bool   _historialCargando;
+    private int    _histPagina     = 1;
+    private const int _histTamano  = 50;
+    private bool   _histHayMas     = true;
+
+    private bool _ordenDetalleEsVisions
+    {
+        get
+        {
+            var en = _ordenes.FirstOrDefault(o => o.OrdenCompraID == _detalleAbierto);
+            if (en != null) return en.ExportadoVisions;
+            return _historial.FirstOrDefault(o => o.OrdenCompraID == _detalleAbierto)?.ExportadoVisions ?? false;
+        }
+    }
+
+    private List<OrdenCompraDetalleItem> _detalle = new();
+    private List<ProveedorItem> _proveedores = new();
+    private List<BodegaItem> _bodegas = new();
+    private List<CentroCostoItem> _centrosCosto = new();
+    private int? _detalleAbierto;
+    private bool _cargando = true;
+    private bool _cargandoSugerencia;
+    private string? _errorCarga;
+
+    // ── Tab Entradas Visions ──
+    private List<EntradaVisionsDocItem> _visionsEntradas = new();
+    private bool _visionsEntradasCargando;
+    private bool _visionsEntradasCargadas;
+    private int  _evPagina = 1;
+    private const int _evTamano = 50;
+    private int  _evTotal = 0;
+    private int  _evTotalPaginas => Math.Max(1, (int)Math.Ceiling((double)_evTotal / _evTamano));
+    private EntradaVisionsDocItem? _entradaExpandida;
+
+    // ── Tab Comparación ──
+    private List<ComparacionPrecioRow> _cmpTodos = new();
+    private IEnumerable<ComparacionPrecioRow> _cmpDatos =>
+        _cmpTodos.Where(r =>
+            (_cmpFiltroArticulo is null || r.ArticuloID == _cmpFiltroArticulo) &&
+            (_cmpFiltroProveedor is null || r.ProveedorID == _cmpFiltroProveedor));
+    private Dictionary<int, string> _cmpArticulos = new();
+    private Dictionary<int, string> _cmpProveedores = new();
+    private int? _cmpFiltroArticulo;
+    private int? _cmpFiltroProveedor;
+    private bool _cmpCargando;
+    private bool _cmpCargado;
+    private int _cmpPagina = 1;
+    private const int CmpTamano = 5;
+    private IList<IGrouping<int, ComparacionPrecioRow>> _cmpGruposFiltrados =>
+        _cmpDatos.GroupBy(r => r.ArticuloID).ToList();
+    private IEnumerable<IGrouping<int, ComparacionPrecioRow>> _cmpGruposPagina =>
+        _cmpGruposFiltrados.Skip((_cmpPagina - 1) * CmpTamano).Take(CmpTamano);
+    private int _cmpTotalPaginas => Math.Max(1, (int)Math.Ceiling((double)_cmpGruposFiltrados.Count / CmpTamano));
+
+    [SupplyParameterFromQuery] private int? ArticuloId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+
+        if (ArticuloId.HasValue)
+            await AbrirCreacionAsync(ArticuloId.Value);
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        _errorCarga = null;
+        try
+        {
+            // Solo activas (no recibidas) al inicio — rápido y sin límite de fecha
+            _ordenes = await ApiClient.GetAsync<List<OrdenCompraResumen>>("api/compras/ordenes?soloActivas=true") ?? new();
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarHistorialAsync()
+    {
+        if (_historialCargando) return;
+        _historialCargando = true;
+        try
+        {
+            var nuevas = await ApiClient.GetAsync<List<OrdenCompraResumen>>(
+                $"api/compras/ordenes?estado=RECIBIDA&pagina={_histPagina}&tamano={_histTamano}") ?? new();
+            _historial.AddRange(nuevas);
+            _histHayMas = nuevas.Count == _histTamano;
+            _historialCargado = true;
+        }
+        catch (Exception ex) { Snackbar.Add($"Error al cargar historial: {ex.Message}", Severity.Warning); }
+        finally { _historialCargando = false; }
+    }
+
+    private async Task VerDetalleAsync(int ordenCompraId)
+    {
+        _detalleAbierto = ordenCompraId;
+        _detalle = await ApiClient.GetAsync<List<OrdenCompraDetalleItem>>($"api/compras/ordenes/{ordenCompraId}/detalle") ?? new();
+    }
+
+    private async Task AbrirCreacionAsync(int? articuloPreseleccionado = null)
+    {
+        if (_proveedores.Count == 0)
+        {
+            var tareaProveedores = ApiClient.GetAsync<List<ProveedorItem>>("api/catalogo/proveedores");
+            var tareaBodegas = ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas");
+            var tareaCentrosCosto = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo");
+
+            await Task.WhenAll(tareaProveedores, tareaBodegas, tareaCentrosCosto);
+
+            _proveedores = await tareaProveedores ?? new();
+            _bodegas = await tareaBodegas ?? new();
+            _centrosCosto = await tareaCentrosCosto ?? new();
+        }
+
+        var parametros = new DialogParameters<CrearOrdenCompraDialog>
+        {
+            { x => x._proveedores, _proveedores },
+            { x => x._bodegas, _bodegas },
+            { x => x._centrosCosto, _centrosCosto },
+            { x => x.ArticuloPreseleccionadoID, articuloPreseleccionado }
+        };
+
+        var dialogo = await DialogService.ShowAsync<CrearOrdenCompraDialog>("Nuevo Pedido", parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (CrearOrdenCompraRequest)resultado.Data!;
+            await ApiClient.PostAsync<CrearOrdenCompraRequest, object?>("api/compras/ordenes", request);
+            Snackbar.Add("Pedido creado correctamente.", Severity.Success);
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirOCSugeridaAsync()
+    {
+        _cargandoSugerencia = true;
+        try
+        {
+            var sugeridas = await ApiClient.GetAsync<List<OCLineSugeridaItem>>("api/inventario/oc-sugerida") ?? new();
+            if (sugeridas.Count == 0)
+            {
+                Snackbar.Add("No hay artículos bajo el stock mínimo con historial de consumo.", Severity.Info);
+                return;
+            }
+
+            if (_proveedores.Count == 0)
+            {
+                var tp = ApiClient.GetAsync<List<ProveedorItem>>("api/catalogo/proveedores");
+                var tb = ApiClient.GetAsync<List<BodegaItem>>("api/catalogo/bodegas");
+                var tc = ApiClient.GetAsync<List<CentroCostoItem>>("api/catalogo/centros-costo");
+                await Task.WhenAll(tp, tb, tc);
+                _proveedores = await tp ?? new();
+                _bodegas     = await tb ?? new();
+                _centrosCosto = await tc ?? new();
+            }
+
+            var parametros = new DialogParameters<CrearOrdenCompraDialog>
+            {
+                { x => x._proveedores,    _proveedores },
+                { x => x._bodegas,        _bodegas },
+                { x => x._centrosCosto,   _centrosCosto },
+                { x => x.LineasSugeridas, sugeridas }
+            };
+
+            var dialogo = await DialogService.ShowAsync<CrearOrdenCompraDialog>(
+                $"OC Sugerida — {sugeridas.Count} artículo{(sugeridas.Count == 1 ? "" : "s")} bajo mínimo",
+                parametros,
+                new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+            var resultado = await dialogo.Result;
+            if (resultado is null || resultado.Canceled) return;
+
+            try
+            {
+                var request = (CrearOrdenCompraRequest)resultado.Data!;
+                await ApiClient.PostAsync<CrearOrdenCompraRequest, object?>("api/compras/ordenes", request);
+                Snackbar.Add("Pedido sugerido creado correctamente.", Severity.Success);
+                await CargarAsync();
+            }
+            catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        }
+        catch (HttpRequestException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _cargandoSugerencia = false; }
+    }
+
+    private async Task OnTabCambiado(int index)
+    {
+        if (index == 1 && !_cmpCargado)
+            await CargarComparacionAsync();
+        else if (index == 2 && !_visionsEntradasCargadas)
+            await CargarEntradasVisionsAsync();
+        else if (index == 3 && !_historialCargado)
+            await CargarHistorialAsync();
+    }
+
+    private async Task CargarEntradasVisionsAsync()
+    {
+        _visionsEntradasCargando = true;
+        _entradaExpandida = null;
+        try
+        {
+            var resp = await ApiClient.GetAsync<EntradasVisionsPaginadasResponse>(
+                $"api/compras/ordenes/entradas-visions?pagina={_evPagina}&tamano={_evTamano}");
+            _visionsEntradas  = resp?.Items ?? new();
+            _evTotal          = resp?.Total ?? 0;
+            _visionsEntradasCargadas = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar entradas de Visions: {ex.Message}", Severity.Warning);
+            _visionsEntradasCargadas = true;
+        }
+        finally { _visionsEntradasCargando = false; }
+    }
+
+    private async Task RefrescarEntradasVisionsAsync()
+    {
+        _evPagina = 1;
+        _visionsEntradasCargadas = false;
+        await CargarEntradasVisionsAsync();
+    }
+
+    private void ToggleLineasEntrada(EntradaVisionsDocItem entrada)
+    {
+        if (_entradaExpandida?.TipDoc == entrada.TipDoc &&
+            _entradaExpandida?.NroDoc == entrada.NroDoc &&
+            _entradaExpandida?.CentroCostoID == entrada.CentroCostoID)
+            _entradaExpandida = null;
+        else
+            _entradaExpandida = entrada;
+    }
+
+    private async Task DescargarPdfEntradaVisionsAsync(EntradaVisionsDocItem entrada)
+    {
+        try
+        {
+            var url = $"api/compras/ordenes/entradas-visions/pdf?tipDoc={Uri.EscapeDataString(entrada.TipDoc)}&nroDoc={Uri.EscapeDataString(entrada.NroDoc)}&centroCostoId={entrada.CentroCostoID}";
+            var bytes = await ApiClient.GetBytesAsync(url);
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", $"entrada-visions-{entrada.NroDoc}.pdf", "application/pdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo generar el PDF: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task CargarComparacionAsync()
+    {
+        _cmpCargando = true;
+        try
+        {
+            _cmpTodos = await ApiClient.GetAsync<List<ComparacionPrecioRow>>(
+                "api/compras/ordenes/comparacion-precios") ?? new();
+            _cmpArticulos = _cmpTodos
+                .GroupBy(r => r.ArticuloID)
+                .ToDictionary(g => g.Key, g => $"{g.First().SKU} – {g.First().Articulo}");
+            _cmpProveedores = _cmpTodos
+                .GroupBy(r => r.ProveedorID)
+                .ToDictionary(g => g.Key, g => g.First().Proveedor);
+            _cmpCargado = true;
+        }
+        catch (Exception ex) { Snackbar.Add($"Error al cargar comparación: {ex.Message}", Severity.Warning); }
+        finally { _cmpCargando = false; }
+    }
+
+    private async Task DescargarPdfOCAsync(int ocId)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/compras/ordenes/{ocId}/pdf");
+            await JS.InvokeVoidAsync("nexoDescargarArchivo", $"orden-compra-{ocId}.pdf", "application/pdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo generar el PDF: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ImprimirOCAsync(int ocId)
+    {
+        try
+        {
+            var bytes = await ApiClient.GetBytesAsync($"api/compras/ordenes/{ocId}/pdf");
+            await JS.InvokeVoidAsync("nexoImprimirPdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo imprimir: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ImprimirEntradaVisionsAsync(EntradaVisionsDocItem entrada)
+    {
+        try
+        {
+            var url = $"api/compras/ordenes/entradas-visions/pdf?tipDoc={Uri.EscapeDataString(entrada.TipDoc)}&nroDoc={Uri.EscapeDataString(entrada.NroDoc)}&centroCostoId={entrada.CentroCostoID}";
+            var bytes = await ApiClient.GetBytesAsync(url);
+            await JS.InvokeVoidAsync("nexoImprimirPdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo imprimir: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task EliminarOrdenAsync(OrdenCompraResumen orden)
+    {
+        var confirmado = await DialogService.ShowMessageBox(
+            "Eliminar pedido",
+            $"¿Eliminar el pedido {orden.Codigo} ({orden.Proveedor})? Esta acción no se puede deshacer.",
+            yesText: "Eliminar", cancelText: "Cancelar");
+
+        if (confirmado != true) return;
+
+        try
+        {
+            await ApiClient.DeleteAsync($"api/compras/ordenes/{orden.OrdenCompraID}");
+            Snackbar.Add("Pedido eliminado correctamente.", Severity.Success);
+            if (_detalleAbierto == orden.OrdenCompraID) _detalleAbierto = null;
+            await CargarAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AbrirRecepcionAsync(OrdenCompraDetalleItem linea)
+    {
+        var pendiente = linea.CantidadSolicitada - linea.CantidadRecibida;
+
+        var parametros = new DialogParameters<RecibirLineaDialog>
+        {
+            { x => x.Articulo, linea.Articulo },
+            { x => x.Pendiente, pendiente },
+            { x => x.Unidad, linea.Unidad },
+            { x => x.UnidadesPorEmbalaje, linea.UnidadesPorEmbalaje }
+        };
+
+        var dialogo = await DialogService.ShowAsync<RecibirLineaDialog>("Recibir Mercancía", parametros);
+        var resultado = await dialogo.Result;
+
+        if (resultado is null || resultado.Canceled)
+            return;
+
+        try
+        {
+            var request = (RecibirLineaOrdenCompraRequest)resultado.Data!;
+            await ApiClient.PostAsync<RecibirLineaOrdenCompraRequest, object?>(
+                $"api/compras/ordenes/detalle/{linea.OrdenCompraDetalleID}/recibir", request);
+
+            Snackbar.Add("Mercancía recibida correctamente.", Severity.Success);
+            await VerDetalleAsync(_detalleAbierto!.Value);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

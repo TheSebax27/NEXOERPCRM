@@ -1,0 +1,461 @@
+@using NexoWeb.Common.Dtos
+@inject NexoWeb.Common.ApiClient.INexoApiClient ApiClient
+@inject IJSRuntime JS
+
+@* ── Burbuja flotante ──────────────────────────────────────────────────── *@
+<div class="nexo-chat-bubble @(_abierto ? "nexo-chat-bubble--activa" : "")"
+     @onclick="ToggleChat"
+     title="Asistente NEXO">
+    @if (_pensando && !_abierto)
+    {
+        <MudProgressCircular Size="Size.Small" Indeterminate="true" Style="color:#fff" />
+    }
+    else
+    {
+        <MudIcon Icon="@(_abierto ? Icons.Material.Filled.Close : Icons.Material.Filled.AutoAwesome)"
+                 Style="color:#fff; font-size:1.5rem;" />
+    }
+    @if (_mensajesNoLeidos > 0 && !_abierto)
+    {
+        <span class="nexo-chat-badge">@_mensajesNoLeidos</span>
+    }
+</div>
+
+@* ── Panel de chat ─────────────────────────────────────────────────────── *@
+@if (_abierto)
+{
+    <div class="nexo-chat-panel">
+
+        @* Header *@
+        <div class="nexo-chat-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Style="color:#fff; font-size:1.1rem;" />
+                <div>
+                    <div style="font-weight:700; font-size:0.9rem;">Asistente NEXO</div>
+                    <div style="font-size:0.7rem; opacity:.7;">Llama 3.3 · Groq</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:4px;">
+                <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep"
+                               Size="Size.Small"
+                               Style="color:rgba(255,255,255,.6)"
+                               OnClick="LimpiarHistorial"
+                               title="Limpiar conversación" />
+                <MudIconButton Icon="@Icons.Material.Filled.Close"
+                               Size="Size.Small"
+                               Style="color:rgba(255,255,255,.8)"
+                               OnClick="ToggleChat" />
+            </div>
+        </div>
+
+        @* Mensajes *@
+        <div class="nexo-chat-mensajes" id="nexo-chat-scroll">
+            @if (!_mensajes.Any())
+            {
+                <div class="nexo-chat-bienvenida">
+                    <MudIcon Icon="@Icons.Material.Filled.AutoAwesome"
+                             Style="font-size:2rem; color:var(--n-accent); margin-bottom:8px;" />
+                    <div style="font-weight:600; margin-bottom:4px;">¡Hola! Soy tu asistente NEXO</div>
+                    <div style="font-size:0.8rem; color:var(--n-text-2); margin-bottom:12px;">
+                        Puedo consultar ventas, inventario, facturas y más en tiempo real.
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px; justify-content:center;">
+                        @foreach (var sugerencia in _sugerencias)
+                        {
+                            <button class="nexo-chat-sugerencia" @onclick="() => UsarSugerencia(sugerencia)">
+                                @sugerencia
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            @foreach (var msg in _mensajes)
+            {
+                <div class="nexo-chat-msg @(msg.Rol == "user" ? "nexo-chat-msg--user" : "nexo-chat-msg--bot")">
+                    @if (msg.Rol == "assistant")
+                    {
+                        <div class="nexo-chat-msg__avatar">
+                            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Style="font-size:0.9rem;" />
+                        </div>
+                    }
+                    <div class="nexo-chat-msg__burbuja">
+                        @((MarkupString)FormatearMd(msg.Contenido))
+                    </div>
+                </div>
+            }
+
+            @if (_pensando)
+            {
+                <div class="nexo-chat-msg nexo-chat-msg--bot">
+                    <div class="nexo-chat-msg__avatar">
+                        <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Style="font-size:0.9rem;" />
+                    </div>
+                    <div class="nexo-chat-msg__burbuja nexo-chat-msg__burbuja--typing">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* Input *@
+        <div class="nexo-chat-input">
+            <textarea class="nexo-chat-textarea"
+                      @bind="_inputActual"
+                      @bind:event="oninput"
+                      @onkeydown="OnKeyDown"
+                      placeholder="Pregunta algo sobre tu negocio…"
+                      rows="1"
+                      disabled="@_pensando" />
+            <button class="nexo-chat-send @(_pensando || string.IsNullOrWhiteSpace(_inputActual) ? "nexo-chat-send--disabled" : "")"
+                    @onclick="Enviar"
+                    disabled="@(_pensando || string.IsNullOrWhiteSpace(_inputActual))">
+                <MudIcon Icon="@Icons.Material.Filled.Send" Style="font-size:1.1rem;" />
+            </button>
+        </div>
+
+    </div>
+}
+
+<style>
+    /* ── Burbuja ─────────────────────────────────────────────────────── */
+    .nexo-chat-bubble {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #1E3A5F 0%, #2563EB 100%);
+        box-shadow: 0 4px 20px rgba(37,99,235,.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 9999;
+        transition: transform .2s, box-shadow .2s;
+        user-select: none;
+    }
+    .nexo-chat-bubble:hover { transform: scale(1.08); box-shadow: 0 6px 28px rgba(37,99,235,.55); }
+    .nexo-chat-bubble--activa { background: linear-gradient(135deg, #374151 0%, #1F2937 100%); }
+
+    .nexo-chat-badge {
+        position: absolute;
+        top: -3px;
+        right: -3px;
+        background: #EF4444;
+        color: #fff;
+        font-size: 0.65rem;
+        font-weight: 700;
+        border-radius: 50%;
+        width: 18px;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* ── Panel ───────────────────────────────────────────────────────── */
+    .nexo-chat-panel {
+        position: fixed;
+        bottom: 88px;
+        right: 24px;
+        width: 380px;
+        max-height: 560px;
+        border-radius: 16px;
+        background: var(--n-bg-1, #fff);
+        box-shadow: 0 8px 40px rgba(0,0,0,.18);
+        display: flex;
+        flex-direction: column;
+        z-index: 9998;
+        overflow: hidden;
+        border: 1px solid var(--n-border, #E5E7EB);
+        animation: nexoChatSlide .2s ease;
+    }
+
+    @@keyframes nexoChatSlide {
+        from { opacity:0; transform: translateY(12px) scale(.97); }
+        to   { opacity:1; transform: translateY(0)   scale(1);    }
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────── */
+    .nexo-chat-header {
+        background: linear-gradient(135deg, #1E3A5F 0%, #2563EB 100%);
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+    }
+
+    /* ── Mensajes ────────────────────────────────────────────────────── */
+    .nexo-chat-mensajes {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        scroll-behavior: smooth;
+    }
+
+    .nexo-chat-bienvenida {
+        text-align: center;
+        padding: 12px 8px;
+        color: var(--n-text-1, #111);
+    }
+
+    .nexo-chat-sugerencia {
+        background: var(--n-bg-2, #F3F4F6);
+        border: 1px solid var(--n-border, #E5E7EB);
+        border-radius: 20px;
+        padding: 5px 12px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        color: var(--n-text-1, #374151);
+        transition: background .15s;
+    }
+    .nexo-chat-sugerencia:hover { background: var(--n-bg-3, #E5E7EB); }
+
+    .nexo-chat-msg {
+        display: flex;
+        gap: 8px;
+        align-items: flex-end;
+    }
+    .nexo-chat-msg--user { flex-direction: row-reverse; }
+
+    .nexo-chat-msg__avatar {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #1E3A5F, #2563EB);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        flex-shrink: 0;
+    }
+
+    .nexo-chat-msg__burbuja {
+        max-width: 78%;
+        padding: 9px 13px;
+        border-radius: 16px;
+        font-size: 0.83rem;
+        line-height: 1.5;
+        word-break: break-word;
+    }
+    .nexo-chat-msg--user .nexo-chat-msg__burbuja {
+        background: linear-gradient(135deg, #1E3A5F, #2563EB);
+        color: #fff;
+        border-bottom-right-radius: 4px;
+    }
+    .nexo-chat-msg--bot .nexo-chat-msg__burbuja {
+        background: var(--n-bg-2, #F3F4F6);
+        color: var(--n-text-1, #111);
+        border-bottom-left-radius: 4px;
+    }
+
+    /* Tipografía dentro de burbujas bot */
+    .nexo-chat-msg--bot .nexo-chat-msg__burbuja strong { font-weight: 700; }
+    .nexo-chat-msg--bot .nexo-chat-msg__burbuja ul,
+    .nexo-chat-msg--bot .nexo-chat-msg__burbuja ol  { padding-left: 1.2rem; margin: 4px 0; }
+    .nexo-chat-msg--bot .nexo-chat-msg__burbuja p   { margin: 0 0 4px 0; }
+    .nexo-chat-msg--bot .nexo-chat-msg__burbuja code {
+        background: rgba(0,0,0,.07);
+        border-radius: 4px;
+        padding: 1px 4px;
+        font-family: monospace;
+        font-size: 0.8em;
+    }
+
+    /* Typing animation */
+    .nexo-chat-msg__burbuja--typing {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        padding: 12px 16px;
+    }
+    .nexo-chat-msg__burbuja--typing span {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--n-text-2, #9CA3AF);
+        animation: nexoTyping 1.2s infinite ease-in-out;
+    }
+    .nexo-chat-msg__burbuja--typing span:nth-child(2) { animation-delay: .2s; }
+    .nexo-chat-msg__burbuja--typing span:nth-child(3) { animation-delay: .4s; }
+
+    @@keyframes nexoTyping {
+        0%, 60%, 100% { transform: translateY(0);    opacity:.4; }
+        30%            { transform: translateY(-5px); opacity:1;  }
+    }
+
+    /* ── Input ───────────────────────────────────────────────────────── */
+    .nexo-chat-input {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 10px 14px;
+        border-top: 1px solid var(--n-border, #E5E7EB);
+        background: var(--n-bg-1, #fff);
+        flex-shrink: 0;
+    }
+
+    .nexo-chat-textarea {
+        flex: 1;
+        border: 1px solid var(--n-border, #D1D5DB);
+        border-radius: 10px;
+        padding: 9px 12px;
+        font-size: 0.85rem;
+        resize: none;
+        background: var(--n-bg-2, #F9FAFB);
+        color: var(--n-text-1, #111);
+        outline: none;
+        font-family: inherit;
+        max-height: 100px;
+        overflow-y: auto;
+        line-height: 1.4;
+    }
+    .nexo-chat-textarea:focus { border-color: #2563EB; box-shadow: 0 0 0 2px rgba(37,99,235,.15); }
+
+    .nexo-chat-send {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #1E3A5F, #2563EB);
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        flex-shrink: 0;
+        transition: opacity .15s, transform .15s;
+    }
+    .nexo-chat-send:hover { transform: scale(1.06); }
+    .nexo-chat-send--disabled { opacity: .4; cursor: not-allowed; transform: none !important; }
+
+    /* Tema oscuro */
+    .nexo-tema-oscuro .nexo-chat-panel    { background: #1F2937; border-color: #374151; }
+    .nexo-tema-oscuro .nexo-chat-textarea { background: #111827; border-color: #374151; color: #F9FAFB; }
+    .nexo-tema-oscuro .nexo-chat-sugerencia { background: #374151; border-color: #4B5563; color: #F9FAFB; }
+    .nexo-tema-oscuro .nexo-chat-msg--bot .nexo-chat-msg__burbuja { background: #374151; color: #F9FAFB; }
+    .nexo-tema-oscuro .nexo-chat-input    { background: #1F2937; border-color: #374151; }
+
+    /* Mobile */
+    @@media (max-width: 480px) {
+        .nexo-chat-panel { right: 8px; left: 8px; width: auto; bottom: 80px; }
+        .nexo-chat-bubble { bottom: 16px; right: 16px; }
+    }
+</style>
+
+@code {
+    private bool _abierto;
+    private bool _pensando;
+    private string _inputActual = "";
+    private int _mensajesNoLeidos;
+
+    private List<ChatMensajeLocal> _mensajes = new();
+    private List<ChatMensajeApi>   _historial = new();
+
+    private readonly string[] _sugerencias =
+    [
+        "¿Cuánto vendí hoy?",
+        "Resumen del mes actual",
+        "¿Qué artículos tienen stock crítico?",
+        "Top 5 productos más vendidos este mes",
+        "Compara esta semana vs la semana pasada",
+        "¿Cuál es mi cliente que más compra?",
+        "¿Qué productos tienen peor margen?",
+        "Valor total del inventario",
+    ];
+
+    private void ToggleChat()
+    {
+        _abierto = !_abierto;
+        if (_abierto) _mensajesNoLeidos = 0;
+    }
+
+    private async Task UsarSugerencia(string texto)
+    {
+        _inputActual = texto;
+        await Enviar();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+            await Enviar();
+    }
+
+    private async Task Enviar()
+    {
+        var texto = _inputActual.Trim();
+        if (string.IsNullOrEmpty(texto) || _pensando) return;
+
+        _inputActual = "";
+        _mensajes.Add(new("user", texto));
+        _pensando = true;
+        await ScrollAbajo();
+
+        try
+        {
+            var req  = new { Mensaje = texto, Historial = _historial };
+            var resp = await ApiClient.PostAsync<object, ChatRespApi>("api/chatbot/mensaje", req);
+
+            if (resp is not null)
+            {
+                _mensajes.Add(new("assistant", resp.Respuesta));
+                _historial = resp.Historial;
+                if (!_abierto) _mensajesNoLeidos++;
+            }
+            else
+            {
+                _mensajes.Add(new("assistant", "No pude obtener respuesta. Intenta de nuevo."));
+            }
+        }
+        catch
+        {
+            _mensajes.Add(new("assistant", "Algo salió mal. Intenta de nuevo."));
+        }
+        finally
+        {
+            _pensando = false;
+            await ScrollAbajo();
+        }
+    }
+
+    private void LimpiarHistorial()
+    {
+        _mensajes.Clear();
+        _historial.Clear();
+        _mensajesNoLeidos = 0;
+    }
+
+    private async Task ScrollAbajo()
+    {
+        try { await JS.InvokeVoidAsync("nexoChatScroll"); }
+        catch { /* ignore */ }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex _rxBold   = new(@"\*\*(.+?)\*\*", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex _rxItal   = new(@"\*(.+?)\*",     System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex _rxCode   = new(@"`(.+?)`",       System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // Markdown mínimo: **bold**, *italic*, `code`, \n → <br>
+    private static string FormatearMd(string texto)
+    {
+        if (string.IsNullOrEmpty(texto)) return "";
+        var html = System.Net.WebUtility.HtmlEncode(texto);
+        html = _rxBold.Replace(html, "<strong>$1</strong>");
+        html = _rxItal.Replace(html, "<em>$1</em>");
+        html = _rxCode.Replace(html, "<code>$1</code>");
+        html = html.Replace("\r\n", "\n").Replace("\n", "<br>");
+        return html;
+    }
+
+    // DTOs locales
+    private record ChatMensajeLocal(string Rol, string Contenido);
+    private record ChatMensajeApi(string Rol, string Contenido);
+    private record ChatRespApi(string Respuesta, List<ChatMensajeApi> Historial);
+}
